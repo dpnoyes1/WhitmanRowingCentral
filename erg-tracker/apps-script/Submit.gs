@@ -1,6 +1,7 @@
 /**
- * Form submit handling: turns a response into Entries + Intervals rows, or a
- * Benchmarks row. All times are converted to seconds here.
+ * Form submit handling: turns a response into Entries + Intervals rows. A
+ * benchmark test also writes a Benchmarks row, linked both ways by ID, so it
+ * counts as a session. All times are converted to seconds here.
  *
  * parseSubmission() is pure (no Sheet or Form calls) so it can be tested in
  * Node and reused for Slack entries in phase 2.
@@ -77,7 +78,7 @@ function processMissedResponses() {
 /**
  * answers: {question title: answer string}
  * ctx: { submittedAt, responseId, athleteIds: {name: id}, newId(prefix), parseDate(str) }
- * Returns { entry, intervals } or { benchmark }.
+ * Returns { entry, intervals } plus { benchmark } for a test.
  */
 function parseSubmission(answers, ctx) {
   var a = function (title) {
@@ -107,9 +108,9 @@ function parseSubmission(answers, ctx) {
   };
 
   var logType = a(Q.LOG_TYPE);
-  if (logType === LOG_TYPES.BENCHMARK) return { benchmark: parseBenchmark_(a, num, base, ctx) };
-
   var entry = Object.assign({}, base, { 'Entry ID': ctx.newId('E') });
+  if (logType === LOG_TYPES.BENCHMARK) return benchmarkSession_(a, num, base, entry, ctx);
+
   if (logType === LOG_TYPES.PRACTICE) {
     entry['Session type'] = 'Practice';
     var status = a(Q.STATUS);
@@ -164,6 +165,38 @@ function parseSubmission(answers, ctx) {
     'Coach note': a(Q.NOTE)
   });
   return { entry: entry, intervals: intervals };
+}
+
+/** A test is saved twice: the result in Benchmarks, the session in Entries. */
+function benchmarkSession_(a, num, base, entry, ctx) {
+  var bench = parseBenchmark_(a, num, base, ctx);
+  var spec = BENCHMARK_TESTS[a(Q.TEST)];
+  var atPractice = a(Q.B_WHERE) === TEST_WHERE.PRACTICE;
+  var workS = spec.score === 'time' ? bench['Time s'] : spec.seconds;
+  var workM = spec.score === 'time' ? spec.meters : bench['Meters'];
+  bench['Entry ID'] = entry['Entry ID'];
+  Object.assign(entry, {
+    'Session type': atPractice ? 'Practice' : 'OYO',
+    'Status': atPractice ? 'Full' : '',
+    'Activity': 'Erg (RowErg)',
+    'Warmup s': parseTime(a(Q.B_WARMUP)),
+    'Work s': workS,
+    'Rest s': 0,
+    'Cooldown s': a(Q.B_COOLDOWN) === '' ? 0 : parseTime(a(Q.B_COOLDOWN)),
+    'Work m': workM,
+    'Rest m': 0,
+    'Main set': bench.Test + ' test',
+    'Zone': spec.zone,
+    'RPE': num(Q.B_RPE),
+    'Drag factor': bench['Drag factor'],
+    'Intervals': 1,
+    'Benchmark ID': bench['Benchmark ID']
+  });
+  var interval = {
+    'Entry ID': entry['Entry ID'], 'Interval #': 1, 'Work s': workS, 'Work m': workM,
+    'Avg rate': bench['Avg rate'], 'Rest s': '', 'Rest m': ''
+  };
+  return { benchmark: bench, entry: entry, intervals: [interval] };
 }
 
 function parseBenchmark_(a, num, base, ctx) {

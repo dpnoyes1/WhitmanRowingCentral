@@ -25,7 +25,7 @@ HEADERS[TABS.ENTRIES] = [
   'Session type', 'Make-up for date', 'Status', 'Activity',
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
-  'Coach note', 'Source', 'Review status', 'Response ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID'
 ];
 HEADERS[TABS.INTERVALS] = [
   'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'
@@ -33,7 +33,7 @@ HEADERS[TABS.INTERVALS] = [
 HEADERS[TABS.BENCHMARKS] = [
   'Benchmark ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
   'Test', 'Time s', 'Meters', 'Avg rate', 'Drag factor', 'Splits s',
-  'Coach note', 'Source', 'Review status', 'Response ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Entry ID'
 ];
 HEADERS[TABS.WEIGHTS] = [
   'Date', 'Athlete ID', 'Athlete', 'Weight lb', 'Entered by', 'Note'
@@ -70,12 +70,14 @@ var ACTIVITIES = [
   ['Lifting', 0]
 ];
 
+// Every test also becomes an Entries session. meters/seconds fill the fixed side
+// of the piece; zone is the default tag for that session (assumption, edit freely).
 var BENCHMARK_TESTS = {
-  '100m': { score: 'time' },
-  '500m': { score: 'time' },
-  '2000m': { score: 'time' },
-  "20' (20 min)": { score: 'meters', key: '20min' },
-  '30r20': { score: 'meters' }
+  '100m': { score: 'time', meters: 100, zone: 'AN' },
+  '500m': { score: 'time', meters: 500, zone: 'AN' },
+  '2000m': { score: 'time', meters: 2000, zone: 'AN' },
+  "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'AT' },
+  '30r20': { score: 'meters', seconds: 1800, zone: 'UT1' }
 };
 
 var ZONES = ['UT2', 'UT1', 'AT', 'AN'];
@@ -146,6 +148,10 @@ var Q = {
   DRAG: 'Drag factor',
   NOTE: 'Note for coaches (optional)',
   TEST: 'Which test?',
+  B_WHERE: 'Where did you do the test?',
+  B_WARMUP: 'Warmup time before the test',
+  B_COOLDOWN: 'Cooldown time after the test (optional)',
+  B_RPE: 'Session RPE for the whole test session',
   // Titles must be unique across the whole form, so the two test sections differ slightly.
   T_TIME: 'Test time',
   T_RATE: 'Average stroke rate (optional)',
@@ -172,4 +178,5 @@ function qInterval(n) {
 }
 
 var LOG_TYPES = { PRACTICE: 'Practice', OYO: 'On your own (OYO)', MAKEUP: 'Make-up for a missed practice', BENCHMARK: 'Benchmark test' };
+var TEST_WHERE = { PRACTICE: 'At practice', OYO: 'On my own' };
 var STATUSES = { FULL: 'Full', MODIFIED: 'Modified (e.g. BikeErg instead)', OUT: 'Out' };

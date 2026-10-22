@@ -134,7 +134,8 @@ test('parse practice out, make-up, OYO', () => {
 
 test('parse benchmarks', () => {
   const Q = g.Q;
-  const base = { [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Coach David', [Q.DATE]: '2026-02-01', [Q.LOG_TYPE]: g.LOG_TYPES.BENCHMARK };
+  const base = { [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Coach David', [Q.DATE]: '2026-02-01', [Q.LOG_TYPE]: g.LOG_TYPES.BENCHMARK,
+    [Q.B_WHERE]: g.TEST_WHERE.PRACTICE, [Q.B_WARMUP]: '15:00', [Q.B_RPE]: '9' };
   const twok = g.parseSubmission({ ...base, [Q.TEST]: '2000m', [Q.T_TIME]: '7:42.8', [Q.T_RATE]: '30', [Q.T_SPLITS]: '1:55.2, 1:56.0,1:56.1 1:55.5' }, ctxFor());
   assert.strictEqual(twok.benchmark.Test, '2000m');
   assert.strictEqual(twok.benchmark['Time s'], 462.8);
@@ -144,6 +145,26 @@ test('parse benchmarks', () => {
   assert.strictEqual(twenty.benchmark.Meters, 5000);
   assert.strictEqual(twenty.benchmark['Time s'], '');
   Object.keys(twok.benchmark).forEach(k => assert.ok(g.HEADERS[g.TABS.BENCHMARKS].includes(k), 'bench column ' + k));
+  // A test also counts as a session, linked both ways
+  assert.strictEqual(twok.entry['Session type'], 'Practice');
+  assert.strictEqual(twok.entry['Status'], 'Full');
+  assert.strictEqual(twok.entry['Work s'], 462.8);
+  assert.strictEqual(twok.entry['Work m'], 2000);
+  assert.strictEqual(twok.entry['Warmup s'], 900);
+  assert.strictEqual(twok.entry['Cooldown s'], 0);
+  assert.strictEqual(twok.entry['RPE'], 9);
+  assert.strictEqual(twok.entry['Benchmark ID'], twok.benchmark['Benchmark ID']);
+  assert.strictEqual(twok.benchmark['Entry ID'], twok.entry['Entry ID']);
+  assert.strictEqual(twok.intervals.length, 1);
+  assert.strictEqual(twok.intervals[0]['Avg rate'], 30);
+  assert.strictEqual(twenty.entry['Work s'], 1200);
+  assert.strictEqual(twenty.entry['Work m'], 5000);
+  assert.strictEqual(twenty.entry['Zone'], 'AT');
+  const oyoTest = g.parseSubmission({ ...base, [Q.B_WHERE]: g.TEST_WHERE.OYO, [Q.B_COOLDOWN]: '5:00', [Q.TEST]: '30r20', [Q.D_METERS]: '7200', [Q.D_RATE]: '20' }, ctxFor());
+  assert.strictEqual(oyoTest.entry['Session type'], 'OYO');
+  assert.strictEqual(oyoTest.entry['Work s'], 1800);
+  assert.strictEqual(oyoTest.entry['Cooldown s'], 300);
+  Object.keys(twok.entry).forEach(k => assert.ok(g.HEADERS[g.TABS.ENTRIES].includes(k), 'entry column ' + k));
 });
 
 test('practice schedule: even Fri early, odd Fri late, no weekends', () => {

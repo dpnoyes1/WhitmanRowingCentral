@@ -7,7 +7,7 @@
  *                                  -> Out -> Out note -> submit
  *     OYO       -> Session
  *     Make-up   -> Missed date -> Session
- *     Benchmark -> Test -> Time test | Distance test -> submit
+ *     Benchmark -> Where/warmup/RPE + test -> Time test | Distance test -> submit
  *   Session -> Interval 1 -> "Another?" Yes -> Interval 2 ... Interval 10
  *                                       No  -> Finish -> submit
  *
@@ -108,6 +108,13 @@ function buildForm_(settings) {
   // Benchmark
   var pbBench = form.addPageBreakItem().setTitle('Benchmark test');
   pbBench.setGoToPage(FormApp.PageNavigationType.SUBMIT);    // end of "Finish" submits
+  form.addMultipleChoiceItem().setTitle(Q.B_WHERE).setRequired(true)
+    .setHelpText('Tests also count as a training session.')
+    .setChoiceValues([TEST_WHERE.PRACTICE, TEST_WHERE.OYO]);
+  addTime(Q.B_WARMUP, true, 'Prefilled at 15:00. Change it if yours was different.');
+  addTime(Q.B_COOLDOWN, false);
+  form.addScaleItem().setTitle(Q.B_RPE).setRequired(true).setBounds(1, 10)
+    .setLabels('Very easy', 'Max effort');
   var test = form.addMultipleChoiceItem().setTitle(Q.TEST).setRequired(true);
 
   var pbTime = form.addPageBreakItem().setTitle('Timed test (100m, 500m, 2000m)');
@@ -201,7 +208,7 @@ function prefilledUrl_(form, settings) {
   var response = form.createResponse();
   form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
     var title = item.getTitle();
-    if (title === Q.WARMUP) {
+    if (title === Q.WARMUP || title === Q.B_WARMUP) {
       response.withItemResponse(item.asTextItem().createResponse(settings.default_warmup));
     } else if (title === Q.DRAG) {
       response.withItemResponse(item.asTextItem().createResponse(settings.default_drag_factor));
