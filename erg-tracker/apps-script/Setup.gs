@@ -11,6 +11,9 @@ function onOpen() {
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()
+    .addItem('Preview week ahead', 'previewWeekAhead')
+    .addItem('Check week against plan', 'checkWeekAgainstPlan')
+    .addSeparator()
     .addItem('Rebuild form (new link)', 'rebuildForm')
     .addToUi();
 }
@@ -97,6 +100,7 @@ function ensureTab_(name) {
     }
   });
   if (name === TABS.ROSTER) addRosterValidation_(sheet);
+  if (name === TABS.WORKOUTS || name === TABS.SCHEDULE) addPlanValidation_(sheet, name);
   return sheet;
 }
 

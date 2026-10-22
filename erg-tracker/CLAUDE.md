@@ -23,7 +23,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 
 ## Sheet tabs
 
-Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log. Full column list in `docs/sheet-schema.md`.
+Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule. Full column list in `docs/sheet-schema.md`.
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
 - Entries: one row per session (Practice / OYO / Make-up). `Source` is Form now; Slack and Logbook later.
@@ -74,6 +74,16 @@ Stars are public; GMS % is visible to each athlete. Novices use the same standar
 Even/odd is the calendar date. No winter weekend practice. Practices tab is generated from Settings (`generatePracticeSchedule`); canceled days are marked by hand.
 
 Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg/SkiErg set from machine; unchanged labels auto-accept after 48 h.
+
+## Weekly plan and targets
+
+- Coaches build workouts in the **Workouts** tab (one row per piece; Reps for repeats; one row per piece for variable intervals; `Start every` or Rest = Undefined for common-start sets) and assign them by date and squad in **Schedule**. Only Published rows reach athletes.
+- Erg targets = % of the athlete's **season-best** 2k or 20' **watts** (school year; falls back to last season only). Watts = 2.80 / (split/500)^3. UT2/UT1 show a range, AT/AN a single number; zone defaults in Settings `target.*` are PLACEHOLDERS for David to tune.
+- No benchmark -> no target shown, and the athlete is flagged to coaches (Slack alert in phase 2).
+- Targets are visible to the whole squad (no per-athlete privacy, by decision).
+- Logged sessions and make-ups are checked against the planned workout at display (`checkAgainstPlan`); make-ups use the missed day's plan. Never stored.
+- Logic in `apps-script/Plan.gs` (pure, portable); Sheet reports in `PlanSheet.gs`. `weekPlanForSite` is the payload shape for the athlete site.
+- Weight is never an input to targets.
 
 ## Availability and make-ups
 
