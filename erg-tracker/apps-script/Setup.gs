@@ -11,6 +11,7 @@ function onOpen() {
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()
+    .addItem('Copy last week (as drafts)', 'copyLastWeek')
     .addItem('Preview week ahead', 'previewWeekAhead')
     .addItem('Check week against plan', 'checkWeekAgainstPlan')
     .addSeparator()

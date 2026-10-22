@@ -72,6 +72,27 @@ function freshTab_(name) {
   return sheet;
 }
 
+/** Copies last week's Schedule rows into the chosen week as unpublished drafts. */
+function copyLastWeek() {
+  var start = askWeekStart_('Copy last week into', mondayFrom_(0));
+  if (!start) return;
+  var ui = SpreadsheetApp.getUi();
+  var schedule = readObjects_(TABS.SCHEDULE);
+  var end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+  var existing = schedule.filter(function (r) { return isDate_(r.Date) && r.Date >= start && r.Date < end; });
+  if (existing.length) {
+    ui.alert('That week already has ' + existing.length + ' Schedule rows. Nothing copied, so nothing is doubled up.');
+    return;
+  }
+  var rows = copyWeekRows(schedule, start);
+  if (!rows.length) {
+    ui.alert('The week before has no Schedule rows to copy.');
+    return;
+  }
+  appendObjects_(TABS.SCHEDULE, rows);
+  ui.alert('Copied ' + rows.length + ' sessions as drafts. Edit them, then tick Published.');
+}
+
 /** Coach preview of the week: every session, piece and athlete target, drafts included. */
 function previewWeekAhead() {
   var start = askWeekStart_('Preview week ahead', mondayFrom_(0));

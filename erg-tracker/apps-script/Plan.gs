@@ -287,3 +287,25 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
   out.hit = anyTarget ? allIn : null;
   return out;
 }
+
+/**
+ * Schedule rows for the week starting toStart, copied from the week before
+ * with dates moved forward 7 days. Copies are drafts (Published = false) so
+ * coaches edit them before athletes see anything.
+ */
+function copyWeekRows(schedule, toStart) {
+  var from = new Date(toStart.getFullYear(), toStart.getMonth(), toStart.getDate() - 7);
+  var to = new Date(toStart.getFullYear(), toStart.getMonth(), toStart.getDate());
+  return schedule.filter(function (r) {
+    return isDate_(r.Date) && r.Date >= from && r.Date < to;
+  }).sort(function (a, b) { return a.Date - b.Date; }).map(function (r) {
+    return {
+      'Date': new Date(r.Date.getFullYear(), r.Date.getMonth(), r.Date.getDate() + 7),
+      'Squad': r.Squad,
+      'Session': r.Session,
+      'Workout ID': r['Workout ID'],
+      'Published': false,
+      'Notes': r.Notes
+    };
+  });
+}
