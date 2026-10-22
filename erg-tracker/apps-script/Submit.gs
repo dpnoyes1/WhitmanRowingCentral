@@ -1,0 +1,187 @@
+/**
+ * Form submit handling: turns a response into Entries + Intervals rows, or a
+ * Benchmarks row. All times are converted to seconds here.
+ *
+ * parseSubmission() is pure (no Sheet or Form calls) so it can be tested in
+ * Node and reused for Slack entries in phase 2.
+ */
+
+/** Installable trigger target (form submit). */
+function onFormSubmit(e) {
+  processResponse_(e.response);
+}
+
+function processResponse_(response) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var responseId = response.getId();
+    if (alreadyProcessed_(responseId)) return 'skipped';
+    var answers = {};
+    response.getItemResponses().forEach(function (ir) {
+      answers[ir.getItem().getTitle()] = ir.getResponse();
+    });
+    try {
+      var result = parseSubmission(answers, {
+        submittedAt: response.getTimestamp(),
+        responseId: responseId,
+        athleteIds: athleteIdByName_(),
+        newId: newId_,
+        parseDate: parseFormDate_
+      });
+      writeResult_(result);
+      return 'ok';
+    } catch (err) {
+      logChange_({
+        Who: 'form', Tab: '(form)', 'Row ID': responseId,
+        Note: 'SUBMIT ERROR: ' + err.message + '. Fix the data, then Erg Tracker > Process missed form responses.'
+      });
+      return 'error';
+    }
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function writeResult_(result) {
+  if (result.benchmark) appendObject_(TABS.BENCHMARKS, result.benchmark);
+  if (result.entry) {
+    appendObject_(TABS.ENTRIES, result.entry);
+    appendObjects_(TABS.INTERVALS, result.intervals);
+  }
+}
+
+function alreadyProcessed_(responseId) {
+  var tabs = [TABS.ENTRIES, TABS.BENCHMARKS];
+  for (var i = 0; i < tabs.length; i++) {
+    var sheet = tab_(tabs[i]);
+    var col = HEADERS[tabs[i]].indexOf('Response ID') + 1;
+    var last = sheet.getLastRow();
+    if (last < 2) continue;
+    var found = sheet.getRange(2, col, last - 1, 1).createTextFinder(responseId)
+      .matchEntireCell(true).findNext();
+    if (found) return true;
+  }
+  return false;
+}
+
+/** Menu item: re-runs every form response not yet in Entries/Benchmarks. */
+function processMissedResponses() {
+  var form = FormApp.openById(getSettings()['form.id']);
+  var counts = { ok: 0, skipped: 0, error: 0 };
+  form.getResponses().forEach(function (r) { counts[processResponse_(r)] += 1; });
+  SpreadsheetApp.getUi().alert('Processed ' + counts.ok + ', already in the Sheet ' +
+    counts.skipped + ', errors ' + counts.error + ' (see Change log).');
+}
+
+/**
+ * answers: {question title: answer string}
+ * ctx: { submittedAt, responseId, athleteIds: {name: id}, newId(prefix), parseDate(str) }
+ * Returns { entry, intervals } or { benchmark }.
+ */
+function parseSubmission(answers, ctx) {
+  var a = function (title) {
+    var v = answers[title];
+    return v === undefined || v === null ? '' : String(v).trim();
+  };
+  var num = function (title) {
+    var v = a(title);
+    if (v === '') return '';
+    var n = Number(v);
+    if (isNaN(n)) throw new Error('"' + title + '" is not a number: ' + v);
+    return n;
+  };
+
+  var athlete = a(Q.ATHLETE);
+  var athleteId = ctx.athleteIds[athlete];
+  if (!athleteId) throw new Error('Athlete "' + athlete + '" is not on the Roster');
+  var base = {
+    'Submitted at': ctx.submittedAt,
+    'Date': ctx.parseDate(a(Q.DATE)),
+    'Athlete ID': athleteId,
+    'Athlete': athlete,
+    'Entered by': a(Q.ENTERED_BY),
+    'Source': 'Form',
+    'Review status': '',
+    'Response ID': ctx.responseId
+  };
+
+  var logType = a(Q.LOG_TYPE);
+  if (logType === LOG_TYPES.BENCHMARK) return { benchmark: parseBenchmark_(a, num, base, ctx) };
+
+  var entry = Object.assign({}, base, { 'Entry ID': ctx.newId('E') });
+  if (logType === LOG_TYPES.PRACTICE) {
+    entry['Session type'] = 'Practice';
+    var status = a(Q.STATUS);
+    entry['Status'] = status === STATUSES.OUT ? 'Out' : status === STATUSES.MODIFIED ? 'Modified' : 'Full';
+    if (entry['Status'] === 'Out') {
+      entry['Coach note'] = a(Q.OUT_NOTE);
+      return { entry: entry, intervals: [] };
+    }
+  } else if (logType === LOG_TYPES.OYO) {
+    entry['Session type'] = 'OYO';
+  } else if (logType === LOG_TYPES.MAKEUP) {
+    entry['Session type'] = 'Make-up';
+    entry['Status'] = 'Full';
+    entry['Make-up for date'] = ctx.parseDate(a(Q.MAKEUP_FOR));
+  } else {
+    throw new Error('Unknown log type "' + logType + '"');
+  }
+
+  var intervals = [];
+  for (var n = 1; n <= MAX_INTERVALS; n++) {
+    var t = qInterval(n);
+    if (a(t.WORK_TIME) === '') break;
+    intervals.push({
+      'Entry ID': entry['Entry ID'],
+      'Interval #': n,
+      'Work s': parseTime(a(t.WORK_TIME)),
+      'Work m': num(t.WORK_M),
+      'Avg rate': num(t.RATE),
+      'Rest s': a(t.REST_TIME) === '' ? '' : parseTime(a(t.REST_TIME)),
+      'Rest m': num(t.REST_M)
+    });
+  }
+  if (!intervals.length) throw new Error('No intervals entered');
+  var sum = function (key) {
+    return Math.round(intervals.reduce(function (s, iv) { return s + (Number(iv[key]) || 0); }, 0) * 10) / 10;
+  };
+
+  Object.assign(entry, {
+    'Activity': a(Q.ACTIVITY),
+    'Warmup s': parseTime(a(Q.WARMUP)),
+    'Work s': sum('Work s'),
+    'Rest s': sum('Rest s'),
+    'Cooldown s': a(Q.COOLDOWN) === '' ? 0 : parseTime(a(Q.COOLDOWN)),
+    'Work m': sum('Work m'),
+    'Rest m': sum('Rest m'),
+    'Main set': a(Q.MAIN_SET),
+    'Zone': a(Q.ZONE),
+    'RPE': num(Q.RPE),
+    'Avg HR': num(Q.HR),
+    'Drag factor': num(Q.DRAG),
+    'Intervals': intervals.length,
+    'Coach note': a(Q.NOTE)
+  });
+  return { entry: entry, intervals: intervals };
+}
+
+function parseBenchmark_(a, num, base, ctx) {
+  var label = a(Q.TEST);
+  var spec = BENCHMARK_TESTS[label];
+  if (!spec) throw new Error('Unknown test "' + label + '"');
+  var timed = spec.score === 'time';
+  var splitsText = a(timed ? Q.T_SPLITS : Q.D_SPLITS);
+  var splits = splitsText === '' ? '' : splitsText.split(/[,\s]+/).filter(String)
+    .map(parseTime).join(',');
+  return Object.assign({}, base, {
+    'Benchmark ID': ctx.newId('B'),
+    'Test': spec.key || label,
+    'Time s': timed ? parseTime(a(Q.T_TIME)) : '',
+    'Meters': timed ? '' : num(Q.D_METERS),
+    'Avg rate': num(timed ? Q.T_RATE : Q.D_RATE),
+    'Drag factor': num(timed ? Q.T_DRAG : Q.D_DRAG),
+    'Splits s': splits,
+    'Coach note': a(timed ? Q.T_NOTE : Q.D_NOTE)
+  });
+}
