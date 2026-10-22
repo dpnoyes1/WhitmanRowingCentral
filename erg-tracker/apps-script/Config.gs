@@ -12,7 +12,9 @@ var TABS = {
   WEIGHTS: 'Weights',
   PRACTICES: 'Practices',
   SETTINGS: 'Settings',
-  CHANGE_LOG: 'Change log'
+  CHANGE_LOG: 'Change log',
+  WORKOUTS: 'Workouts',
+  SCHEDULE: 'Schedule'
 };
 
 var HEADERS = {};
@@ -46,12 +48,24 @@ HEADERS[TABS.SETTINGS] = ['Key', 'Value', 'Notes'];
 HEADERS[TABS.CHANGE_LOG] = [
   'Timestamp', 'Who', 'Tab', 'Cell', 'Row ID', 'Field', 'Old value', 'New value', 'Note'
 ];
+// Workout library: one row per piece. Work/Rest/Start every are typed as m:ss
+// by coaches (like Settings) and parsed with parseTime when read.
+HEADERS[TABS.WORKOUTS] = [
+  'Workout ID', 'Name', 'Piece #', 'Reps', 'Work type', 'Work', 'Rest', 'Start every',
+  'Activity', 'Zone', 'Base', 'Target low %', 'Target high %', 'Rate', 'Notes'
+];
+// One row per session per day. Published = No keeps it hidden from athletes.
+HEADERS[TABS.SCHEDULE] = [
+  'Date', 'Squad', 'Session', 'Workout ID', 'Published', 'Notes'
+];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
+TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
+TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
 
 /** Tabs whose manual edits are written to the Change log. */
 var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, TABS.ROSTER];
@@ -119,6 +133,16 @@ var SETTINGS_DEFAULTS = [
   ['shift.window_pad_min', '30', 'Classification window = shift +/- this'],
   ['season.winter_start', '', 'YYYY-MM-DD. Used by "Generate practice schedule"'],
   ['season.winter_end', '', 'YYYY-MM-DD'],
+  ['target.default_base', '2k', "Base when a workout piece leaves Base blank: 2k or 20'"],
+  ['target.UT2.2000m', '55-65', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
+  ['target.UT1.2000m', '65-75', 'PLACEHOLDER'],
+  ['target.AT.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
+  ['target.AN.2000m', '95', 'PLACEHOLDER'],
+  ['target.UT2.20min', '65-75', "PLACEHOLDER: % of season-best 20' watts"],
+  ['target.UT1.20min', '75-85', 'PLACEHOLDER'],
+  ['target.AT.20min', '95', 'PLACEHOLDER'],
+  ['target.AN.20min', '110', 'PLACEHOLDER'],
+  ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
   ['form.id', '', 'Written by setup()'],
   ['form.edit_url', '', 'Written by setup()'],
   ['form.share_url', '', 'Prefilled link to share with athletes. Written by setup()']

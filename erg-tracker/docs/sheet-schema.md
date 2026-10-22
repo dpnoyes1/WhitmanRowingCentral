@@ -34,6 +34,31 @@ Date, Athlete ID, Athlete, Weight lb, Entered by, Note.
 ## Practices
 Date, Squad, Shift (Early / Late), Start, End, Window start, Window end (text HH:MM), Status (Scheduled / Canceled), Planned workout, Notes.
 
+## Workouts (coach-typed library, one row per piece)
+| Column | Notes |
+|---|---|
+| Workout ID | Rows sharing an ID are one workout |
+| Name | Shown to athletes; first piece's name is used |
+| Piece # | Order within the workout |
+| Reps | Blank = 1 |
+| Work type | Time / Distance |
+| Work | m:ss for Time (20:00), meters for Distance (500 or 500m) |
+| Rest | m:ss, blank, or Undefined |
+| Start every | m:ss send-off for common starts (8 x 500m every 3:30). Rest is then treated as undefined |
+| Activity | Defaults to Erg (RowErg); only RowErg gets watts targets |
+| Zone | UT2 / UT1 / AT / AN |
+| Base | 2k / 20'. Blank = Settings `target.default_base` |
+| Target low %, Target high % | % of season-best watts on the base. Blank = zone default from Settings. Equal or one blank = single target |
+| Rate | Optional rate cap or target, shown as text |
+| Notes | |
+
+Work, Rest and Start every are text typed like Settings values and parsed with `parseTime` when read; they are plan config, not logged data.
+
+## Schedule
+Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID, Published (checkbox; unticked rows never reach athletes), Notes.
+
+Targets, plan matches and hits are computed when read (`Plan.gs`), never stored. Practices' "Planned workout" column is free text; the Schedule tab is what targets and plan checks use.
+
 ## Settings
 Key, Value, Notes. Values are text. See `SETTINGS_DEFAULTS` in Config.gs for every key.
 
