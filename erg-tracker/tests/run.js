@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'TeamGms.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -179,6 +179,89 @@ test('practice schedule: even Fri early, odd Fri late, no weekends', () => {
   assert.strictEqual(rows[1]['Window end'], '19:30');
   const fri22 = g.practiceDays(new Date(2027, 0, 22), new Date(2027, 0, 22), s);
   assert.strictEqual(fri22[0].Shift, 'Early');
+});
+
+test('team GMS: best 2k/20\' per rower, team-wide raw rank bands, year to date', () => {
+  // Fake athletes. All at the reference weight (270) so GMS % = 100 * 300 / (0.75 * t2k).
+  const roster = [];
+  const weights = [];
+  const benchmarks = [];
+  for (let i = 1; i <= 18; i++) {
+    const id = 'T' + String(i).padStart(3, '0');
+    roster.push({ 'Athlete ID': id, Name: 'Test Rower ' + i, Squad: i % 2 ? 'Varsity' : 'Novice', Role: 'Rower' });
+    weights.push({ Date: new Date(2025, 7, 1), 'Athlete ID': id, 'Weight lb': 270 });
+    benchmarks.push({ Date: new Date(2026, 8, 15), 'Athlete ID': id, Test: '2000m', 'Time s': 400 + i, Meters: '' });
+  }
+  roster.push({ 'Athlete ID': 'C001', Name: 'Test Cox', Squad: 'Varsity', Role: 'Coxswain' });
+  benchmarks.push({ Date: new Date(2026, 8, 15), 'Athlete ID': 'C001', Test: '2000m', 'Time s': 380 });
+  // Ignored: 500m (not in this view), rejected, after the as-of date.
+  benchmarks.push({ Date: new Date(2026, 8, 16), 'Athlete ID': 'T018', Test: '500m', 'Time s': 80 });
+  benchmarks.push({ Date: new Date(2026, 8, 16), 'Athlete ID': 'T018', Test: '2000m', 'Time s': 390, 'Review status': 'Rejected' });
+  benchmarks.push({ Date: new Date(2026, 9, 30), 'Athlete ID': 'T017', Test: '2000m', 'Time s': 390 });
+  // A 20' that beats T001's 2k: 2k split = 600000/6200 - 8.5
+  benchmarks.push({ Date: new Date(2026, 9, 1), 'Athlete ID': 'T001', Test: '20min', 'Time s': '', Meters: 6200 });
+  // Last year: same window (Aug 1 + 82 days) vs a later full-year result. T002 was Novice then.
+  benchmarks.push({ Date: new Date(2025, 8, 20), 'Athlete ID': 'T002', Test: '2000m', 'Time s': 450 });
+  benchmarks.push({ Date: new Date(2026, 1, 20), 'Athlete ID': 'T002', Test: '2000m', 'Time s': 420 });
+  benchmarks.push({ Date: new Date(2025, 8, 20), 'Athlete ID': 'T003', Test: '2000m', 'Time s': 440 });
+  const squadHistory = [{ 'School year': '2025-26', 'Athlete ID': 'T002', Squad: 'Novice' }];
+  const settings = {}; g.SETTINGS_DEFAULTS.forEach(([k, v]) => { settings[k] = v; });
+  const asOf = new Date(2026, 9, 22);
+  const years = g.teamGmsByYear({ benchmarks, weights, roster, squadHistory, settings, asOf });
+  const pct = t => 100 * 300 / (0.75 * t);
+
+  assert.strictEqual(years.map(y => y.schoolYear).join(), '2026-27,2025-26');
+  const cur = years[0];
+  assert.strictEqual(cur.athletes.length, 18, 'coxswain left out');
+  const t1 = (600000 / 6200 - 8.5) * 4;
+  assert.strictEqual(cur.athletes[0].athleteId, 'T001');
+  near(cur.athletes[0].best2k, t1, 1e-9, 'T001 ranks on 20\' equivalent');
+  near(cur.athletes[0].bestGms, pct(t1), 1e-9, 'T001 best GMS from 20\'');
+  near(cur.athletes.find(a => a.athleteId === 'T018').best2k, 418, 1e-9, 'rejected and 500m ignored');
+  near(cur.athletes.find(a => a.athleteId === 'T017').best2k, 417, 1e-9, 'future result ignored');
+
+  const avg = ids => ids.reduce((s, i) => s + (i === 1 ? pct(t1) : pct(400 + i)), 0) / ids.length;
+  const range = (a, b) => Array.from({ length: b - a + 1 }, (_, k) => a + k);
+  near(cur.groups.team.avg, avg(range(1, 18)), 1e-9, 'team');
+  assert.strictEqual(cur.groups.team.n, 18);
+  near(cur.groups.varsity.avg, avg(range(1, 18).filter(i => i % 2)), 1e-9, 'varsity');
+  near(cur.groups.novice.avg, avg(range(1, 18).filter(i => !(i % 2))), 1e-9, 'novice');
+  near(cur.groups.rank1_8.avg, avg(range(1, 8)), 1e-9, '1-8');
+  near(cur.groups.rank9_16.avg, avg(range(9, 16)), 1e-9, '9-16');
+  near(cur.groups.rank17.avg, avg([17, 18]), 1e-9, '17+');
+
+  const last = years[1];
+  assert.strictEqual(last.end.getMonth(), 9, 'last year to date ends Oct');
+  assert.strictEqual(last.end.getDate(), 22);
+  near(last.groups.team.avg, (pct(450) + pct(440)) / 2, 1e-9, 'last year to date');
+  assert.strictEqual(last.groups.novice.n, 1, 'squad from history');
+  assert.strictEqual(last.groups.varsity.n, 1, 'no history falls back to Roster');
+  near(last.fullYear.team.avg, (pct(420) + pct(440)) / 2, 1e-9, 'last full year');
+
+  // No weight on or before the test: still ranked, but no GMS %.
+  const early = g.teamGmsByYear({ benchmarks: [{ Date: new Date(2026, 7, 5), 'Athlete ID': 'T001', Test: '2000m', 'Time s': 420 }],
+    weights: [{ Date: new Date(2026, 7, 10), 'Athlete ID': 'T001', 'Weight lb': 270 }], roster, squadHistory: [], settings, asOf });
+  assert.strictEqual(early[0].athletes[0].bestGms, null);
+  assert.strictEqual(early[0].groups.team.avg, null);
+  assert.strictEqual(early[0].groups.team.tested, 1);
+
+  // Site view: averages only, small groups hidden, no names or weights.
+  const site = g.teamGmsForSite(years, 3);
+  assert.strictEqual(site[0].groups.rank17.hidden, true);
+  assert.strictEqual(site[0].groups.rank17.avg, null);
+  assert.strictEqual(site[0].groups.rank1_8.avg, Math.round(avg(range(1, 8)) * 10) / 10);
+  assert.strictEqual(site[1].groups.team.hidden, true);
+  const json = JSON.stringify(site);
+  assert.ok(!/Test Rower|T0\d\d|weight|lb|best2k|rank"/i.test(json), 'site view leaks no athlete data: ' + json);
+});
+
+test('team GMS settings and labels', () => {
+  assert.strictEqual(g.schoolYearLabel(2026), '2026-27');
+  assert.strictEqual(g.schoolYearLabel(2099), '2099-00');
+  const o = g.gmsOptionsFromSettings({ 'gms.standard_s': '310', 'gms.exponent': 'x' });
+  assert.strictEqual(o.standard, 310);
+  assert.strictEqual(o.exponent, 0.222);
+  assert.ok(g.HEADERS[g.TABS.SQUAD_HISTORY].includes('Squad'));
 });
 
 test('no weight anywhere in the form', () => {

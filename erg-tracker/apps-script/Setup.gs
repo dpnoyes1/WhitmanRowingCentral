@@ -8,6 +8,8 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Erg Tracker')
     .addItem('Set up Sheet and Form', 'setup')
     .addItem('Refresh form name lists from Roster', 'refreshFormDropdowns')
+    .addItem('Team GMS report', 'teamGmsReport')
+    .addItem('Save squads for this school year', 'snapshotSquads')
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()

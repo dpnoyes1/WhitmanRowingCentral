@@ -12,7 +12,8 @@ var TABS = {
   WEIGHTS: 'Weights',
   PRACTICES: 'Practices',
   SETTINGS: 'Settings',
-  CHANGE_LOG: 'Change log'
+  CHANGE_LOG: 'Change log',
+  SQUAD_HISTORY: 'Squad history'
 };
 
 var HEADERS = {};
@@ -46,12 +47,15 @@ HEADERS[TABS.SETTINGS] = ['Key', 'Value', 'Notes'];
 HEADERS[TABS.CHANGE_LOG] = [
   'Timestamp', 'Who', 'Tab', 'Cell', 'Row ID', 'Field', 'Old value', 'New value', 'Note'
 ];
+// Squad each rower was on in a past school year ("2025-26"). Missing rows fall back to Roster.
+HEADERS[TABS.SQUAD_HISTORY] = ['School year', 'Athlete ID', 'Athlete', 'Squad'];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
+TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
 
 /** Tabs whose manual edits are written to the Change log. */
 var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, TABS.ROSTER];
@@ -109,6 +113,7 @@ var SETTINGS_DEFAULTS = [
   ['gms.offset_20min_s', '8.5', '2k split = 20 min split - offset'],
   ['gms.divisor_500m', '0.895', '2k split = 500m split / divisor'],
   ['gms.divisor_100m', '0.786', '2k split = 100m split / divisor'],
+  ['team_gms.min_group', '3', 'Team site hides a GMS average with fewer rowers than this'],
   ['rate_cap_30r20', '20', '30r20 valid when average rate <= this'],
   ['shift.early.days', 'Mon,Wed,Fri-even', 'Girls winter early shift'],
   ['shift.early.start', '15:30', ''],

@@ -37,5 +37,8 @@ Date, Squad, Shift (Early / Late), Start, End, Window start, Window end (text HH
 ## Settings
 Key, Value, Notes. Values are text. See `SETTINGS_DEFAULTS` in Config.gs for every key.
 
+## Squad history
+School year (text, e.g. 2025-26), Athlete ID, Athlete, Squad. Filled by "Save squads for this school year"; used so past years compare against the squads as they were.
+
 ## Change log
 Timestamp, Who, Tab, Cell, Row ID, Field, Old value, New value, Note.
