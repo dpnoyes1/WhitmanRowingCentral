@@ -10,6 +10,7 @@ function onOpen() {
     .addItem('Refresh form name lists from Roster', 'refreshFormDropdowns')
     .addItem('Team GMS report', 'teamGmsReport')
     .addItem('Save squads for this school year', 'snapshotSquads')
+    .addItem('Regatta report', 'regattaReport')
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()
@@ -99,6 +100,7 @@ function ensureTab_(name) {
     }
   });
   if (name === TABS.ROSTER) addRosterValidation_(sheet);
+  if (name === TABS.RACES) addRaceValidation_(sheet);
   return sheet;
 }
 

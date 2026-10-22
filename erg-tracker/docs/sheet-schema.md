@@ -40,5 +40,8 @@ Key, Value, Notes. Values are text. See `SETTINGS_DEFAULTS` in Config.gs for eve
 ## Squad history
 School year (text, e.g. 2025-26), Athlete ID, Athlete, Squad. Filled by "Save squads for this school year"; used so past years compare against the squads as they were.
 
+## Races (coach-only)
+Date, Regatta, Championship (checkbox), Event, Boat (8+ / 4+), Round, Time, Place, 1st time, 2nd time, 3rd time, Seat 1 … Seat 8, Cox, Notes. Times are typed as m:ss.0 text and parsed when read. Seat 1 = bow, Seat 8 = stroke; a 4+ uses Seats 1-4. Seats are Roster names.
+
 ## Change log
 Timestamp, Who, Tab, Cell, Row ID, Field, Old value, New value, Note.

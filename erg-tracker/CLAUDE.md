@@ -23,7 +23,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 
 ## Sheet tabs
 
-Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Squad history. Full column list in `docs/sheet-schema.md`.
+Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Squad history, Races (coach-only). Full column list in `docs/sheet-schema.md`.
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
 - Entries: one row per session (Practice / OYO / Make-up). `Source` is Form now; Slack and Logbook later.
@@ -74,7 +74,14 @@ Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (dec
 - Years compare school year to date (same number of days after Aug 1), not by test week. Past full years shown on the coach tab for reference.
 - Past-year squads come from Squad history ("Save squads for this school year" each season); missing rows fall back to Roster.
 - Team site gets `teamGmsForSite`: averages only, no names, ranks or weights. A group with fewer than `team_gms.min_group` (3) rowers shows no average.
-- Next: coach-only regatta view (Regattas, Lineups, race results) comparing boat GMS % to race performance year to year, e.g. the Stotesbury V8.
+
+## Regatta view (coach-only)
+
+Compares erg standards with racing, e.g. the Stotesbury V8 year to year (decided 2026-10-22). Logic in `apps-script/Regatta.gs`; menu "Regatta report".
+- Races tab, one row per race: Date, Regatta, Championship (checkbox), Event, Boat (8+ / 4+), Round, Time, Place, 1st/2nd/3rd times, Seat 1 (bow) to Seat 8 (stroke), Cox. Times typed as m:ss and parsed when read. 4+ uses Seats 1-4.
+- Each rower's best 2k and best 20' in the school year up to race day, shown separately as raw averages and GMS %. Cox never counts.
+- Racing is compared by % off the winner (negative = winning margin over 2nd) and % off 3rd, not GMS predicted time: that only holds on flat water with no wind.
+- Never sent to the team site.
 
 ## Schedule and classification (girls, winter)
 

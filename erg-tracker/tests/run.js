@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'TeamGms.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'TeamGms.gs', 'Regatta.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -262,6 +262,62 @@ test('team GMS settings and labels', () => {
   assert.strictEqual(o.standard, 310);
   assert.strictEqual(o.exponent, 0.222);
   assert.ok(g.HEADERS[g.TABS.SQUAD_HISTORY].includes('Squad'));
+});
+
+test('regatta: crew erg averages up to race day, % off winner and 3rd', () => {
+  const roster = [];
+  const weights = [];
+  const benchmarks = [];
+  for (let i = 1; i <= 9; i++) {
+    const id = 'T' + String(i).padStart(3, '0');
+    roster.push({ 'Athlete ID': id, Name: 'Test Rower ' + i, Squad: 'Varsity', Role: i === 9 ? 'Coxswain' : 'Rower' });
+    weights.push({ Date: new Date(2025, 7, 1), 'Athlete ID': id, 'Weight lb': 270 });
+    if (i <= 7) benchmarks.push({ Date: new Date(2026, 2, 1), 'Athlete ID': id, Test: '2000m', 'Time s': 420 });
+  }
+  benchmarks.push({ Date: new Date(2026, 2, 2), 'Athlete ID': 'T001', Test: '20min', Meters: 5000 });
+  benchmarks.push({ Date: new Date(2026, 2, 3), 'Athlete ID': 'T001', Test: '20min', Meters: 5100 });
+  benchmarks.push({ Date: new Date(2026, 4, 20), 'Athlete ID': 'T002', Test: '2000m', 'Time s': 400 }); // after race day
+  benchmarks.push({ Date: new Date(2025, 2, 1), 'Athlete ID': 'T003', Test: '2000m', 'Time s': 390 }); // last school year
+  const seats = {};
+  for (let i = 1; i <= 8; i++) seats['Seat ' + i] = 'Test Rower ' + i;
+  const settings = {}; g.SETTINGS_DEFAULTS.forEach(([k, v]) => { settings[k] = v; });
+  const races = [
+    { Date: new Date(2026, 4, 16), Regatta: 'Fake Cup', Championship: true, Event: 'Girls V8', Boat: '8+', Round: 'Final',
+      Time: '5:10.0', Place: 3, '1st time': '5:00.0', '2nd time': '5:05.0', '3rd time': '5:10.0', ...seats, Cox: 'Test Rower 9' },
+    { Date: new Date(2026, 4, 9), Regatta: 'Fake Cup', Championship: false, Event: 'Girls V8', Boat: '8+', Round: 'Heat',
+      Time: '5:00.0', Place: 1, '1st time': '5:00.0', '2nd time': '5:06.0', '3rd time': '', ...seats, 'Seat 8': 'Not A Rower' },
+    { Date: new Date(2026, 4, 9), Regatta: 'Fake Cup', Event: 'Girls 4+', Boat: '4+', Time: '', Place: '', ...seats },
+    { Date: '', Regatta: 'Blank row' }
+  ];
+  const out = g.raceSummaries({ races, benchmarks, weights, roster, settings });
+  assert.strictEqual(out.length, 3);
+  assert.strictEqual(out.map(r => r.event + r.round).join(), 'Girls 4+,Girls V8Final,Girls V8Heat', 'grouped by event, newest first');
+
+  const final = out[1];
+  assert.strictEqual(final.championship, true);
+  near(final.vsWinnerPct, 100 * 10 / 300, 1e-9, 'vs winner');
+  near(final.vsThirdPct, 0, 1e-9, 'vs 3rd');
+  assert.strictEqual(final.seats, 8);
+  assert.strictEqual(final.tested, 7, 'seat 8 has no test; cox never counted');
+  assert.strictEqual(final.untested.join(), 'Test Rower 8');
+  near(final.avg2k.avg, 420, 1e-9, 'later 2k and last-year 2k ignored');
+  assert.strictEqual(final.avg2k.n, 7);
+  near(final.gms2k.avg, 100 * 300 / (0.75 * 420), 1e-9, '2k GMS');
+  assert.strictEqual(final.avg20min.avg, 5100, 'best 20\'');
+  assert.strictEqual(final.avg20min.n, 1);
+  near(final.gms20min.avg, g.gmsPercent('20min', 5100, 270), 1e-9, '20\' GMS');
+
+  const heat = out[2];
+  near(heat.vsWinnerPct, 100 * (300 - 306) / 306, 1e-9, 'win shows margin over 2nd');
+  assert.strictEqual(heat.vsThirdPct, null);
+  assert.strictEqual(heat.unknown.join(), 'Not A Rower');
+
+  const four = out[0];
+  assert.strictEqual(four.seats, 4);
+  assert.strictEqual(four.tested, 4, '4+ reads Seats 1-4 only');
+  assert.strictEqual(four.vsWinnerPct, null);
+  assert.strictEqual(four.place, null);
+  Object.keys(races[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.RACES].includes(k), 'race column ' + k));
 });
 
 test('no weight anywhere in the form', () => {

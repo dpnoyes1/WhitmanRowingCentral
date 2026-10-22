@@ -92,8 +92,10 @@ function teamGmsMean_(list) {
 /**
  * Per-athlete bests for one window. Rowers only (coxswains and IDs not on
  * the Roster are skipped); rejected results are ignored.
- * Returns [{ athleteId, name, squad, best2k, bestGms, rank }] sorted by rank.
- * bestGms is null when no result in the window has a weight on or before it.
+ * Returns [{ athleteId, name, squad, best2k, bestGms, rank, byTest }] sorted
+ * by rank. bestGms is null when no result in the window has a weight on or
+ * before it. byTest['2000m'|'20min'] = { raw, gms }: best raw result (seconds
+ * or meters) and best GMS % on that test alone.
  */
 function teamGmsAthletes(opts, start, end) {
   var o = gmsOptionsFromSettings(opts.settings);
@@ -124,11 +126,15 @@ function teamGmsAthletes(opts, start, end) {
         name: r.Name,
         squad: history[label + '|' + b['Athlete ID']] || String(r.Squad || '').trim(),
         best2k: t2k,
-        bestGms: pct
+        bestGms: pct,
+        byTest: {}
       };
     }
     if (t2k < a.best2k) a.best2k = t2k;
     if (pct !== null && (a.bestGms === null || pct > a.bestGms)) a.bestGms = pct;
+    var t = a.byTest[b.Test] || (a.byTest[b.Test] = { raw: result, gms: null });
+    if (b.Test === '20min' ? result > t.raw : result < t.raw) t.raw = result;
+    if (pct !== null && (t.gms === null || pct > t.gms)) t.gms = pct;
   });
 
   var list = Object.keys(byId).map(function (k) { return byId[k]; });

@@ -13,7 +13,8 @@ var TABS = {
   PRACTICES: 'Practices',
   SETTINGS: 'Settings',
   CHANGE_LOG: 'Change log',
-  SQUAD_HISTORY: 'Squad history'
+  SQUAD_HISTORY: 'Squad history',
+  RACES: 'Races'
 };
 
 var HEADERS = {};
@@ -49,6 +50,12 @@ HEADERS[TABS.CHANGE_LOG] = [
 ];
 // Squad each rower was on in a past school year ("2025-26"). Missing rows fall back to Roster.
 HEADERS[TABS.SQUAD_HISTORY] = ['School year', 'Athlete ID', 'Athlete', 'Squad'];
+// Coach-only. One row per race; times typed as m:ss and parsed when read. Seat 1 = bow, Seat 8 = stroke; 4+ uses Seats 1-4.
+HEADERS[TABS.RACES] = [
+  'Date', 'Regatta', 'Championship', 'Event', 'Boat', 'Round', 'Time', 'Place',
+  '1st time', '2nd time', '3rd time',
+  'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'Notes'
+];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 var TEXT_COLUMNS = {};
@@ -56,6 +63,7 @@ TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
 TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
+TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
 
 /** Tabs whose manual edits are written to the Change log. */
 var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, TABS.ROSTER];
