@@ -37,7 +37,7 @@ You now have all eight tabs, the Form, a raw responses backup tab, and two trigg
 Submit one Practice with two intervals and one 2000m test through the share link, then check:
 - Entries has one row, with Warmup s = 900 if you left 15:00.
 - Intervals has two rows.
-- Benchmarks has the 2k with Time s in seconds (7:42.8 -> 462.8).
+- Benchmarks has the 2k with Time s in seconds (7:42.8 -> 462.8), and Entries has a second row for that test session with the same Benchmark ID.
 
 Delete the test rows when you're done (the Change log will record the deletions as edits).
 

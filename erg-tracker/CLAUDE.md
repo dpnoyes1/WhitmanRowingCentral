@@ -56,6 +56,8 @@ Weekly weighted minutes. Standard group Required 60 / Elite 120. Performance gro
 
 30r20 is valid when **average** rate <= 20.
 
+Every benchmark test also counts as a session (decided 2026-10-22): it writes a Benchmarks row and an Entries row (Practice or OYO, with warmup, cooldown and RPE) plus one Intervals row, linked both ways by `Entry ID` / `Benchmark ID`. Default zones per test (100m/500m/2000m AN, 20' AT, 30r20 UT1) are an assumption in `BENCHMARK_TESTS`.
+
 GMS math (implemented in `apps-script/Gms.gs`, tested against the planning example):
 1. 2k-equivalent split: 20' split - 8.5s; 500m split / 0.895; 100m split (time x 5) / 0.786. T = split x 4.
 2. Predicted 1500m 8+ time: P = 0.75 x T x (W / 270)^0.222.
@@ -92,7 +94,6 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 ## Open questions
 
 - Spike threshold (placeholder +30%). Performance default targets (placeholder 90/180).
-- Should a benchmark test also create an Entries row so it counts toward volume and practice completion? Currently it writes Benchmarks only.
 - Rewards for milestones and Elite. Team shoutouts in Slack.
 
 ## Out of scope by decision
