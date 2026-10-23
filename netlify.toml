@@ -5,6 +5,9 @@
   publish = "erg-tracker/site/public"
   functions = "erg-tracker/site/functions"
   command = "node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs"
+  # Skip the build (and its deploy credits) when nothing the site serves changed,
+  # e.g. Apps Script or docs only. Exit 0 = skip. (David, 2026-10-23)
+  ignore = "git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- erg-tracker/site/ netlify.toml"
 
 [functions]
   node_bundler = "esbuild"
