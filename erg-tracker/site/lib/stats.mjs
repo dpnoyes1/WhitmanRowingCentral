@@ -127,7 +127,29 @@ export function weekMinutes(entries, settings, monday) {
   return out;
 }
 
-/** OYO goal status for weighted OYO minutes. */
+/** True when 4 or more days of the Mon-Sun week starting `monday` fall in a break (Settings oyo.break.dates). */
+export function isBreakWeek(monday, settings) {
+  const ranges = (settings.oyoBreak && settings.oyoBreak.ranges) || [];
+  let n = 0;
+  for (let i = 0; i < 7; i++) {
+    const d = addDays(monday, i);
+    if (ranges.some((r) => d >= r.from && d <= r.to)) n++;
+  }
+  return n >= 4;
+}
+
+/**
+ * An athlete's OYO goals for one week: her usual Required and Elite, or the
+ * break goals in a break week (blank break goals keep her usual ones).
+ * Shaped like an athlete so oyoStatus takes it.
+ */
+export function oyoGoals(athlete, monday, settings) {
+  if (!isBreakWeek(monday, settings)) return { oyoRequired: athlete.oyoRequired, oyoElite: athlete.oyoElite, breakWeek: false };
+  const b = settings.oyoBreak;
+  return { oyoRequired: b.required ?? athlete.oyoRequired, oyoElite: b.elite ?? athlete.oyoElite, breakWeek: true };
+}
+
+/** OYO goal status for weighted OYO minutes, against an athlete's goals (or oyoGoals for one week). */
 export function oyoStatus(minutes, athlete) {
   if (minutes >= athlete.oyoElite) return 'elite';
   if (minutes >= athlete.oyoRequired) return 'required';
@@ -142,7 +164,7 @@ export function oyoWeekStreak(athlete, feed, today) {
   let n = 0;
   for (let mon = addDays(weekStart(today), -7); mon >= weekStart(first); mon = addDays(mon, -7)) {
     const w = weekMinutes(mine, feed.settings, mon)[athlete.id];
-    if (!w || w.oyo < athlete.oyoRequired) break;
+    if (!w || w.oyo < oyoGoals(athlete, mon, feed.settings).oyoRequired) break;
     n++;
   }
   return n;

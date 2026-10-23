@@ -436,6 +436,24 @@ test('steady splits, trend, projected 2k and month consistency', () => {
   assert.deepStrictEqual(S.monthConsistency(rec, '2026-10-23'), { done: 2, expected: 3, pct: 67 });
 });
 
+test('break weeks: 4+ break days use the break OYO goals; blank keeps her own', () => {
+  const st = { ...feed.settings, oyoBreak: { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: null } };
+  assert.ok(!S.isBreakWeek('2026-12-14', st));
+  assert.ok(S.isBreakWeek('2026-12-21', st));      // Dec 23-27: 5 break days
+  assert.ok(S.isBreakWeek('2026-12-28', st));
+  assert.ok(!S.isBreakWeek('2027-01-04', st));
+  assert.ok(!S.isBreakWeek('2026-12-21', feed.settings));
+  const a = { oyoRequired: 60, oyoElite: 120 };
+  assert.deepStrictEqual(S.oyoGoals(a, '2026-12-28', st), { oyoRequired: 30, oyoElite: 120, breakWeek: true });
+  assert.deepStrictEqual(S.oyoGoals(a, '2026-12-14', st), { oyoRequired: 60, oyoElite: 120, breakWeek: false });
+  assert.strictEqual(S.oyoStatus(40, S.oyoGoals(a, '2026-12-28', st)), 'required');
+  // The OYO board and her page use the break goals in a break week.
+  const f = { ...feed, settings: { ...feed.settings, oyoBreak: { ranges: [{ from: '2026-10-19', to: '2026-10-25' }], required: 1, elite: 2 } } };
+  const o = oyoView(f, TODAY);
+  assert.ok(o.breakWeek && !o.lastBreakWeek && o.rowers.every((r) => r.required === 1 && r.lastWeek.required >= 60));
+  assert.ok(athleteView(f, 'A901', TODAY).athlete.breakWeek);
+});
+
 test('insights: own page without flags, teammates none, coaches everything', async () => {
   const v = athleteView(feed, 'A901', TODAY);
   assert.strictEqual(v.insights.load.length, 8);

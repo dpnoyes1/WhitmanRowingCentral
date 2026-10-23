@@ -5,7 +5,7 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT
+  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -50,7 +50,7 @@ export function teamView(feed, today) {
       practiceMin += w.practice;
       oyoMin += w.oyo;
       if (w.oyo > 0) anyOyo++;
-      const s = oyoStatus(w.oyo, a);
+      const s = oyoStatus(w.oyo, oyoGoals(a, monday, feed.settings));
       if (s !== 'short') met++;
       if (s === 'elite') elite++;
     });
@@ -113,6 +113,7 @@ export function athleteView(feed, id, today) {
   const season = record.filter((r) => r.date >= yearStart);
   const week = record.filter((r) => r.date >= monday);
   const thisWeek = weekMinutes(mine, feed.settings, monday)[id] || { practice: 0, oyo: 0, total: 0 };
+  const goals = oyoGoals(a, monday, feed.settings);
 
   let seasonMin = 0, seasonMeters = 0;
   mine.forEach((e) => {
@@ -129,10 +130,10 @@ export function athleteView(feed, id, today) {
 
   return {
     today, weekStart: monday, yearStart,
-    athlete: { ...athleteSummary(a), active: a.active, oyoGroup: a.oyoGroup, oyoRequired: a.oyoRequired, oyoElite: a.oyoElite },
+    athlete: { ...athleteSummary(a), active: a.active, oyoGroup: a.oyoGroup, oyoRequired: goals.oyoRequired, oyoElite: goals.oyoElite, breakWeek: goals.breakWeek },
     week: {
       practicesDone: week.filter((r) => r.done).length, practicesExpected: week.length,
-      practiceMin: round(thisWeek.practice), oyoMin: round(thisWeek.oyo), oyoStatus: oyoStatus(thisWeek.oyo, a)
+      practiceMin: round(thisWeek.practice), oyoMin: round(thisWeek.oyo), oyoStatus: oyoStatus(thisWeek.oyo, goals)
     },
     season: {
       practicesDone: season.filter((r) => r.done).length, practicesExpected: season.length,
@@ -311,14 +312,15 @@ export function oyoView(feed, today) {
   const lastWeek = weekMinutes(feed.entries, feed.settings, lastMonday);
   const rowers = activeRowers(feed).map((a) => {
     const now = (thisWeek[a.id] || { oyo: 0 }).oyo, before = (lastWeek[a.id] || { oyo: 0 }).oyo;
+    const g = oyoGoals(a, monday, feed.settings), lg = oyoGoals(a, lastMonday, feed.settings);
     return {
-      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: a.oyoRequired, elite: a.oyoElite,
-      minutes: round(now), status: oyoStatus(now, a),
-      lastWeek: { minutes: round(before), status: oyoStatus(before, a) },
+      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: g.oyoRequired, elite: g.oyoElite,
+      minutes: round(now), status: oyoStatus(now, g),
+      lastWeek: { minutes: round(before), status: oyoStatus(before, lg), required: lg.oyoRequired, elite: lg.oyoElite },
       streak: oyoWeekStreak(a, feed, today)
     };
   }).sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
-  return { today, weekStart: monday, lastWeekStart: lastMonday, rowers };
+  return { today, weekStart: monday, lastWeekStart: lastMonday, breakWeek: isBreakWeek(monday, feed.settings), lastBreakWeek: isBreakWeek(lastMonday, feed.settings), rowers };
 }
 
 /**

@@ -101,6 +101,19 @@ function feedParseDay_(v) {
   return isNaN(d) ? '' : dayKey_(d);
 }
 
+/**
+ * Break date ranges from Settings oyo.break.dates ("12/23/2026-01/03/2027; ..."),
+ * as [{ from, to }] with YYYY-MM-DD days. Dates are taken in pairs; an odd one is ignored.
+ */
+function feedBreakRanges_(v) {
+  var days = (String(v || '').match(/\d{1,2}\/\d{1,2}\/\d{4}|\d{4}-\d{1,2}-\d{1,2}/g) || []).map(feedParseDay_);
+  var out = [];
+  for (var i = 0; i + 1 < days.length; i += 2) {
+    if (days[i] && days[i + 1]) out.push(days[i] <= days[i + 1] ? { from: days[i], to: days[i + 1] } : { from: days[i + 1], to: days[i] });
+  }
+  return out;
+}
+
 /** Name for matching sign-ins; same rule as nameKey in site/lib/auth.mjs. */
 function feedNameKey_(name) {
   return String(name || '').toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
@@ -269,7 +282,12 @@ function siteFeed(inputs, asOf) {
       oyoDefaults: oyoDefaults,
       rateCap30r20: rateCap,
       makeupWindowDays: num('makeup_window_days', 7),
-      loadJumpPct: num('load.jump_pct', 15)
+      loadJumpPct: num('load.jump_pct', 15),
+      oyoBreak: {
+        ranges: feedBreakRanges_(s['oyo.break.dates']),
+        required: num('oyo.break.required', null),
+        elite: num('oyo.break.elite', null)
+      }
     },
     athletes: athletes,
     practices: practices,
