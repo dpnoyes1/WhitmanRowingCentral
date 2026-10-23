@@ -208,7 +208,7 @@ function showLogin() {
 }
 
 async function showTeam() {
-  const t = await api('/api/team');
+  const [t, wk] = await Promise.all([api('/api/team'), api('/api/week').catch(() => null)]);
   setNav('team');
   let squad = store.get(SQUAD_KEY) || 'all';
   const render = () => {
@@ -227,7 +227,8 @@ async function showTeam() {
       <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
         ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
-        <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
+        <div class="stack-col"><div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
+          ${teamTodayCard(wk, squad)}</div>
         <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
       </div>${footer(t.meta)}`;
     app.querySelectorAll('[data-sq]').forEach((b) => { b.onclick = () => { squad = b.dataset.sq; store.set(SQUAD_KEY, squad); render(); }; });
@@ -235,6 +236,22 @@ async function showTeam() {
     wireFooter();
   };
   render();
+}
+
+/**
+ * Team page: today's workout for the chosen squad (an athlete always sees
+ * her own, with her targets). Nothing today: the next scheduled day this week.
+ */
+function teamTodayCard(wk, squad) {
+  if (!wk) return '';
+  // An athlete's week is already her squad only; coaches follow the squad switch.
+  const forSquad = (x) => !!wk.athlete || squad === 'all' || !/^(varsity|novice)$/i.test(x.squad) || x.squad.toLowerCase() === squad;
+  const days = wk.days.filter((d) => d.day >= wk.today).map((d) => ({ ...d, sessions: d.sessions.filter(forSquad) })).filter((d) => d.sessions.length);
+  const d = days[0];
+  const title = !d ? 'Today' : d.day === wk.today ? 'Today' : `Next: ${fmtDay(d.day)}`;
+  const body = d ? d.sessions.map((x) => sessionBlock({ ...x, results: undefined }, !!wk.athlete)).join('')
+    : '<p class="muted small">Nothing scheduled for the rest of this week.</p>';
+  return `<div class="card today"><h2>${title}</h2>${body}<p class="small"><a href="#/week">The whole week</a></p></div>`;
 }
 
 function recentList(t) {
