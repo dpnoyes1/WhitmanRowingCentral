@@ -26,6 +26,8 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule. Full column list in `docs/sheet-schema.md`.
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
+  - Profile (decided 2026-10-23): coaches type `Birthday` and `Grad year`. `Age group` and `School year` are array formulas in their header cells (see `apps-script/Profile.gs`, which has matching JS). Age group = age on **Jan 1** of the current year: under 15 U15, 15 U16, 16 U17, 17+ U19 (17 on Jan 1 is not U17). School year rolls over **July 1**; Class of G is 12th in the school year ending June G; 7th-12th (Pyle MS included), "Graduated" after. For coach reference only for now.
+  - **Birthday is coach-only** like weight: never send it to the team site.
 - Entries: one row per session (Practice / OYO / Make-up). `Source` is Form now; Slack and Logbook later.
 - Intervals: 1 to 10 per entry, linked by Entry ID.
 - Weights: history; each result uses the most recent weight on or before its test date.

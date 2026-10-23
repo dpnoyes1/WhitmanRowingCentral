@@ -14,6 +14,10 @@ Source of truth is `HEADERS` in `apps-script/Config.gs`. Times are seconds (`…
 | OYO required min, OYO elite min | Per-athlete override; blank = group default from Settings |
 | Active | Yes / No |
 | Notes | |
+| Birthday | Typed by coaches. Coach-only, never on the team site |
+| Grad year | Typed by coaches, e.g. 2029 |
+| Age group | Calculated: U15 / U16 / U17 / U19 by age on Jan 1 of this year. Don't type here |
+| School year | Calculated: 7th-12th or Graduated, rolls over July 1. Don't type here |
 
 ## Entries (one row per session)
 Entry ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Session type (Practice / OYO / Make-up), Make-up for date, Status (Full / Modified / Out; practice and make-up only), Activity, Warmup s, Work s, Rest s, Cooldown s, Work m, Rest m, Main set, Zone (UT2/UT1/AT/AN), RPE (1-10), Avg HR, Drag factor, Intervals (count), Coach note, Source (Form / Slack / Logbook), Review status, Response ID, Benchmark ID (set when the session was a benchmark test).
