@@ -134,7 +134,7 @@ function checkWeekAgainstPlan() {
   var byEntry = {};
   readObjects_(TABS.INTERVALS).forEach(function (iv) { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
 
-  var out = [['Date', 'Athlete', 'Session type', 'Planned workout', 'Did the plan', 'Hit target', 'Detail']];
+  var out = [['Date', 'Athlete', 'Session type', 'Planned workout', 'Did the plan', 'Hit target', 'Detail', 'Flag']];
   readObjects_(TABS.ENTRIES).forEach(function (e) {
     if (!(e.Date instanceof Date) || e.Date < start || e.Date >= end || e.Status === 'Out') return;
     var planned = plannedFor(e, squads[e['Athlete ID']], inp.schedule);
@@ -148,7 +148,7 @@ function checkWeekAgainstPlan() {
     var c = checkAgainstPlan(byEntry[e['Entry ID']] || [], pieces, bases, inp.settings);
     var detail = c.reason || c.intervals.map(function (iv) { return iv.n + ': ' + (iv.watts || '?') + ' W' + (iv.status ? ' ' + iv.status : ''); }).join(', ');
     out.push([Utilities.formatDate(e.Date, tz, 'EEE yyyy-MM-dd'), e.Athlete, e['Session type'], planned['Workout ID'],
-      c.matches ? 'Yes' : 'No', c.hit === null ? '' : c.hit ? 'Yes' : 'No', detail]);
+      c.matches ? 'Yes' : 'No', c.hit === null ? '' : c.hit ? 'Yes' : 'No', detail, planFlag(e, c)]);
   });
   var sheet = freshTab_(PLAN_CHECK_TAB);
   sheet.getRange(1, 1, out.length, out[0].length).setValues(out);

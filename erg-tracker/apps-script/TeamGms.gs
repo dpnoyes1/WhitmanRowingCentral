@@ -173,7 +173,8 @@ function teamGmsByYear(opts) {
   var mmdd = (opts.settings || {}).school_year_start;
   var asOf = opts.asOf;
   var curStart = teamGmsYearStart_(asOf, mmdd);
-  var daysIn = Math.round((asOf - curStart) / 86400000);
+  var asOfDay = new Date(asOf.getFullYear(), asOf.getMonth(), asOf.getDate());
+  var daysIn = Math.round((asOfDay - curStart) / 86400000);
   var first = curStart.getFullYear();
   opts.benchmarks.forEach(function (b) {
     if (TEAM_GMS_TESTS.indexOf(b.Test) >= 0 && teamGmsIsDate_(b.Date)) {

@@ -19,6 +19,7 @@ function onOpen() {
     .addItem('Check week against plan', 'checkWeekAgainstPlan')
     .addSeparator()
     .addItem('Rebuild form (new link)', 'rebuildForm')
+    .addItem('Site feed key', 'siteFeedKey')
     .addSeparator()
     .addItem('Load dummy data', 'loadDummyData')
     .addItem('Clear dummy data', 'clearDummyData')

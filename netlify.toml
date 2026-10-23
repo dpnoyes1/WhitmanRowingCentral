@@ -1,0 +1,19 @@
+# Netlify site: whitmanrowingcentral.netlify.app (erg tracker team site).
+# No build step: static pages plus functions. Secrets are environment
+# variables set in the Netlify UI (see erg-tracker/site/README.md).
+[build]
+  publish = "erg-tracker/site/public"
+  functions = "erg-tracker/site/functions"
+  command = "node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs"
+
+[functions]
+  node_bundler = "esbuild"
+
+[[headers]]
+  for = "/*"
+  [headers.values]
+    X-Frame-Options = "DENY"
+    X-Content-Type-Options = "nosniff"
+    Referrer-Policy = "same-origin"
+    X-Robots-Tag = "noindex, nofollow"
+    Content-Security-Policy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self'; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
