@@ -214,7 +214,6 @@ function siteFeed(inputs, asOf) {
     settings: {
       timezone: s.timezone || 'America/New_York',
       schoolYearStart: s.school_year_start || '08-01',
-      modifiedMultiplier: num('modified_multiplier', 0.6),
       multipliers: multipliers,
       oyoDefaults: oyoDefaults,
       rateCap30r20: rateCap,

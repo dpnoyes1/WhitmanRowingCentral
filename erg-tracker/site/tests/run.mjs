@@ -34,7 +34,8 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   assert.strictEqual(S.rawMinutes(base), 50);
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 60);
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Lifting' }, st), 0);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg' }, st), 30);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg' }, st), 50);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike' }, st), 30);
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Out' }, st), 0);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
 });

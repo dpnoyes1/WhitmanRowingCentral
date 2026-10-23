@@ -38,7 +38,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 - Training minutes (headline) = warmup + work + rest + cooldown. Work minutes = main set only.
 - Total meters include rest meters. Rest never counts toward performance scoring.
 - Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
-- Modified practice counts as complete; minutes weighted 0.6.
+- Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
 - Load = session RPE (1-10) x minutes. Spike flag placeholder: +30% vs 4-week average (not confirmed).
 - Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor default 105; flag anything else for coaches.
 
@@ -120,7 +120,7 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 - Full names on the site. Data refreshes at most every 5 minutes.
 - The feed (`siteFeed` in `Feed.gs`) sends no weight, birthdays, coach notes (Out notes can be medical), Slack IDs, Roster notes or HR. GMS %, stars and next-star gaps are computed in the Sheet. Tests in `tests/run.js` check this.
 - GMS % appears only on the athlete's own page (honor system, since the password is shared). Stars are public. The team view shows GMS averages only (`teamGmsForSite`).
-- Weighted minutes are computed in `site/lib/stats.mjs`. A Modified practice or make-up is weighted by `modified_multiplier` *instead of* its activity multiplier (assumption: it is usually BikeErg, so the two are not stacked). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
+- Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
 - Deploy previews require a Netlify login. Production only needs the team password.
 

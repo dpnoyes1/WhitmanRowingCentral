@@ -132,7 +132,6 @@ var SETTINGS_DEFAULTS = [
   ['return_to_training_days', '5', 'Consecutive days out that trigger a ramp-back week'],
   ['autoaccept_hours', '48', 'Phase 2: unchanged auto-labels accepted after this'],
   ['spike_threshold_pct', '30', 'PLACEHOLDER: load spike vs 4-week average'],
-  ['modified_multiplier', '0.6', 'Modified practice minutes weight'],
   ['oyo.standard.required', '60', 'Weekly weighted OYO minutes'],
   ['oyo.standard.elite', '120', ''],
   ['oyo.performance.required', '90', 'PLACEHOLDER default; per-athlete override on Roster'],

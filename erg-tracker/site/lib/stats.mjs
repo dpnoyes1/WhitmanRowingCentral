@@ -46,14 +46,13 @@ export function rawMinutes(e) {
 }
 
 /**
- * Weighted minutes. A Modified practice or make-up is weighted by
- * modified_multiplier instead of its activity multiplier (so the
- * two are not stacked); everything else by its activity multiplier.
+ * Weighted minutes: training minutes x activity multiplier. A Modified
+ * practice gets no extra discount (David, 2026-10-23): doing less work
+ * already shows as fewer minutes.
  */
 export function weightedMinutes(e, settings) {
   const raw = rawMinutes(e);
   if (!raw) return 0;
-  if (e.type !== 'OYO' && e.status === 'Modified') return raw * settings.modifiedMultiplier;
   const m = settings.multipliers[e.activity];
   return raw * (m === undefined ? 1 : m);
 }
