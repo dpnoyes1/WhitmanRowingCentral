@@ -178,7 +178,6 @@ function showLogin() {
       <input id="pw" type="password" autocomplete="current-password" required>
       <button class="btn" type="submit">Sign in</button>
       <p id="login-err" class="error small" role="alert"></p>
-      <p class="muted small">Coaches: leave the name blank and use the coach password.</p>
     </form></div>`;
   document.getElementById('login').onsubmit = async (ev) => {
     ev.preventDefault();

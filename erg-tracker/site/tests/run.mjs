@@ -300,6 +300,13 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   // Another athlete's birthday does not open her page.
   const b = feed.athletes.find((x) => x.active && x.id !== a.id && dummyBirthday(x.id) !== day);
   assert.strictEqual((await handleLogin(post({ name: a.name, password: dummyBirthday(b.id) }), env, deps)).status, 401);
+  // A coach from site.coaches signs in by name (made-up coach), as the coach view.
+  const sign = (id, d) => A.loginCode(env, id, d);
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: sign('coach:pat example', '1980-02-03') }] };
+  const cdeps = { ...deps, fetchImpl: async () => new Response(JSON.stringify(withCoach)) };
+  clearFeedCache();
+  assert.deepStrictEqual(who(await handleLogin(post({ name: 'Pat Example', password: '2/3/1980' }), env, cdeps)), { kind: 'team' });
+  assert.strictEqual((await handleLogin(post({ name: 'Pat Example', password: '2/4/1980' }), env, cdeps)).status, 401);
   // The coach password works with or without a name.
   assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
   assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });

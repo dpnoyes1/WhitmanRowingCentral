@@ -82,13 +82,18 @@ export function loginCode(env, id, day) {
   return createHmac('sha256', env('FEED_KEY')).update('login:' + id + ':' + day).digest('hex');
 }
 
-/** The active athlete whose name and birthday match, or null. The caller slows down failures. */
+/**
+ * Who a name and birthday sign in as: 'team' for a coach in the Sheet's
+ * site.coaches, the matching active athlete, or null. The caller slows down failures.
+ */
 export function athleteFor(env, feed, name, password) {
   const day = parseBirthday(password), key = nameKey(name);
   if (!day || !key) return null;
+  const coachCode = loginCode(env, 'coach:' + key, day);
+  if ((feed.logins || []).some((l) => l.coach && sameText(l.code, coachCode))) return 'team';
   const matches = feed.athletes.filter((a) => a.active && nameKey(a.name) === key);
   for (const a of matches) {
-    const l = (feed.logins || []).find((x) => x.id === a.id);
+    const l = (feed.logins || []).find((x) => !x.coach && x.id === a.id);
     if (l && sameText(l.code, loginCode(env, a.id, day))) return a;
   }
   return null;

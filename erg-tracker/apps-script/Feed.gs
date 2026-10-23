@@ -89,6 +89,22 @@ function feedDay_(d) {
   return isDate_(d) ? dayKey_(d) : '';
 }
 
+/** A date typed in a Settings cell (a Date, M/D/YYYY or YYYY-MM-DD) as YYYY-MM-DD, or ''. */
+function feedParseDay_(v) {
+  if (isDate_(v)) return dayKey_(v);
+  var t = String(v || '').trim(), m;
+  if (!t) return '';
+  if ((m = t.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/))) return m[3] + '-' + ('0' + m[1]).slice(-2) + '-' + ('0' + m[2]).slice(-2);
+  if ((m = t.match(/^(\d{4})-(\d{1,2})-(\d{1,2})$/))) return m[1] + '-' + ('0' + m[2]).slice(-2) + '-' + ('0' + m[3]).slice(-2);
+  var d = new Date(t);   // getSettings() turns a date cell into Date's text
+  return isNaN(d) ? '' : dayKey_(d);
+}
+
+/** Name for matching sign-ins; same rule as nameKey in site/lib/auth.mjs. */
+function feedNameKey_(name) {
+  return String(name || '').toLowerCase().normalize('NFD').replace(/[^a-z ]/g, '').replace(/\s+/g, ' ').trim();
+}
+
 function feedNum_(v) {
   if (v === '' || v === null || v === undefined) return null;
   var n = Number(v);
@@ -150,12 +166,20 @@ function siteFeed(inputs, asOf) {
   var known = {};
   athletes.forEach(function (a) { known[a.id] = true; });
 
-  // One sign-in code per active athlete with a birthday; see feedLoginSigner_.
+  // One sign-in code per active athlete with a birthday, or with the shared
+  // Settings test password while it is set, plus one per coach in
+  // site.coaches (keyed by name). See feedLoginSigner_.
   var logins = [];
   if (inputs.signLogin) {
+    var testDay = feedParseDay_(s['site.test_password']);
     inputs.roster.forEach(function (r) {
-      var id = String(r['Athlete ID'] || '').trim(), day = feedDay_(r.Birthday);
+      var id = String(r['Athlete ID'] || '').trim(), day = testDay || feedDay_(r.Birthday);
       if (id && day && String(r.Name || '').trim() && isActive_(r.Active)) logins.push({ id: id, code: inputs.signLogin(id, day) });
+    });
+    String(s['site.coaches'] || '').split(/[;\n]/).forEach(function (part) {
+      var m = part.trim().match(/^(.*\S)\s+(\S+)$/);
+      var day = m && feedParseDay_(m[2]), key = m && feedNameKey_(m[1]);
+      if (day && key) logins.push({ coach: true, code: inputs.signLogin('coach:' + key, day) });
     });
   }
 

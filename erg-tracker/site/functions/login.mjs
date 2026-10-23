@@ -7,8 +7,8 @@ const json = (body, status = 200, headers = {}) =>
 
 /**
  * POST /api/login { name, password }. An athlete types her name and her
- * birthday as the password; coaches use the coach password (TEAM_PASSWORD)
- * and no name is needed.
+ * birthday as the password; so does a coach listed in the Sheet's
+ * site.coaches. TEAM_PASSWORD with no name is the coaches' fallback.
  */
 export async function handleLogin(req, envFn, deps = {}) {
   if (new URL(req.url).pathname === '/api/logout') {
@@ -34,7 +34,7 @@ export async function handleLogin(req, envFn, deps = {}) {
     await new Promise((r) => setTimeout(r, deps.failDelayMs ?? 600));   // slows down guessing
     return json({ error: "That name and password don't match. Use your first and last name." }, 401);
   }
-  return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete.id)) });
+  return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete === 'team' ? 'team' : athlete.id)) });
 }
 
 export default (req) => handleLogin(req, env);
