@@ -4,8 +4,8 @@ Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their n
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me)
-functions/   login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/oyo, /api/week, /api/week/:id)
-lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet, 5-minute cache),
+functions/   refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/oyo, /api/week, /api/week/:id)
+lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests
 tests/       run.mjs: `node erg-tracker/site/tests/run.mjs`
@@ -14,7 +14,7 @@ tests/       run.mjs: `node erg-tracker/site/tests/run.mjs`
 ## How data flows
 
 1. The Sheet's Apps Script publishes a private web app (`apps-script/Feed.gs`). It only answers a POST that carries the feed key.
-2. `lib/feed.mjs` calls it from the server and keeps the result for 5 minutes.
+2. `functions/refresh-feed.mjs` runs every 5 minutes on the live site and saves the feed to Netlify Blobs (store `feed`, key `latest`; `@netlify/blobs` in the root `package.json`). `lib/feed.mjs` serves that copy, keeps it in memory for a minute, and asks the Sheet directly only when the copy is missing or over 15 minutes old. If the Sheet is down, the last copy (up to a day old) is shown with a stale note.
 3. `lib/views.mjs` shapes it for each page. Multipliers, OYO goals and completion are applied here, when the data is read.
 
 The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster notes. For sign-in it sends one keyed code per athlete (`logins`), which never leaves the server. GMS % and stars are worked out in the Sheet; each athlete's GMS % goes only to her own page and to coaches.

@@ -8,7 +8,7 @@
   # Save deploy credits (David, 2026-10-23). Exit 0 = skip the build:
   # - no deploy previews: PRs are tested locally and only merges build;
   # - production only when something the site serves changed (not Apps Script or docs only).
-  ignore = "if [ \"$CONTEXT\" = deploy-preview ]; then exit 0; fi; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- erg-tracker/site/ netlify.toml"
+  ignore = "if [ \"$CONTEXT\" = deploy-preview ]; then exit 0; fi; git diff --quiet $CACHED_COMMIT_REF $COMMIT_REF -- erg-tracker/site/ netlify.toml package.json package-lock.json"
 
 [functions]
   node_bundler = "esbuild"

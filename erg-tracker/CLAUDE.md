@@ -7,7 +7,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 ## Stack
 
 - **Google Sheet** is the database. **Google Form** is manual entry. **Apps Script** (bound to the Sheet, source in `apps-script/`) builds the tabs and Form and converts submissions.
-- **Netlify site** `whitmanrowingcentral.netlify.app` (source in `site/`, see `site/README.md`) serves dashboards. Netlify Functions check the password and read the Sheet through a private Apps Script web app feed (`apps-script/Feed.gs`, POST with `FEED_KEY`), cached 5 minutes.
+- **Netlify site** `whitmanrowingcentral.netlify.app` (source in `site/`, see `site/README.md`) serves dashboards. Netlify Functions check the password and read the Sheet through a private Apps Script web app feed (`apps-script/Feed.gs`, POST with `FEED_KEY`). A scheduled function (`site/functions/refresh-feed.mjs`, production only) copies the feed into Netlify Blobs every 5 minutes, so page loads never wait on Apps Script (David, 2026-10-23).
 - Team password and coach password live in Netlify environment variables only. Never commit them. Rotate each season.
 - Athletes never get access to the Sheet itself. Only coaches do.
 - No Claude artifacts for athlete-facing views (claude.ai accounts are 18+).
@@ -117,7 +117,8 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 ## Team site (decided 2026-10-23)
 
 - Sign-in (David, 2026-10-23): an athlete types her first and last name and her birthday as the password (the field never says "birthday"; any common date format works). `lib/auth.mjs` checks it against the feed's `logins` codes (HMAC-SHA256 with FEED_KEY of `login:<id>:<YYYY-MM-DD>`, made by `feedLoginSigner_` in `Feed.gs`), and the session cookie carries her athlete ID. Coaches sign in the same way from Settings `site.coaches` ("First Last MM/DD/YYYY; ..."; code keyed `coach:<name>`) and see everything, GMS % and every athlete's targets included (David, 2026-10-23); TEAM_PASSWORD with no name is their fallback. While Settings `site.test_password` holds a date, every athlete signs in with it instead of her birthday (David's interim choice, 2026-10-23). An athlete with no Birthday on the Roster cannot sign in once it is cleared. Real dates live only in the Sheet, never in the repo.
-- Full names on the site. Data refreshes at most every 5 minutes.
+- Full names on the site. Data refreshes every 5 minutes.
+- Sign-in lasts 365 days, and the browser remembers who is signed in so pages open without a session check first (David, 2026-10-23: athletes rarely share devices, security matters little here).
 - The feed (`siteFeed` in `Feed.gs`) sends no weight, birthdays, coach notes (Out notes can be medical), Slack IDs, Roster notes or HR. GMS %, stars and next-star gaps are computed in the Sheet. Tests in `tests/run.js` check this.
 - GMS % goes only to the signed-in athlete for her own page and to coaches (team session), enforced by `/api/athlete/:id`; teammates get stars only. Coaches also see each athlete's Today card and can open any athlete's week at `#/week/ID`. Stars next to names are public; the Stars ranking tab and `/api/stars` are coaches only (David, 2026-10-23). The team view shows GMS averages only (`teamGmsForSite`).
 - Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.

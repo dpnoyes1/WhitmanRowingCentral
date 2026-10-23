@@ -8,6 +8,7 @@ const tip = document.getElementById('tip');
 const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on sign-in
 const SQUAD_KEY = 'wrc.squad';
 const RESULTS_SORT_KEY = 'wrc.resultsSort';
+const SESSION_KEY = 'wrc.session';   // who is signed in, so pages open without waiting on /api/session
 const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
 
 // ---- small helpers -------------------------------------------------------
@@ -40,6 +41,16 @@ const split = (r) => {
 
 let SESSION = null;   // { kind: 'athlete' | 'team', athlete: { id, name, squad } | null }
 
+function setSession(s) {
+  SESSION = s && { kind: s.kind, athlete: s.athlete };
+  store.set(SESSION_KEY, SESSION ? JSON.stringify(SESSION) : null);
+}
+
+/** The remembered session, or null. The cookie still decides: any 401 clears it. */
+function savedSession() {
+  try { return JSON.parse(store.get(SESSION_KEY)) || null; } catch { return null; }
+}
+
 /** The signed-in athlete, or null for a coach. */
 function me() {
   return SESSION && SESSION.athlete;
@@ -47,13 +58,13 @@ function me() {
 
 async function signOut() {
   await fetch('/api/logout', { method: 'POST' });
-  SESSION = null;
+  setSession(null);
   showLogin();
 }
 
 async function api(path) {
   const res = await fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } });
-  if (res.status === 401) { showLogin(); throw new Error('signin'); }
+  if (res.status === 401) { setSession(null); showLogin(); throw new Error('signin'); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || 'Something went wrong.');
   return body;
@@ -201,7 +212,7 @@ function showLogin() {
     } catch { return done('Could not reach the site. Check your connection and try again.'); }
     if (!res.ok) return done(body.error || 'Could not sign in.');
     store.set(OLD_ME_KEY, null);
-    SESSION = null;
+    setSession(null);
     location.hash = '#/';
     route();
   };
@@ -626,7 +637,20 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
   try {
-    if (!SESSION) SESSION = await api('/api/session');
+    if (!SESSION) {
+      const saved = savedSession();
+      if (saved) {
+        // Open the page now; check the session in the background and redraw if it changed.
+        SESSION = saved;
+        api('/api/session').then((s) => {
+          const was = JSON.stringify(saved);
+          setSession(s);
+          if (JSON.stringify(SESSION) !== was) route();
+        }).catch(() => {});
+      } else {
+        setSession(await api('/api/session'));
+      }
+    }
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
     if (page === 'week') {
