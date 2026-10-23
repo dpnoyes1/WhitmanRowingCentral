@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -387,6 +387,78 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   // The coach password works with or without a name.
   assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
   assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  clearFeedCache();
+});
+
+test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {
+  const st = { ...feed.settings, loadJumpPct: 15 };
+  const day = (d, min, rpe = 5) => ({ date: d, status: 'Full', type: 'OYO', activity: 'Run', workS: (min / 1.2) * 60, rpe });
+  // Weighted 60, 60, 60, 80, 66 minutes over five weeks (Run counts 1.2).
+  const es = [day('2026-09-07', 60), day('2026-09-14', 60), day('2026-09-21', 60), day('2026-09-28', 80), day('2026-10-05', 66)];
+  const mondays = ['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05'];
+  const t = S.loadTrend(es, st, mondays);
+  assert.strictEqual(t[0].trailing, null);          // before her first week
+  assert.strictEqual(t[1].trailing, null);          // her first week: nothing to compare with
+  assert.strictEqual(t[2].trailingWeeks, 1);        // 2nd week uses the one week that exists
+  assert.strictEqual(t[3].trailingWeeks, 2);
+  assert.strictEqual(Math.round(t[4].trailing), 60);
+  assert.strictEqual(Math.round(t[4].changePct), 33);
+  assert.ok(t[4].flag);
+  assert.strictEqual(t[5].trailingWeeks, 3);         // 3 weeks back: (60 + 60 + 80) / 3 = 66.7
+  assert.ok(!t[5].flag && t[5].changePct < 0);
+  assert.strictEqual(t[4].rpe, 5);
+  // Exactly at the threshold is not a jump; the setting changes it.
+  const edge = S.loadTrend([day('2026-09-07', 100), day('2026-09-14', 115)], st, ['2026-09-14']);
+  assert.ok(!edge[0].flag);
+  assert.ok(S.loadTrend([day('2026-09-07', 100), day('2026-09-14', 115)], { ...st, loadJumpPct: 10 }, ['2026-09-14'])[0].flag);
+  assert.strictEqual(feed.settings.loadJumpPct, 15);
+});
+
+test('steady splits, trend, projected 2k and month consistency', () => {
+  const row = (d, s, m, act = 'Erg (RowErg)', zone = 'UT2') => ({ date: d, status: 'Full', activity: act, zone, workS: s, workM: m });
+  const es = [row('2026-09-07', 1200, 4800), row('2026-09-14', 1200, 4800), row('2026-09-21', 1200, 4900),
+    row('2026-09-28', 1200, 5000), row('2026-09-28', 1200, 10000, 'BikeErg'), row('2026-09-28', 600, 3000, 'Erg (RowErg)', 'AN')];
+  const w = S.steadySplits(es, ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05']);
+  assert.strictEqual(w[0].splitS, 125);
+  assert.strictEqual(w[3].splitS, 120);              // BikeErg at half meters: 2400 s over 10000 m; AN left out
+  assert.strictEqual(w[4].splitS, null);
+  const t = S.splitTrend(w);
+  assert.strictEqual(t.weeksEach, 2);
+  assert.ok(t.changeS < 0);                          // faster
+  assert.strictEqual(S.splitTrend(w.slice(0, 1)), null);
+  // 20' of 5000 m: split 120 - 8.5 = 111.5, x 4 = 446.
+  assert.strictEqual(S.twoKFrom20(5000), 446);
+  const bm = [{ athleteId: 'X', test: '2000m', date: '2026-09-01', timeS: 460, valid: true },
+    { athleteId: 'X', test: '20min', date: '2026-10-01', meters: 5000, valid: true }];
+  assert.strictEqual(S.projected2k('X', bm, '2026-08-01').timeS, 446);
+  assert.strictEqual(S.projected2k('X', [...bm, { ...bm[0], date: '2026-10-02' }], '2026-08-01'), null);
+  const rec = [{ date: '2026-09-30', done: false }, { date: '2026-10-01', done: true }, { date: '2026-10-02', done: false }, { date: '2026-10-05', done: true }];
+  assert.deepStrictEqual(S.monthConsistency(rec, '2026-10-23'), { done: 2, expected: 3, pct: 67 });
+});
+
+test('insights: own page without flags, teammates none, coaches everything', async () => {
+  const v = athleteView(feed, 'A901', TODAY);
+  assert.strictEqual(v.insights.load.length, 8);
+  assert.ok(v.insights.progress['2000m'].length >= 1 && v.insights.progress['2000m'][0].change === null);
+  assert.ok(v.insights.month.expected > 0);
+  const iv = insightsView(feed, TODAY);
+  assert.strictEqual(iv.rowers.length, 30);
+  assert.ok(!/weight|birthday/i.test(JSON.stringify(iv)));
+  clearFeedCache();
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
+  assert.strictEqual((await get('/api/insights', coach)).status, 200);
+  assert.strictEqual((await get('/api/insights', her)).status, 403);
+  let body = await (await get('/api/athlete/A901', coach)).json();
+  assert.ok(body.insights.load.every((l) => 'flag' in l && 'trailing' in l));
+  body = await (await get('/api/athlete/A901', her)).json();
+  assert.ok(body.insights && body.insights.load.every((l) => !('flag' in l) && !('trailing' in l) && !('changePct' in l)));
+  assert.ok(!('jumpPct' in body.insights));
+  body = await (await get('/api/athlete/A902', her)).json();
+  assert.strictEqual(body.insights, null);
   clearFeedCache();
 });
 

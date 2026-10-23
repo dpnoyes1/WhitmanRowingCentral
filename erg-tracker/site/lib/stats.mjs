@@ -181,3 +181,113 @@ export function personalBests(athleteId, benchmarks, yearStart) {
   });
   return out;
 }
+
+// ---- load, effort, progress (David, 2026-10-23) ------------------------------
+
+export const LOAD_JUMP_PCT = 15;   // fallback when the feed has no loadJumpPct
+const TRAILING_WEEKS = 3;
+
+/**
+ * Weekly load for one athlete's entries, one row per Monday in `mondays`:
+ * weighted minutes, average session RPE (weighted by training minutes) and the
+ * trailing average of the weeks before it. A week is flagged when it is more
+ * than `jumpPct` above that average. The trailing average uses up to 3 earlier
+ * weeks, counting only weeks since her first logged session, so her 2nd and 3rd
+ * weeks compare with what exists and her first week is never flagged.
+ */
+export function loadTrend(entries, settings, mondays) {
+  const jumpPct = settings.loadJumpPct ?? LOAD_JUMP_PCT;
+  const logged = entries.filter((e) => e.status !== 'Out');
+  const firstWeek = logged.length ? weekStart(logged.reduce((m, e) => (e.date < m ? e.date : m), logged[0].date)) : null;
+  const totals = new Map();
+  const weekOf = (mon) => {
+    if (!totals.has(mon)) {
+      const end = addDays(mon, 6);
+      let total = 0, rpeMin = 0, rpeSum = 0, sessions = 0;
+      logged.forEach((e) => {
+        if (e.date < mon || e.date > end) return;
+        sessions++;
+        total += weightedMinutes(e, settings);
+        const raw = rawMinutes(e);
+        if (e.rpe && raw) { rpeSum += e.rpe * raw; rpeMin += raw; }
+      });
+      totals.set(mon, { total, rpe: rpeMin ? rpeSum / rpeMin : null, sessions });
+    }
+    return totals.get(mon);
+  };
+  return mondays.map((mon) => {
+    const w = weekOf(mon);
+    const before = [];
+    for (let i = 1; i <= TRAILING_WEEKS; i++) {
+      const prev = addDays(mon, -7 * i);
+      if (!firstWeek || prev < firstWeek) break;
+      before.push(weekOf(prev).total);
+    }
+    const trailing = before.length ? before.reduce((x, y) => x + y, 0) / before.length : null;
+    const changePct = trailing ? (100 * (w.total - trailing)) / trailing : null;
+    return { weekStart: mon, total: w.total, rpe: w.rpe, sessions: w.sessions, trailing, trailingWeeks: before.length,
+      changePct, flag: changePct !== null && changePct > jumpPct };
+  });
+}
+
+/** Meters that count like rowing: BikeErg meters count half (same monitor, double the distance). */
+function rowMeters(e) {
+  if (/bikeerg/i.test(e.activity)) return (e.workM || 0) / 2;
+  if (/rowerg/i.test(e.activity)) return e.workM || 0;
+  return 0;
+}
+
+/**
+ * Steady-state (UT2/UT1) split per week on the RowErg and BikeErg (BikeErg as
+ * row-equivalent): total main-set time x 500 / meters, so long pieces weigh
+ * more. Weeks with no steady erg work have split null.
+ */
+export function steadySplits(entries, mondays) {
+  const steady = entries.filter((e) => e.status !== 'Out' && /^UT[12]$/.test(e.zone) && e.workS > 0 && rowMeters(e) > 0);
+  return mondays.map((mon) => {
+    const end = addDays(mon, 6);
+    let s = 0, m = 0;
+    steady.forEach((e) => { if (e.date >= mon && e.date <= end) { s += e.workS; m += rowMeters(e); } });
+    return { weekStart: mon, splitS: m ? (s * 500) / m : null, meters: m };
+  });
+}
+
+/**
+ * Faster or slower: the average split of her latest weeks with steady work
+ * against the same number of weeks with steady work just before them (3 and 3
+ * once she has 6; fewer before that). Negative changeS = faster. Null until
+ * there are 2 such weeks.
+ */
+export function splitTrend(weeks) {
+  const have = weeks.filter((w) => w.splitS !== null);
+  const n = Math.min(TRAILING_WEEKS, Math.floor(have.length / 2));
+  if (!n) return null;
+  const avg = (l) => l.reduce((x, w) => x + w.splitS, 0) / l.length;
+  const recent = have.slice(-n), earlier = have.slice(-2 * n, -n);
+  return { changeS: avg(recent) - avg(earlier), recentS: avg(recent), earlierS: avg(earlier), weeksEach: n };
+}
+
+/** 2k time from a 20' result: 20' split - 8.5 s, x 4 (the GMS 2k-equivalent rule in Gms.gs). */
+export function twoKFrom20(meters) {
+  return meters ? ((1200 * 500) / meters - 8.5) * 4 : null;
+}
+
+/**
+ * Projected 2k: from her latest valid 20' this school year, shown only when it
+ * is newer than her latest 2k (else her real 2k says more). Null otherwise.
+ */
+export function projected2k(athleteId, benchmarks, yearStart) {
+  const mine = benchmarks.filter((b) => b.athleteId === athleteId && b.valid && b.date >= yearStart && resultValue(b));
+  const latest = (test) => mine.filter((b) => b.test === test).sort((a, b) => (a.date < b.date ? 1 : -1))[0];
+  const twenty = latest('20min'), twoK = latest('2000m');
+  if (!twenty || (twoK && twoK.date >= twenty.date)) return null;
+  return { timeS: twoKFrom20(twenty.meters), from: { date: twenty.date, meters: twenty.meters }, last2k: twoK ? { date: twoK.date, timeS: twoK.timeS } : null };
+}
+
+/** Planned practices done this calendar month (make-ups count), from practiceRecord rows. */
+export function monthConsistency(record, today) {
+  const first = today.slice(0, 8) + '01';
+  const month = record.filter((r) => r.date >= first);
+  const done = month.filter((r) => r.done).length;
+  return { done, expected: month.length, pct: month.length ? Math.round((100 * done) / month.length) : null };
+}

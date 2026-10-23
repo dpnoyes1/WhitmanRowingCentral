@@ -133,7 +133,7 @@ var SETTINGS_DEFAULTS = [
   ['site.coaches', '', 'Coach sign-ins for the team site: "First Last MM/DD/YYYY", separated by ;. Coaches see everything, GMS % included'],
   ['return_to_training_days', '5', 'Consecutive days out that trigger a ramp-back week'],
   ['autoaccept_hours', '48', 'Phase 2: unchanged auto-labels accepted after this'],
-  ['spike_threshold_pct', '30', 'PLACEHOLDER: load spike vs 4-week average'],
+  ['load.jump_pct', '15', "Coaches see a flag when a week's weighted minutes are more than this % above the average of the 3 weeks before (fewer in her first weeks)"],
   ['oyo.standard.required', '60', 'Weekly weighted OYO minutes'],
   ['oyo.standard.elite', '120', ''],
   ['oyo.performance.required', '90', 'PLACEHOLDER default; per-athlete override on Roster'],

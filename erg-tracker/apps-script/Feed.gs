@@ -268,7 +268,8 @@ function siteFeed(inputs, asOf) {
       multipliers: multipliers,
       oyoDefaults: oyoDefaults,
       rateCap30r20: rateCap,
-      makeupWindowDays: num('makeup_window_days', 7)
+      makeupWindowDays: num('makeup_window_days', 7),
+      loadJumpPct: num('load.jump_pct', 15)
     },
     athletes: athletes,
     practices: practices,
