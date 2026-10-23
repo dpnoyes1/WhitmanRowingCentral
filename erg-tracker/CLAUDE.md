@@ -23,9 +23,11 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 
 ## Sheet tabs
 
-Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Squad history, Races (coach-only). Full column list in `docs/sheet-schema.md`.
+Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule, Squad history, Races (coach-only). Full column list in `docs/sheet-schema.md`.
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
+  - Profile (decided 2026-10-23): coaches type `Birthday` and `Grad year`. `Age group` and `School year` are array formulas in their header cells (see `apps-script/Profile.gs`, which has matching JS). Age group = age on **Jan 1** of the current year: under 15 U15, 15 U16, 16 U17, 17+ U19 (17 on Jan 1 is not U17). School year rolls over **July 1**; Class of G is 12th in the school year ending June G; 7th-12th (Pyle MS included), "Graduated" after. For coach reference only for now.
+  - **Birthday is coach-only** like weight: never send it to the team site.
 - Entries: one row per session (Practice / OYO / Make-up). `Source` is Form now; Slack and Logbook later.
 - Intervals: 1 to 10 per entry, linked by Entry ID.
 - Weights: history; each result uses the most recent weight on or before its test date.
@@ -94,6 +96,16 @@ Even/odd is the calendar date. No winter weekend practice. Practices tab is gene
 
 Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg/SkiErg set from machine; unchanged labels auto-accept after 48 h.
 
+## Weekly plan and targets
+
+- Coaches build workouts in the **Workouts** tab (one row per piece; Reps for repeats; one row per piece for variable intervals; `Start every` or Rest = Undefined for common-start sets) and assign them by date and squad in **Schedule**. Only Published rows reach athletes.
+- Erg targets = % of the athlete's **season-best** 2k or 20' **watts** (school year; falls back to last season only). Watts = 2.80 / (split/500)^3. UT2/UT1 show a range, AT/AN a single number; zone defaults in Settings `target.*` are PLACEHOLDERS for David to tune.
+- No benchmark -> no target shown, and the athlete is flagged to coaches (Slack alert in phase 2).
+- Targets are visible to the whole squad (no per-athlete privacy, by decision).
+- Logged sessions and make-ups are checked against the planned workout at display (`checkAgainstPlan`); make-ups use the missed day's plan. Never stored.
+- Logic in `apps-script/Plan.gs` (pure, portable); Sheet reports in `PlanSheet.gs`. `weekPlanForSite` is the payload shape for the athlete site.
+- Weight is never an input to targets.
+
 ## Availability and make-ups
 
 Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ consecutive days out -> return-to-training flag, ramp-back week, make-ups waived. Make-ups within 7 days, same or coach-approved workout, count fully, minutes count as practice not OYO.
@@ -121,4 +133,4 @@ Wellness check-ins, menstrual tracking, visible weight anywhere, XBoat, excused/
 
 - Apps Script source: `apps-script/*.gs`. Paste into the Sheet's Extensions > Apps Script, or push with `clasp` (see `docs/SETUP.md`).
 - Tests: `node erg-tracker/tests/run.js` (no dependencies). Run before every commit. Keep pure logic (parsing, GMS, schedule) free of Sheet/Form calls so it stays testable and portable to the Netlify site.
-- Next planned step: dummy data generator so David can explore usage before real setup.
+- Dummy data (decided 2026-10-23): `apps-script/Dummy.gs`, menu **Load dummy data** / **Clear dummy data**. 30 made-up athletes (4 each 7th-9th novices, 6 each 10th-12th varsity), practices Oct 5-23 2026 plus a planned week Oct 26-30, OYO, make-ups, weights, and three rounds of 2k and 20' (late Aug, Sep, Oct); not everyone improves every round. Seeded, so it is the same each load. Marks: Athlete IDs A901+, Roster Notes / Weights Note start `DUMMY`, Source `Dummy`, IDs contain `-DUMMY-`, Workout IDs start `DUMMY-`. David will clear it all before adding real athletes.

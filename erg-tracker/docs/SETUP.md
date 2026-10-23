@@ -22,19 +22,55 @@ You now have all ten tabs, the Form, a raw responses backup tab, and two trigger
 
 ## 3. Fill in the basics
 
-1. **Roster tab:** add each athlete's Name, Slack member ID, Squad, Role (Rower or Coxswain), OYO group and Active = Yes. Leave Athlete ID blank; it fills itself. The Form's name lists update when you edit the Roster. If they don't, use **Erg Tracker > Refresh form name lists from Roster**.
+1. **Roster tab:** add each athlete's Name, Slack member ID, Squad, Role (Rower or Coxswain), OYO group, Active = Yes, Birthday and Grad year. Leave Athlete ID blank; it fills itself. Age group and School year fill themselves from Birthday and Grad year. The Form's name lists update when you edit the Roster. If they don't, use **Erg Tracker > Refresh form name lists from Roster**.
 2. **Settings tab:** check the coach names, then set `season.winter_start` and `season.winter_end` (YYYY-MM-DD).
 3. **Erg Tracker > Generate practice schedule** fills the Practices tab. Mark holidays and snow days as Canceled in the Status column.
 4. **Weights tab** is hidden. To open it: the menu at the bottom-left (all sheets list) > Weights. Coaches type weights there directly. It is never on the Form.
 5. **Team GMS:** **Erg Tracker > Team GMS report** rebuilds the "Team GMS (coach)" tab (team, squad and rank band averages, this year to date vs past years). Near the end of each season run **Erg Tracker > Save squads for this school year** so later years compare against the squads as they were.
 6. **Regattas:** add one row per race on the **Races** tab (result, top 3 times, lineup by seat), then **Erg Tracker > Regatta report** rebuilds the "Regatta report (coach)" tab.
 
-## 4. Share
+## 4. Plan a week
+
+1. **Workouts tab** is the library. One row per piece, so a workout is one or more rows sharing a Workout ID (e.g. `PYR`).
+   - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone UT1.
+   - Variable intervals (2000/1500/1000/500/250): one row per piece, Piece # 1 to 5, each with its own Work, Rest and target.
+   - Common start (8 x 500m, everyone goes together): Reps 8, Distance 500, Start every 3:30, Rest blank. For coach-called starts, Rest = Undefined.
+   - Activity defaults to Erg (RowErg). Only RowErg pieces get watts targets.
+   - Target: pick Base (2k or 20') and Target low % / high %. Leave % blank to use the zone default from Settings (`target.<zone>.2000m` / `.20min`). A range (UT2, UT1) shows a range; one number (AT, AN) shows a single target.
+2. **Schedule tab:** one row per session: Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID. Tick **Published** when athletes should see it. To plan from last week, use **Erg Tracker > Copy last week (as drafts)**: it copies the previous week's rows 7 days forward, unpublished, and refuses if the week already has rows. Edit, then tick Published.
+3. **Erg Tracker > Preview week ahead** writes a *Week ahead (preview)* tab with every athlete's targets, drafts included. FLAG rows at the top list athletes with no 2k or 20' this season or last; they get no target.
+4. **Erg Tracker > Check week against plan** writes a *Plan check* tab: each logged practice, OYO and make-up checked against its planned workout (did the plan, hit target, watts per interval). Make-ups are checked against the missed day's workout.
+
+Targets use season-best watts (school year from `school_year_start`), falling back to last season. Rejected benchmark rows are ignored. Weight is never used.
+
+## Explore with dummy data (optional)
+
+Before entering real athletes, run **Erg Tracker > Load dummy data**. It adds 30 made-up athletes (12 novices in 7th-9th, 18 varsity in 10th-12th) with:
+- practices from Oct 5 to Oct 23, 2026, including Out days, Modified days, and make-ups
+- OYO sessions; some athletes miss Required and some reach Elite
+- a published plan, including the week of Oct 26 so **Preview week ahead** has something to show
+- weights
+- three rounds of 2k and 20' tests (late August, September and October)
+
+One athlete is out for 6 practices with a ramp-back week. Another has no tests yet, so she shows up as a FLAG. Not everyone improves every round.
+
+Try **Preview week ahead** (2026-10-26) and **Check week against plan** (2026-10-05, 2026-10-12 or 2026-10-19).
+
+**Erg Tracker > Clear dummy data** removes only the dummy rows. It finds them by these marks:
+- Athlete IDs A901 and up
+- `DUMMY` in Roster Notes and Weights Note
+- Source `Dummy`
+- `-DUMMY-` in Entry and Benchmark IDs
+- `DUMMY-` at the start of Workout IDs
+
+Clear it before adding real athletes.
+
+## 5. Share
 
 - Share the link saved in **Settings > form.share_url** with athletes. Use that link, not the Form's plain link: it prefills warmup 15:00 and drag factor 105.
 - Share the Sheet itself only with coaches.
 
-## 5. Test it
+## 6. Test it
 
 Submit one Practice with two intervals and one 2000m test through the share link, then check:
 - Entries has one row, with Warmup s = 900 if you left 15:00.

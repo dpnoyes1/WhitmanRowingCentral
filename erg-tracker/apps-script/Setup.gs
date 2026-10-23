@@ -14,7 +14,14 @@ function onOpen() {
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()
+    .addItem('Copy last week (as drafts)', 'copyLastWeek')
+    .addItem('Preview week ahead', 'previewWeekAhead')
+    .addItem('Check week against plan', 'checkWeekAgainstPlan')
+    .addSeparator()
     .addItem('Rebuild form (new link)', 'rebuildForm')
+    .addSeparator()
+    .addItem('Load dummy data', 'loadDummyData')
+    .addItem('Clear dummy data', 'clearDummyData')
     .addToUi();
 }
 
@@ -89,11 +96,12 @@ function ensureTab_(name) {
   });
   sheet.getRange(1, 1, 1, headers.length).setValues([headers]).setFontWeight('bold');
   sheet.setFrozenRows(1);
+  setComputedColumns_(sheet, name);
   (TEXT_COLUMNS[name] || []).forEach(function (h) {
     sheet.getRange(1, headers.indexOf(h) + 1, sheet.getMaxRows(), 1).setNumberFormat('@');
   });
   headers.forEach(function (h, i) {
-    if (/^(Date|Make-up for date)$/.test(h)) {
+    if (/^(Date|Make-up for date|Birthday)$/.test(h)) {
       sheet.getRange(2, i + 1, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy-mm-dd');
     } else if (/^(Submitted at|Timestamp)$/.test(h)) {
       sheet.getRange(2, i + 1, sheet.getMaxRows() - 1, 1).setNumberFormat('yyyy-mm-dd hh:mm');
@@ -101,7 +109,33 @@ function ensureTab_(name) {
   });
   if (name === TABS.ROSTER) addRosterValidation_(sheet);
   if (name === TABS.RACES) addRaceValidation_(sheet);
+  if (name === TABS.WORKOUTS || name === TABS.SCHEDULE) addPlanValidation_(sheet, name);
   return sheet;
+}
+
+/** Writes the header-cell array formulas for computed columns and warns on manual edits. */
+function setComputedColumns_(sheet, name) {
+  var computed = COMPUTED_COLUMNS[name];
+  if (!computed) return;
+  var headers = HEADERS[name];
+  var letters = {};
+  headers.forEach(function (h, i) { letters[h] = columnLetter_(i + 1); });
+  Object.keys(computed).forEach(function (h) {
+    var col = headers.indexOf(h) + 1;
+    sheet.getRange(2, col, sheet.getMaxRows() - 1, 1).clearContent();
+    sheet.getRange(1, col).setFormula(computed[h](letters));
+    var desc = h + ' is calculated; edit Birthday or Grad year instead';
+    sheet.getProtections(SpreadsheetApp.ProtectionType.RANGE).forEach(function (p) {
+      if (p.getDescription() === desc) p.remove();
+    });
+    sheet.getRange(1, col, sheet.getMaxRows(), 1).protect().setDescription(desc).setWarningOnly(true);
+  });
+}
+
+function columnLetter_(n) {
+  var s = '';
+  for (; n > 0; n = Math.floor((n - 1) / 26)) s = String.fromCharCode(65 + (n - 1) % 26) + s;
+  return s;
 }
 
 function addRosterValidation_(sheet) {
@@ -115,6 +149,12 @@ function addRosterValidation_(sheet) {
   list('Role', ['Rower', 'Coxswain']);
   list('OYO group', ['Standard', 'Performance']);
   list('Active', ['Yes', 'No']);
+  sheet.getRange(2, h.indexOf('Birthday') + 1, rows, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false)
+      .setHelpText('Date of birth, e.g. 2010-04-17').build());
+  sheet.getRange(2, h.indexOf('Grad year') + 1, rows, 1).setDataValidation(
+    SpreadsheetApp.newDataValidation().requireNumberBetween(2020, 2045).setAllowInvalid(false)
+      .setHelpText('High school graduation year, e.g. 2029').build());
 }
 
 function seedSettings_() {
