@@ -63,7 +63,10 @@ test('team view: three groups, averages only', () => {
   assert.ok(t.groups.all.weekly.at(-1).practiceAvg > 0);
   assert.ok(Object.values(t.groups.all.zones).some((z) => z > 0));
   assert.ok(t.recent.length > 0 && t.recent.every((r) => r.status !== 'Out'));
-  assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars/i.test(JSON.stringify(t)), 'no GMS or weight on the team view');
+  assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(t)), 'no GMS or weight on the team view');
+  // Athletes list carries public stars only: average of 2k and 20', halves allowed.
+  assert.ok(t.athletes.every((a) => a.stars === null || (a.stars >= 1 && a.stars <= 5 && Number.isInteger(a.stars * 2))));
+  assert.ok(t.athletes.every((a) => Object.keys(a).join() === 'id,name,squad,grade,stars'));
 });
 
 test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => {
@@ -108,6 +111,12 @@ test('stars board: stars public, GMS % never; team averages only', () => {
   const v = starsView(feed, TODAY);
   assert.strictEqual(v.rowers.length, 30);
   assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 5)));
+  // Stars are the average of the 2k and 20' stars (one test: that test's).
+  v.rowers.forEach((r) => {
+    const have = Object.values(r.byTest).filter((s) => s !== null);
+    assert.strictEqual(r.stars, have.length ? have.reduce((x, y) => x + y, 0) / have.length : null, r.name);
+  });
+  assert.ok(v.rowers.some((r) => r.stars % 1 === 0.5), 'some half stars');
   assert.ok(new Set(v.rowers.map((r) => r.stars)).size >= 3, 'a spread of stars');
   const { teamGms, ...rest } = v;
   assert.ok(!/gmsPct|nextStar|weight/i.test(JSON.stringify(rest)));
