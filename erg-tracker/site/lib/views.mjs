@@ -152,7 +152,8 @@ export function athleteView(feed, id, today) {
       season: pbs[t].season && testRow(pbs[t].season), allTime: testRow(pbs[t].allTime)
     })),
     tests,
-    gms: athleteGms(feed, id, today),   // shown only on the athlete's own page (shared password: honor system)
+    gms: athleteGms(feed, id, today),
+    todayPlan: (weekView(feed, today, id).days.find((d) => d.day === today) || { sessions: [] }).sessions,   // shown only on the athlete's own page (shared password: honor system)
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
@@ -258,4 +259,50 @@ export function athleteGms(feed, id, today) {
     return { test: t, date: b.date, result: resultValue(b), timeS: b.timeS, meters: b.meters,
       gmsPct: b.gmsPct, stars: STAR_TESTS.includes(t) ? b.stars : null, nextStar: b.nextStar };
   }).filter(Boolean);
+}
+
+// ---- layer 3: the week ahead ----------------------------------------------
+
+/**
+ * Monday of the week athletes see: this week Monday to Saturday, and next
+ * week from Sunday on (David, 2026-10-23: show only the coming week).
+ */
+export function comingMonday(today) {
+  const dow = new Date(today + 'T00:00:00Z').getUTCDay();
+  return dow === 0 ? addDays(today, 1) : weekStart(today);
+}
+
+/**
+ * The coming week's published plan, Monday to Saturday. With an athlete id,
+ * only her squad's sessions and only her own targets (David, 2026-10-23);
+ * without one, every session and no targets.
+ */
+export function weekView(feed, today, id = null) {
+  const a = id ? feed.athletes.find((x) => x.id === id) : null;
+  if (id && !a) return null;
+  const monday = comingMonday(today);
+  const plan = (feed.weeks || []).find((w) => w.weekStart === monday) || { sessions: [] };
+  const forSquad = (s) => !a || !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === a.squad.toLowerCase();
+  let pieces = 0, targeted = 0;
+  const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
+    day,
+    sessions: plan.sessions.filter((s) => s.day === day && forSquad(s)).map((s) => {
+      const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
+      return {
+        session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
+        pieces: s.pieces.map((p, i) => {
+          const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
+          if (a) { pieces++; if (t && t.target) targeted++; }
+          return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
+        })
+      };
+    })
+  }));
+  return {
+    today, weekStart: monday, weekEnd: addDays(monday, 5),
+    athlete: a ? athleteSummary(a) : null,
+    days,
+    // No 2k or 20' to base targets on: she sees a note; coaches see it as a FLAG row in the Sheet's plan report.
+    noTargets: !!a && pieces > 0 && targeted === 0
+  };
 }

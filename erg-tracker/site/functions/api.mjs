@@ -1,7 +1,7 @@
 import { signedIn } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -25,6 +25,12 @@ export async function handle(req, envFn, deps = {}) {
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
   if (path === '/api/stars') return json({ ...starsView(data, today), meta });
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
+  if (path === '/api/week') return json({ ...weekView(data, today), meta });
+  const w = path.match(/^\/api\/week\/([A-Za-z0-9-]+)$/);
+  if (w) {
+    const view = weekView(data, today, w[1]);
+    return view ? json({ ...view, meta }) : json({ error: 'No athlete with that ID.' }, 404);
+  }
   const m = path.match(/^\/api\/athlete\/([A-Za-z0-9-]+)$/);
   if (m) {
     const view = athleteView(data, m[1], today);
@@ -35,4 +41,4 @@ export async function handle(req, envFn, deps = {}) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/week/:id'], method: 'GET' };

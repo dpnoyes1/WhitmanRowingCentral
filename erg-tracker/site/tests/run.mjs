@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -185,13 +185,46 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual((await res.json()).athletes.length, 30);
   res = await handle(new Request('https://x/api/athlete/A901', { headers: { cookie } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, 'A901');
-  for (const p of ['/api/leaderboards', '/api/stars', '/api/oyo']) {
+  for (const p of ['/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/week/A901']) {
     res = await handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
     assert.strictEqual(res.status, 200, p);
   }
   res = await handle(new Request('https://x/api/athlete/nope', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 404);
+  res = await handle(new Request('https://x/api/week/nope', { headers: { cookie } }), env, deps);
+  assert.strictEqual(res.status, 404);
   clearFeedCache();
+});
+
+test('week ahead: coming week Mon-Sat, her squad, only her own targets', () => {
+  assert.strictEqual(comingMonday('2026-10-23'), '2026-10-19');   // Friday: this week
+  assert.strictEqual(comingMonday('2026-10-24'), '2026-10-19');   // Saturday: still this week
+  assert.strictEqual(comingMonday('2026-10-25'), '2026-10-26');   // Sunday: next week
+  const novice = feed.athletes.find((a) => a.squad === 'Novice' && a.active);
+  const v = weekView(feed, '2026-10-25', novice.id);
+  assert.strictEqual(v.days.length, 6);
+  assert.deepStrictEqual([v.days[0].day, v.days[5].day], ['2026-10-26', '2026-10-31']);
+  const sessions = v.days.flatMap((d) => d.sessions);
+  assert.ok(sessions.length > 0);
+  assert.ok(sessions.every((s) => s.squad !== 'Varsity'), 'no varsity sessions for a novice');
+  assert.ok(sessions.some((s) => s.pieces.some((p) => p.target)), 'she has targets');
+  const others = feed.athletes.filter((a) => a.id !== novice.id).map((a) => a.name);
+  const body = JSON.stringify(v);
+  assert.ok(others.every((n) => !body.includes(n)), 'no other athlete in her week');
+  assert.ok(!/gms|weight|birthday/i.test(body));
+  assert.strictEqual(v.noTargets, false);
+  // No 2k or 20' yet: she sees the note, no targets.
+  const untested = starsView(feed, TODAY).rowers.find((r) => r.stars === null);
+  const u = weekView(feed, '2026-10-25', untested.id);
+  assert.strictEqual(u.noTargets, true);
+  // No athlete picked: every session, no targets.
+  const all = weekView(feed, '2026-10-25');
+  assert.ok(all.days.flatMap((d) => d.sessions).length > sessions.length);
+  assert.ok(all.days.every((d) => d.sessions.every((s) => s.pieces.every((p) => p.target === undefined))));
+  assert.strictEqual(weekView(feed, TODAY, 'nope'), null);
+  // Her own page carries today's plan.
+  const today = athleteView(feed, novice.id, TODAY).todayPlan;
+  assert.ok(today.length > 0 && today.every((s) => s.squad !== 'Varsity'));
 });
 
 test('login: wrong password 401, right one sets the cookie, logout clears it', async () => {
