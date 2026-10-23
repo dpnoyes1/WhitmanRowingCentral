@@ -471,7 +471,10 @@ function writeRows_(tabName, objs) {
     return headers.map(function (h) { return o[h] === undefined || o[h] === null ? '' : o[h]; });
   });
   var sheet = tab_(tabName);
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, width).setValues(rows);
+  var start = lastDataRow_(sheet, width) + 1;
+  var short = start + rows.length - 1 - sheet.getMaxRows();
+  if (short > 0) sheet.insertRowsAfter(sheet.getMaxRows(), short);   // new rows keep the formats above
+  sheet.getRange(start, 1, rows.length, width).setValues(rows);
 }
 
 /** Menu: loads the fake squad. Refuses if dummy rows are already there. */
@@ -510,11 +513,11 @@ function clearDummyData() {
   var removed = 0;
   DUMMY_TABS.forEach(function (name) {
     var sheet = tab_(name);
-    var last = sheet.getLastRow();
-    if (last < 2) return;
     var width = writableWidth_(name);
+    var last = lastDataRow_(sheet, width);
+    if (last < 2) return;
     var keep = [];
-    readObjects_(name).forEach(function (r) {
+    readObjects_(name).slice(0, last - 1).forEach(function (r) {
       if (isDummyRow_(name, r)) { removed += 1; return; }
       keep.push(HEADERS[name].slice(0, width).map(function (h) { return r[h]; }));
     });
