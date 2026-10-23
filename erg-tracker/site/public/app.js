@@ -301,8 +301,9 @@ async function showAthlete(id) {
   wireFooter();
 }
 
-const starText = (n) => (n ? '★'.repeat(n) + '<span class="star-off">' + '★'.repeat(3 - n) + '</span>' : '<span class="star-off">★★★</span>');
-const BOAT = { 3: '1v8 pace', 2: '2v8 pace', 1: '3v/Fr8 pace', 0: 'working toward 3v/Fr8' };
+const MAX_STARS = 4;
+const starText = (n) => '★'.repeat(n) + '<span class="star-off">' + '★'.repeat(MAX_STARS - n) + '</span>';
+const BOAT = { 4: '1v8 pace', 3: '2v8 pace', 2: '3v/Fr8 pace', 1: 'working toward 3v/Fr8' };
 
 /** Stars only, for anyone viewing someone else's page. */
 function starsLine(gms) {
@@ -315,7 +316,7 @@ function starsLine(gms) {
 
 function nextStarText(g) {
   const n = g.nextStar;
-  if (g.stars === 3) return 'Top band reached.';
+  if (g.stars === MAX_STARS) return 'Top band reached.';
   if (!n) return '';
   if (g.test === '2000m') {
     return `Next star: <b>${n.secondsFaster.toFixed(1)}s faster</b> on your 2k (${fmtTime(n.targetS)}, about ${n.splitFaster.toFixed(1)}s/500m).`;
@@ -370,13 +371,13 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const groups = [3, 2, 1, 0].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const groups = [4, 3, 2, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
   const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
-    <p class="muted">Best 2k or 20' this school year. Stars mark boat-speed bands: ★ 3v/Fr8, ★★ 2v8, ★★★ 1v8.</p></div></div>
+    <p class="muted">Best 2k or 20' this school year. Every 2k or 20' earns ★; then ★★ 3v/Fr8, ★★★ 2v8, ★★★★ 1v8 boat speed.</p></div></div>
     ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars">${starText(g.n)}</span> ${BOAT[g.n]} <span class="muted small">${g.rows.length}</span></h2>
       <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}</span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}

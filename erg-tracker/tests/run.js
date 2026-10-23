@@ -48,15 +48,16 @@ test('GMS 2k at reference weight', () => {
   // 7:00 2k at 270 lb predicts exactly 5:15 = 2v8 slower edge
   near(g.gmsPredicted1500(420, 270), 315, 1e-9, 'P');
   near(g.gmsPercent('2000m', 420, 270), 95.238, 0.001, 'pct');
-  assert.strictEqual(g.gmsStars('2000m', 420, 270), 2);
+  assert.strictEqual(g.gmsStars('2000m', 420, 270), 3);
+  assert.strictEqual(g.gmsStars('2000m', 600, 270), 1, 'every 2k earns at least 1 star');
 });
 
 test('GMS planning-notes example (99.5%, 2.2s to next star, 7:42.8)', () => {
   const W = 140;
   near(g.gmsPercent('2000m', 465.0, W), 99.5, 0.05, 'pct');
-  assert.strictEqual(g.gmsStars('2000m', 465.0, W), 2);
+  assert.strictEqual(g.gmsStars('2000m', 465.0, W), 3);
   const next = g.gmsNextStar('2000m', 465.0, W);
-  assert.strictEqual(next.stars, 3);
+  assert.strictEqual(next.stars, 4);
   near(next.secondsFaster, 2.2, 0.1, 'gap');
   assert.strictEqual(g.formatTime(next.targetSeconds), '7:42.8');
   near(next.splitFaster, 0.55, 0.05, 'split');
@@ -671,9 +672,10 @@ test('dummy: athletes at every star level, some earning a new star', () => {
     if (a.first === null) a.first = n;
     a.best = Math.max(a.best, n);
   });
-  const levels = [0, 0, 0, 0];
+  const levels = [0, 0, 0, 0, 0];
   Object.values(stars).forEach(a => { levels[a.best] += 1; });
-  levels.forEach((n, i) => assert.ok(n >= 3, i + ' stars: ' + n + ' athletes'));
+  assert.strictEqual(levels[0], 0, 'everyone tested has at least 1 star');
+  levels.slice(1).forEach((n, i) => assert.ok(n >= 3, (i + 1) + ' stars: ' + n + ' athletes'));
   assert.ok(Object.values(stars).filter(a => a.best > a.first).length >= 5, 'some earn a new star');
 });
 
@@ -704,7 +706,7 @@ test('site feed: shape, GMS and stars per result, week plans without coach flags
   assert.strictEqual(feed.entries.length, dummy.entries.length);
   assert.ok(feed.entries.every(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date)));
   const twoK = feed.benchmarks.filter(b => b.test === '2000m');
-  assert.ok(twoK.length > 0 && twoK.every(b => b.gmsPct > 50 && b.gmsPct < 130 && b.stars >= 0 && b.stars <= 3));
+  assert.ok(twoK.length > 0 && twoK.every(b => b.gmsPct > 50 && b.gmsPct < 130 && b.stars >= 1 && b.stars <= 4));
   // Matches Gms.gs directly for one result.
   const b0 = dummy.benchmarks.find(b => b.Test === '2000m');
   const lb = g.weightOn_(dummy.weights, b0['Athlete ID'], b0.Date);
