@@ -27,7 +27,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
   - Profile (decided 2026-10-23): coaches type `Birthday` and `Grad year`. `Age group` and `School year` are array formulas in their header cells (see `apps-script/Profile.gs`, which has matching JS). Age group = age on **Jan 1** of the current year: under 15 U15, 15 U16, 16 U17, 17+ U19 (17 on Jan 1 is not U17). School year rolls over **July 1**; Class of G is 12th in the school year ending June G; 7th-12th (Pyle MS included), "Graduated" after. For coach reference only for now.
-  - **Birthday is coach-only** like weight: never send it to the team site.
+  - **Birthday is coach-only** like weight: the date never leaves the Sheet. Since 2026-10-23 it is also each athlete's site password; the feed sends only a keyed HMAC of it (`logins`), which stays on Netlify's server.
 - Entries: one row per session (Practice / OYO / Make-up). `Source` is Form now; Slack and Logbook later.
 - Intervals: 1 to 10 per entry, linked by Entry ID.
 - Weights: history; each result uses the most recent weight on or before its test date.
@@ -116,14 +116,14 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 
 ## Team site (decided 2026-10-23)
 
-- One shared team password, then the athlete picks her name; the device remembers it (localStorage). David: fine for now, may rework later (per-athlete PIN was the alternative).
+- Sign-in (David, 2026-10-23): an athlete types her first and last name and her birthday as the password (the field never says "birthday"; any common date format works). `lib/auth.mjs` checks it against the feed's `logins` codes (HMAC-SHA256 with FEED_KEY of `login:<id>:<YYYY-MM-DD>`, made by `feedLoginSigner_` in `Feed.gs`), and the session cookie carries her athlete ID. Coaches leave the name blank and use TEAM_PASSWORD (now the coach password), which sees everything public and no GMS %. An athlete with no Birthday on the Roster cannot sign in.
 - Full names on the site. Data refreshes at most every 5 minutes.
 - The feed (`siteFeed` in `Feed.gs`) sends no weight, birthdays, coach notes (Out notes can be medical), Slack IDs, Roster notes or HR. GMS %, stars and next-star gaps are computed in the Sheet. Tests in `tests/run.js` check this.
-- GMS % appears only on the athlete's own page (honor system, since the password is shared). Stars are public. The team view shows GMS averages only (`teamGmsForSite`).
+- GMS % goes only to the signed-in athlete for her own page, enforced by `/api/athlete/:id`; everyone else gets stars only. Stars are public. The team view shows GMS averages only (`teamGmsForSite`).
 - Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
 - Week ahead (layer 3, David 2026-10-23): **Week** tab shows only the coming week, Monday to Saturday (this week through Saturday, next week from Sunday), her squad's sessions and only her own targets. Her own page has a **Today** card with today's targets. No 2k or 20' yet: she sees "No target yet: do a 2k or 20' to get one." and coaches see the FLAG row in the Sheet's plan report (coach view and Slack later). Plan-vs-logged checks are coach-view only.
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
-- Deploy previews require a Netlify login. Production only needs the team password.
+- Deploy previews require a Netlify login. Production needs a site sign-in.
 
 ## Phases
 

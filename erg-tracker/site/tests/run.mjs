@@ -6,10 +6,10 @@ import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, 
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
-import login from '../functions/login.mjs';
+import login, { handleLogin } from '../functions/login.mjs';
 
 const require = createRequire(import.meta.url);
-const { dummyFeed } = require('../scripts/dummy-feed.js');
+const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
 const feed = dummyFeed();
 const TODAY = '2026-10-23';
 
@@ -136,7 +136,11 @@ test('own-page GMS: next star in time or meters, never weight', () => {
 test('auth: tokens, cookies, password', () => {
   const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' })[k];
   const secret = A.sessionSecret(env);
-  const tok = A.makeToken(secret, 0);
+  const tok = A.makeToken(secret, 'team', 0);
+  assert.deepStrictEqual(A.readToken(secret, tok, 1000), { kind: 'team' });
+  assert.deepStrictEqual(A.readToken(secret, A.makeToken(secret, 'A901', 0), 1000), { kind: 'athlete', id: 'A901' });
+  const forged = A.makeToken(secret, 'A901', 0).replace('ath:A901', 'ath:A902');
+  assert.strictEqual(A.readToken(secret, forged, 1000), null, 'cannot swap the athlete');
   assert.ok(A.tokenValid(secret, tok, 1000));
   assert.ok(!A.tokenValid(secret, tok, (A.SESSION_DAYS + 1) * 86400000), 'expires');
   assert.ok(!A.tokenValid(secret, tok.slice(0, -2) + 'xx', 1000), 'tampered');
@@ -179,7 +183,7 @@ test('api: 401 without a session, team and athlete with one', async () => {
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
   let res = await handle(new Request('https://x/api/team'), env, deps);
   assert.strictEqual(res.status, 401);
-  const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env));
+  const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
   res = await handle(new Request('https://x/api/team', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 200);
   assert.strictEqual((await res.json()).athletes.length, 30);
@@ -193,6 +197,33 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual(res.status, 404);
   res = await handle(new Request('https://x/api/week/nope', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 404);
+  // Coach session: no athlete, and no GMS % on anyone's page.
+  res = await handle(new Request('https://x/api/session', { headers: { cookie } }), env, deps);
+  assert.deepStrictEqual((await res.json()).athlete, null);
+  const tested = starsView(feed, TODAY).rowers.find((r) => r.stars !== null);
+  res = await handle(new Request('https://x/api/athlete/' + tested.id, { headers: { cookie } }), env, deps);
+  let body = await res.json();
+  assert.strictEqual(body.own, false);
+  assert.ok(body.gms.length && body.gms.every((g) => Object.keys(g).join() === 'test,stars'));
+  // Athlete session: her own GMS %, only stars for a teammate, her week by default.
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), tested.id);
+  res = await handle(new Request('https://x/api/session', { headers: { cookie: her } }), env, deps);
+  assert.strictEqual((await res.json()).athlete.id, tested.id);
+  res = await handle(new Request('https://x/api/athlete/' + tested.id, { headers: { cookie: her } }), env, deps);
+  body = await res.json();
+  assert.ok(body.own && body.gms.some((g) => g.gmsPct > 0));
+  const mate = starsView(feed, TODAY).rowers.find((r) => r.stars !== null && r.id !== tested.id);
+  res = await handle(new Request('https://x/api/athlete/' + mate.id, { headers: { cookie: her } }), env, deps);
+  assert.ok(!/gmsPct|nextStar/.test(await res.text()));
+  res = await handle(new Request('https://x/api/week', { headers: { cookie: her } }), env, deps);
+  assert.strictEqual((await res.json()).athlete.id, tested.id);
+  // No response ever carries a sign-in code.
+  const codes = feed.logins.map((l) => l.code);
+  assert.ok(codes.length > 0);
+  for (const p of ['/api/team', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/session', '/api/athlete/' + tested.id]) {
+    const text = await (await handle(new Request('https://x' + p, { headers: { cookie: her } }), env, deps)).text();
+    assert.ok(codes.every((c) => !text.includes(c)) && !/logins/.test(text), p);
+  }
   clearFeedCache();
 });
 
@@ -244,6 +275,35 @@ test('login: wrong password 401, right one sets the cookie, logout clears it', a
   res = await login(post('/api/login', { password: 'fake-team-pw' }));
   assert.strictEqual(res.status, 500);
   delete globalThis.Netlify;
+});
+
+test('login: athletes sign in with name and birthday, typed any common way', async () => {
+  clearFeedCache();
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0 };
+  const a = feed.athletes.find((x) => x.active);
+  const day = dummyBirthday(a.id);
+  const [y, m, d] = day.split('-');
+  const post = (body) => new Request('https://x/api/login', { method: 'POST', body: JSON.stringify(body) });
+  const who = (res) => A.readToken(A.sessionSecret(env), res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1]);
+  for (const pw of [`${m}/${d}/${y}`, `${Number(m)}/${Number(d)}/${y}`, `${m}${d}${y}`, `${m}${d}${y.slice(2)}`, day]) {
+    const res = await handleLogin(post({ name: '  ' + a.name.toUpperCase() + ' ', password: pw }), env, deps);
+    assert.strictEqual(res.status, 200, pw);
+    assert.deepStrictEqual(who(res), { kind: 'athlete', id: a.id });
+  }
+  const wrongDay = `${m}/${String(Number(d) % 28 + 1).padStart(2, '0')}/${y}`;
+  for (const body of [{ name: a.name, password: wrongDay }, { name: 'Nobody Here', password: day }, { name: a.name, password: 'fake-team-p' }, { password: day }]) {
+    const res = await handleLogin(post(body), env, deps);
+    assert.strictEqual(res.status, 401, JSON.stringify(body));
+    assert.strictEqual(res.headers.get('set-cookie'), null);
+  }
+  // Another athlete's birthday does not open her page.
+  const b = feed.athletes.find((x) => x.active && x.id !== a.id && dummyBirthday(x.id) !== day);
+  assert.strictEqual((await handleLogin(post({ name: a.name, password: dummyBirthday(b.id) }), env, deps)).status, 401);
+  // The coach password works with or without a name.
+  assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  clearFeedCache();
 });
 
 for (const [name, fn] of tests) {

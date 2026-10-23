@@ -10,14 +10,16 @@
  */
 
 var FEED_KEY_PROP = 'SITE_FEED_KEY';
-var FEED_VERSION = 1;
+var FEED_VERSION = 2;
 
 function doPost(e) {
   var body = {};
   try { body = JSON.parse(e.postData.contents); } catch (err) { body = {}; }
   var key = PropertiesService.getScriptProperties().getProperty(FEED_KEY_PROP);
   if (!key || !feedKeyMatches_(key, body.key)) return feedJson_({ error: 'unauthorized' });
-  return feedJson_(siteFeed(feedInputs_(), new Date()));
+  var inputs = feedInputs_();
+  inputs.signLogin = feedLoginSigner_(key);
+  return feedJson_(siteFeed(inputs, new Date()));
 }
 
 function doGet() {
@@ -34,6 +36,19 @@ function feedKeyMatches_(key, given) {
   var diff = key.length ^ given.length;
   for (var i = 0; i < key.length; i++) diff |= key.charCodeAt(i) ^ given.charCodeAt(i % Math.max(given.length, 1));
   return diff === 0;
+}
+
+/**
+ * Sign-in codes (David, 2026-10-23: athletes sign in with name + birthday).
+ * HMAC-SHA256 of "login:<id>:<YYYY-MM-DD>" keyed with the feed key, as hex.
+ * The site's server recomputes it from what she types; the date itself
+ * never leaves the Sheet and the code never reaches a browser.
+ */
+function feedLoginSigner_(key) {
+  return function (id, day) {
+    return Utilities.computeHmacSha256Signature('login:' + id + ':' + day, key)
+      .map(function (b) { return ('0' + ((b + 256) % 256).toString(16)).slice(-2); }).join('');
+  };
 }
 
 function feedInputs_() {
@@ -135,6 +150,15 @@ function siteFeed(inputs, asOf) {
   var known = {};
   athletes.forEach(function (a) { known[a.id] = true; });
 
+  // One sign-in code per active athlete with a birthday; see feedLoginSigner_.
+  var logins = [];
+  if (inputs.signLogin) {
+    inputs.roster.forEach(function (r) {
+      var id = String(r['Athlete ID'] || '').trim(), day = feedDay_(r.Birthday);
+      if (id && day && String(r.Name || '').trim() && isActive_(r.Active)) logins.push({ id: id, code: inputs.signLogin(id, day) });
+    });
+  }
+
   var practices = inputs.practices.filter(function (p) { return isDate_(p.Date); }).map(function (p) {
     return {
       date: feedDay_(p.Date), squad: String(p.Squad || '').trim(), shift: String(p.Shift || '').trim(),
@@ -224,7 +248,8 @@ function siteFeed(inputs, asOf) {
     entries: entries,
     benchmarks: benchmarks,
     teamGms: teamGms,
-    weeks: weeks
+    weeks: weeks,
+    logins: logins
   };
 }
 

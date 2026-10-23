@@ -4,6 +4,11 @@
 const fs = require('fs');
 const path = require('path');
 const vm = require('vm');
+const crypto = require('crypto');
+
+// Matches the fake FEED_KEY the site's tests and local dev server use.
+const FAKE_FEED_KEY = 'fake-key';
+const signLogin = (id, day) => crypto.createHmac('sha256', FAKE_FEED_KEY).update('login:' + id + ':' + day).digest('hex');
 
 const dir = path.join(__dirname, '..', '..', 'apps-script');
 const ctx = vm.createContext({ console });
@@ -17,9 +22,17 @@ function dummyFeed(asOf) {
   const d = ctx.buildDummyData({ settings });
   return JSON.parse(JSON.stringify(ctx.siteFeed({
     roster: d.roster, entries: d.entries, benchmarks: d.benchmarks, weights: d.weights,
-    practices: d.practices, schedule: d.schedule, workouts: d.workouts, squadHistory: [], settings
+    practices: d.practices, schedule: d.schedule, workouts: d.workouts, squadHistory: [], settings, signLogin
   }, asOf || new Date(2026, 9, 23, 12))));
 }
 
-module.exports = { dummyFeed };
+/** A dummy athlete's birthday as YYYY-MM-DD, for sign-in tests and local dev (all made up). */
+function dummyBirthday(id) {
+  const settings = {};
+  ctx.SETTINGS_DEFAULTS.forEach(r => { settings[r[0]] = r[1]; });
+  const r = ctx.buildDummyData({ settings }).roster.find(x => x['Athlete ID'] === id);
+  return r ? ctx.dayKey_(r.Birthday) : null;
+}
+
+module.exports = { dummyFeed, dummyBirthday, FAKE_FEED_KEY };
 if (require.main === module) process.stdout.write(JSON.stringify(dummyFeed()));

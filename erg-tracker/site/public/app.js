@@ -1,11 +1,11 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/athletes, #/athlete/A001, #/me, #/pick
-// Data comes from /api/* behind the team password (an HttpOnly cookie).
-// The athlete picked on this device is remembered in localStorage.
+// #/team, #/week, #/boards, #/stars, #/oyo, #/athletes, #/athlete/A001, #/me
+// Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
+// in as themselves (name + birthday); coaches with the coach password.
 
 const app = document.getElementById('app');
 const tip = document.getElementById('tip');
-const ME_KEY = 'wrc.me';
+const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on sign-in
 const SQUAD_KEY = 'wrc.squad';
 const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
 
@@ -37,8 +37,17 @@ const split = (r) => {
   return sec && meters ? fmtTime((sec * 500) / meters) : '';
 };
 
+let SESSION = null;   // { kind: 'athlete' | 'team', athlete: { id, name, squad } | null }
+
+/** The signed-in athlete, or null for a coach. */
 function me() {
-  try { return JSON.parse(store.get(ME_KEY) || 'null'); } catch { return null; }
+  return SESSION && SESSION.athlete;
+}
+
+async function signOut() {
+  await fetch('/api/logout', { method: 'POST' });
+  SESSION = null;
+  showLogin();
 }
 
 async function api(path) {
@@ -52,7 +61,9 @@ async function api(path) {
 function setNav(active) {
   document.getElementById('nav').hidden = false;
   const m = me();
-  document.getElementById('nav-me').textContent = m ? m.name.split(' ')[0] : 'Me';
+  const link = document.getElementById('nav-me');
+  link.hidden = !m;
+  if (m) link.textContent = m.name.split(' ')[0];
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
 
@@ -69,7 +80,7 @@ function footer(meta) {
 
 function wireFooter() {
   const b = document.getElementById('signout');
-  if (b) b.onclick = async () => { await fetch('/api/logout', { method: 'POST' }); store.set(ME_KEY, null); showLogin(); };
+  if (b) b.onclick = signOut;
 }
 
 function showError(err) {
@@ -159,12 +170,15 @@ function showLogin() {
   document.getElementById('nav').hidden = true;
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
-    <p class="muted">Enter the team password from your coach.</p>
+    <p class="muted">Sign in with your first and last name and the password from your coach.</p>
     <form id="login">
-      <label for="pw" class="small">Team password</label>
+      <label for="name" class="small">Name</label>
+      <input id="name" autocomplete="username" autocapitalize="words" spellcheck="false">
+      <label for="pw" class="small">Password</label>
       <input id="pw" type="password" autocomplete="current-password" required>
       <button class="btn" type="submit">Sign in</button>
       <p id="login-err" class="error small" role="alert"></p>
+      <p class="muted small">Coaches: leave the name blank and use the coach password.</p>
     </form></div>`;
   document.getElementById('login').onsubmit = async (ev) => {
     ev.preventDefault();
@@ -172,32 +186,15 @@ function showLogin() {
     err.textContent = '';
     const res = await fetch('/api/login', {
       method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ password: document.getElementById('pw').value })
+      body: JSON.stringify({ name: document.getElementById('name').value, password: document.getElementById('pw').value })
     });
     const body = await res.json().catch(() => ({}));
     if (!res.ok) { err.textContent = body.error || 'Could not sign in.'; return; }
-    location.hash = me() ? '#/me' : '#/pick';
+    store.set(OLD_ME_KEY, null);
+    SESSION = null;
+    location.hash = '#/';
     route();
   };
-}
-
-async function showPick() {
-  const t = await api('/api/team');
-  setNav('me');
-  const bySquad = {};
-  t.athletes.forEach((a) => { (bySquad[a.squad || 'Team'] = bySquad[a.squad || 'Team'] || []).push(a); });
-  app.innerHTML = `<div class="head"><div><h1>Who are you?</h1>
-    <p class="muted">Pick your name so this device opens your page. You can change it any time.</p></div></div>
-    ${Object.keys(bySquad).sort((a, b) => (a === 'Varsity' ? -1 : b === 'Varsity' ? 1 : a.localeCompare(b))).map((sq) => `
-      <div class="card"><h2>${esc(sq)}</h2><div class="pick">
-        ${bySquad[sq].map((a) => `<button data-id="${esc(a.id)}" data-name="${esc(a.name)}"><span>${esc(a.name)}</span><span class="pill">${esc(a.grade)}</span></button>`).join('')}
-      </div></div>`).join('')}
-    <p><button class="btn ghost" id="skip">I'm a coach or just looking</button></p>${footer(t.meta)}`;
-  app.querySelectorAll('.pick button').forEach((b) => {
-    b.onclick = () => { store.set(ME_KEY, JSON.stringify({ id: b.dataset.id, name: b.dataset.name })); location.hash = '#/me'; };
-  });
-  document.getElementById('skip').onclick = () => { store.set(ME_KEY, null); location.hash = '#/team'; };
-  wireFooter();
 }
 
 async function showTeam() {
@@ -268,8 +265,8 @@ async function showAthlete(id) {
       <p class="muted small">Log it on the form as "Make-up for a missed practice" with the date you missed.</p></div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
-      ${mine && mine.id === id ? '<a href="#/pick" class="small">Not you?</a>' : !mine ? `<button class="btn ghost" id="this-is-me">This is me</button>` : ''}</div>
-    ${mine && mine.id === id ? todayCard(v.todayPlan) : ''}
+      ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
+    ${v.own ? todayCard(v.todayPlan) : ''}
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
@@ -284,7 +281,7 @@ async function showAthlete(id) {
         <div class="mark" style="left:${(100 * a.oyoElite) / oyoMax}%"><span>Elite ${a.oyoElite}m</span></div>
       </div></div>
     ${makeups}
-    ${mine && mine.id === id ? gmsCard(v.gms) : starsLine(v.gms)}
+    ${v.own ? gmsCard(v.gms) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes')}</div>
     <div class="two">
@@ -296,8 +293,8 @@ async function showAthlete(id) {
     </div>
     <div class="card"><h2>Tests</h2>${testsTable(v.tests)}</div>
     <div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>${footer(v.meta)}`;
-  const claim = document.getElementById('this-is-me');
-  if (claim) claim.onclick = () => { store.set(ME_KEY, JSON.stringify({ id: a.id, name: a.name })); showAthlete(id); };
+  const notYou = document.getElementById('not-you');
+  if (notYou) notYou.onclick = signOut;
   wireTips(app);
   wireFooter();
 }
@@ -362,14 +359,13 @@ function todayCard(sessions) {
 }
 
 async function showWeek() {
-  const mine = me();
-  const v = await api(mine ? '/api/week/' + encodeURIComponent(mine.id) : '/api/week');
+  const v = await api('/api/week');
   setNav('week');
   const range = `${fmtDate(v.weekStart, { month: 'short', day: 'numeric' })} to ${fmtDate(v.weekEnd, { month: 'short', day: 'numeric' })}`;
   const any = v.days.some((d) => d.sessions.length);
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Week ahead</h1>
       <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
-      ${v.athlete ? '' : '<a href="#/pick" class="small">Pick your name to see your targets</a>'}</div>
+      </div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
     ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
         <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
@@ -495,6 +491,7 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
   try {
+    if (!SESSION) SESSION = await api('/api/session');
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
     if (page === 'week') return await showWeek();
@@ -502,10 +499,9 @@ async function route() {
     if (page === 'stars') return await showStars();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
-    if (page === 'pick') return await showPick();
     const m = me();
-    if (page === 'me') return m ? await showAthlete(m.id) : await showPick();
-    location.replace(m ? '#/me' : '#/pick');
+    if (page === 'me' && m) return await showAthlete(m.id);
+    location.replace(m ? '#/me' : '#/team');
   } catch (err) {
     showError(err);
   }
