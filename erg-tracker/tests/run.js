@@ -758,7 +758,13 @@ test('site feed: shape, GMS and stars per result, week plans without coach flags
   assert.ok(feed.weeks[2].sessions.every(sn => sn.results.length === 0), 'nothing logged ahead');
   assert.ok(done.every(r => r.intervals.every(iv => iv.splitS === null || (iv.splitS > 80 && iv.splitS < 200))));
   assert.ok(done.some(r => r.test) && done.filter(r => r.test).every(r => r.hit === null), 'tests are scored, not ranged');
-  assert.ok(done.filter(r => r.activity === 'BikeErg').every(r => r.hit === null && r.intervals.every(iv => iv.splitS === null)), 'no RowErg range for a bike');
+  // BikeErg: half the meters, so its /1000m split lines up with the RowErg /500m target.
+  const bike = feed.weeks.flatMap(w => w.sessions.flatMap(sn => sn.results)).filter(r => r.activity === 'BikeErg');
+  assert.ok(bike.length > 0 && bike.every(r => r.intervals.every(iv => iv.splitS > 80 && iv.splitS < 200)), 'bike splits are row-equivalent');
+  assert.ok(bike.some(r => r.hit !== null), 'bike sessions are ranged');
+  const conv = g.rowEquivalentIntervals([{ 'Work s': 120, 'Work m': 1000 }], 'BikeErg')[0];
+  assert.strictEqual(Math.round(g.wattsFromSplit(conv['Work s'] * 500 / conv['Work m']) * 10) / 10, 202.5, '2:00/1000m bike = 202.5 W');
+  assert.strictEqual(g.rowEquivalentIntervals([{ 'Work m': 1000 }], 'Erg (RowErg)')[0]['Work m'], 1000);
   const lastWeek = feed.weeks[0].sessions.flatMap(sn => sn.results);
   assert.ok(lastWeek.some(r => r.hit === true) && lastWeek.some(r => r.hit === false), 'a mix of in and out of range');
   assert.ok(done.every(r => ['in', 'below', 'above', ''].includes(r.intervals[0] ? r.intervals[0].status : '')));

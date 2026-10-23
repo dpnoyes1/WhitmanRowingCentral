@@ -307,12 +307,15 @@ function feedWeekResults_(sessions, inputs, start) {
       var best = seasonBestWatts(inputs.benchmarks, e['Athlete ID'], b, planned.Date, s.school_year_start);
       if (best) bases[b] = best.watts;
     });
-    var ivs = (ivByEntry[e['Entry ID']] || []).slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
-    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s);
-    // Targets are RowErg splits; another machine's meters don't compare, so no split or range for it.
-    // A benchmark test is scored as a test, not against a range: split shown, no in/out mark.
+    // Targets are RowErg splits. BikeErg counts at half its meters, so its /1000m split
+    // compares to the RowErg /500m target (shown with a * on the site); other machines
+    // don't compare, so no split or range. A benchmark test is scored as a test, not
+    // against a range: split shown, no in/out mark.
     var activity = String(e.Activity || '');
-    var rowErg = activity === '' || /rowerg/i.test(activity);
+    var rowErg = activity === '' || /rowerg|bikeerg/i.test(activity);
+    var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
+      .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
+    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s);
     var test = String(e['Benchmark ID'] || '') !== '';
     sn.results.push({
       athleteId: String(e['Athlete ID']), entryId: String(e['Entry ID']), date: feedDay_(e.Date),

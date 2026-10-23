@@ -242,6 +242,20 @@ function plannedFor(entry, athleteSquad, schedule) {
 }
 
 /**
+ * BikeErg intervals as RowErg-equivalent meters. Same monitor, double the
+ * distance: 2:00/1000m on the bike = 2:00/500m on the rower = 202.5 W
+ * (David, 2026-10-23). Other activities come back unchanged.
+ */
+function rowEquivalentIntervals(intervals, activity) {
+  if (!/bikeerg/i.test(String(activity || ''))) return intervals;
+  return intervals.map(function (iv) {
+    var out = Object.assign({}, iv);
+    ['Work m', 'Rest m'].forEach(function (k) { if (Number(iv[k]) > 0) out[k] = Number(iv[k]) / 2; });
+    return out;
+  });
+}
+
+/**
  * Checks a logged session against its planned pieces.
  * baseWatts: { '2k': w, "20'": w } season bests (missing = no target check).
  * Returns { matches, reason, hit, logged, planned, intervals: [{ n, watts, status }] } where

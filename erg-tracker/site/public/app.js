@@ -354,13 +354,15 @@ const NO_TARGET = "No target yet: do a 2k or 20' to get one.";
 const MARK = { in: ['✓', 'in range'], below: ['↓', 'under target'], above: ['↑', 'over target'] };
 
 /** Logged splits for one piece, each marked against her target range. */
-function splitsCell(list) {
+function splitsCell(list, bike = false) {
   if (!list || !list.length) return '<span class="muted">–</span>';
   return list.map((x) => {
     const m = MARK[x.status];
-    return `<span class="sp ${x.status || ''}"${m ? ` title="${m[1]}"` : ''}>${x.splitS === null ? '✓' : fmtTime(x.splitS)}${m ? ` <span aria-label="${m[1]}">${m[0]}</span>` : ''}</span>`;
+    return `<span class="sp ${x.status || ''}"${m ? ` title="${m[1]}"` : ''}>${x.splitS === null ? '✓' : fmtTime(x.splitS) + (bike ? '*' : '')}${m ? ` <span aria-label="${m[1]}">${m[0]}</span>` : ''}</span>`;
   }).join(' ');
 }
+
+const isBike = (r) => /bikeerg/i.test(r.activity || '');
 
 /** Pills for one logged result: status, machine, make-up, and the range verdict. */
 function resultPills(r) {
@@ -383,8 +385,8 @@ function sessionBlock(s, withTargets, today = '') {
     <table class="pieces">${r ? '<tr><th></th>' + (withTargets ? '<th class="r">Target</th>' : '') + '<th class="r">Logged</th></tr>' : ''}
       ${s.pieces.map((p, i) => `<tr><td>${esc(p.label)}${p.notes ? `<div class="muted small">${esc(p.notes)}</div>` : ''}</td>
       ${withTargets ? `<td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>` : ''}
-      ${r ? `<td class="r splits">${splitsCell(r.pieces[i])}</td>` : ''}</tr>`).join('')}
-      ${r && r.extra.length ? `<tr><td class="muted">Extra</td>${withTargets ? '<td></td>' : ''}<td class="r splits">${splitsCell(r.extra)}</td></tr>` : ''}</table>
+      ${r ? `<td class="r splits">${splitsCell(r.pieces[i], isBike(r))}</td>` : ''}</tr>`).join('')}
+      ${r && r.extra.length ? `<tr><td class="muted">Extra</td>${withTargets ? '<td></td>' : ''}<td class="r splits">${splitsCell(r.extra, isBike(r))}</td></tr>` : ''}</table>
     ${s.results ? teamResults(s, today) : ''}</div>`;
 }
 
@@ -397,7 +399,7 @@ function teamResults(s, today) {
     <div class="table-wrap"><table><tr><th>Name</th><th>Status</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr>
     ${s.results.map((x) => `<tr><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
       <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
-      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i]) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`).join('')}
+      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`).join('')}
     </table></div></details>`;
 }
 
@@ -445,7 +447,7 @@ async function showWeek(id = null, prev = false) {
         ${d.sessions.length ? d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
       : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
     <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
-      Logged splits: ✓ in range, ↓ under target, ↑ over target. Other machines than the RowErg show no split.</p>${footer(v.meta)}`;
+      Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m, which lines up with the RowErg /500m target; BikeErg never counts as a benchmark. Other machines show no split.</p>${footer(v.meta)}`;
   const pick = document.getElementById('pick');
   if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
   wireFooter();
