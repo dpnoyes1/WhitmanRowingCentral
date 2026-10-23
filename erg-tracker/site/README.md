@@ -3,8 +3,8 @@
 Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the coach password (TEAM_PASSWORD). Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
 
 ```
-public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars, #/oyo, #/athletes, #/athlete/A001, #/week/A001 for coaches, #/me)
-functions/   login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars, /api/oyo, /api/week, /api/week/:id)
+public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 for coaches, #/me)
+functions/   login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/oyo, /api/week, /api/week/:id)
 lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet, 5-minute cache),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests

@@ -86,6 +86,12 @@ main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
   font: inherit; border: 0; border-radius: 9px; padding: 10px 16px; cursor: pointer;
   background: var(--accent); color: var(--accent-ink); min-height: 44px;
 }
+.btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; }
+.btn:disabled { opacity: .8; cursor: progress; }
+.btn .spinner { display: none; width: 16px; height: 16px; border: 2px solid currentColor; border-right-color: transparent; border-radius: 50%; animation: spin .7s linear infinite; }
+.btn.busy .spinner { display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) { .btn .spinner { animation-duration: 2s; } }
 .btn.ghost { background: none; color: var(--link); border: 1px solid var(--border); }
 input[type="password"], input[type="search"], .login input, select {
   font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px;

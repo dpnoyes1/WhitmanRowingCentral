@@ -58,12 +58,15 @@ async function api(path) {
   return body;
 }
 
+const isCoach = () => !!SESSION && SESSION.kind === 'team';
+
 function setNav(active) {
   document.getElementById('nav').hidden = false;
   const m = me();
   const link = document.getElementById('nav-me');
   link.hidden = !m;
   if (m) link.textContent = m.name.split(' ')[0];
+  document.getElementById('nav-stars').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
 
@@ -176,19 +179,26 @@ function showLogin() {
       <input id="name" autocomplete="username" autocapitalize="words" spellcheck="false">
       <label for="pw" class="small">Password</label>
       <input id="pw" type="password" autocomplete="current-password" required>
-      <button class="btn" type="submit">Sign in</button>
+      <button class="btn" type="submit" id="signin"><span class="spinner" aria-hidden="true"></span><span class="label">Sign in</span></button>
       <p id="login-err" class="error small" role="alert"></p>
     </form></div>`;
   document.getElementById('login').onsubmit = async (ev) => {
     ev.preventDefault();
     const err = document.getElementById('login-err');
     err.textContent = '';
-    const res = await fetch('/api/login', {
-      method: 'POST', headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ name: document.getElementById('name').value, password: document.getElementById('pw').value })
-    });
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) { err.textContent = body.error || 'Could not sign in.'; return; }
+    const btn = document.getElementById('signin');
+    if (btn.disabled) return;
+    btn.disabled = true; btn.classList.add('busy'); btn.querySelector('.label').textContent = 'Signing in…';
+    const done = (msg) => { btn.disabled = false; btn.classList.remove('busy'); btn.querySelector('.label').textContent = 'Sign in'; err.textContent = msg; };
+    let res, body;
+    try {
+      res = await fetch('/api/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({ name: document.getElementById('name').value, password: document.getElementById('pw').value })
+      });
+      body = await res.json().catch(() => ({}));
+    } catch { return done('Could not reach the site. Check your connection and try again.'); }
+    if (!res.ok) return done(body.error || 'Could not sign in.');
     store.set(OLD_ME_KEY, null);
     SESSION = null;
     location.hash = '#/';
@@ -504,7 +514,7 @@ async function route() {
     if (page === 'athletes') return await showAthletes();
     if (page === 'week') return await showWeek(arg ? decodeURIComponent(arg) : null);
     if (page === 'boards') return await showBoards();
-    if (page === 'stars') return await showStars();
+    if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
     const m = me();

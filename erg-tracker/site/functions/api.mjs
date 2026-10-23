@@ -29,7 +29,8 @@ export async function handle(req, envFn, deps = {}) {
   }
   if (path === '/api/team') return json({ ...teamView(data, today), meta });
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
-  if (path === '/api/stars') return json({ ...starsView(data, today), meta });
+  // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
+  if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
   if (path === '/api/week') return json({ ...weekView(data, today, who.kind === 'athlete' ? who.id : null), meta });
   const w = path.match(/^\/api\/week\/([A-Za-z0-9-]+)$/);
