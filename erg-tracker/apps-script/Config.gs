@@ -97,7 +97,7 @@ var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, 
 var ACTIVITIES = [
   ['Erg (RowErg)', 1.0],
   ['SkiErg', 1.0],
-  ['BikeErg', 0.6],
+  ['BikeErg', 1.0],
   ['Bike', 0.6],
   ['Run', 1.2],
   ['Stair stepper', 0.9],

@@ -37,7 +37,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 - Training minutes (headline) = warmup + work + rest + cooldown. Work minutes = main set only.
 - Total meters include rest meters. Rest never counts toward performance scoring.
-- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, Swim 0.8, Elliptical 0.7, Bike/BikeErg 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
+- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
 - Modified practice counts as complete; minutes weighted 0.6.
 - Load = session RPE (1-10) x minutes. Spike flag placeholder: +30% vs 4-week average (not confirmed).
 - Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor default 105; flag anything else for coaches.

@@ -47,7 +47,7 @@ export function rawMinutes(e) {
 
 /**
  * Weighted minutes. A Modified practice or make-up is weighted by
- * modified_multiplier instead of its activity (it is usually BikeErg, so the
+ * modified_multiplier instead of its activity multiplier (so the
  * two are not stacked); everything else by its activity multiplier.
  */
 export function weightedMinutes(e, settings) {
