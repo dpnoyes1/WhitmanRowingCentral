@@ -520,6 +520,16 @@ test('profile: roster columns appended and formulas reference them', () => {
   }
 });
 
+test('plan flag: Full but short of plan asks about Modified', () => {
+  assert.strictEqual(g.planFlag({ Status: 'Full' }, { matches: false, logged: 5, planned: 8, reason: '5 intervals logged, plan has 8' }),
+    'Logged Full, short of plan (5 of 8): Modified?');
+  assert.strictEqual(g.planFlag({ Status: 'Modified' }, { matches: false, logged: 5, planned: 8 }), '');
+  assert.strictEqual(g.planFlag({ Status: 'Full' }, { matches: true, logged: 8, planned: 8 }), '');
+  assert.ok(/does not match plan \(Interval 2 is not/.test(g.planFlag({ Status: 'Full' }, { matches: false, logged: 8, planned: 8, reason: 'Interval 2 is not 500m' })));
+  const c = g.checkAgainstPlan([], [], {}, {});
+  assert.strictEqual(c.logged, 0); assert.strictEqual(c.planned, 0);
+});
+
 const dummySettings = () => { const s = {}; g.SETTINGS_DEFAULTS.forEach(r => { s[r[0]] = r[1]; }); return s; };
 const dummy = g.buildDummyData({ settings: dummySettings() });
 

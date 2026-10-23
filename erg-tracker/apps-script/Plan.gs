@@ -244,7 +244,7 @@ function plannedFor(entry, athleteSquad, schedule) {
 /**
  * Checks a logged session against its planned pieces.
  * baseWatts: { '2k': w, "20'": w } season bests (missing = no target check).
- * Returns { matches, reason, hit, intervals: [{ n, watts, status }] } where
+ * Returns { matches, reason, hit, logged, planned, intervals: [{ n, watts, status }] } where
  * status is 'in' | 'below' | 'above' | '' (no target). hit is null when no
  * piece had a target. Computed at display, never stored.
  */
@@ -252,7 +252,7 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
   var planned = [];
   pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
   var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
-  var out = { matches: true, reason: '', hit: null, intervals: [] };
+  var out = { matches: true, reason: '', hit: null, logged: done.length, planned: planned.length, intervals: [] };
   if (done.length !== planned.length) {
     out.matches = false;
     out.reason = done.length + ' intervals logged, plan has ' + planned.length;
@@ -286,6 +286,19 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
   });
   out.hit = anyTarget ? allIn : null;
   return out;
+}
+
+/**
+ * Coach heads-up for a session marked Full that did not match its plan,
+ * e.g. 5 of 8 intervals logged without ticking Modified. '' when fine.
+ * A coach decides; nothing is changed automatically.
+ */
+function planFlag(entry, check) {
+  if (check.matches || String(entry.Status) !== 'Full') return '';
+  if (check.logged < check.planned) {
+    return 'Logged Full, short of plan (' + check.logged + ' of ' + check.planned + '): Modified?';
+  }
+  return 'Logged Full, does not match plan (' + check.reason + '): Modified?';
 }
 
 /**

@@ -128,6 +128,7 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 
 1. Pilot: Sheet + Form + Apps Script (this repo now), then Netlify dashboards (team, athlete, coach) with GMS, stars and passwords.
 2. Concept2 Logbook API sync and Slack bot (group DM per athlete with the three coaches; confirmation cards; Friday OYO progress; coach digest). Slack button clicks go to a Netlify Function (3 s reply limit). **Slack entry**: a `/log` command opening a Slack modal that writes the same Entries/Intervals rows with `Source = Slack`; reuse `parseSubmission`.
+   - **Plan mismatch DM to coaches** (David, 2026-10-23): when a session marked Full doesn't match its plan (e.g. 5 of 8 logged without Modified; `planFlag` in `Plan.gs`), message David in Slack with a button that sets Status to Modified (logged in Change log) and a link to edit the entry in depth. Until then the flag shows in the Plan check tab's Flag column.
 3. Photo of PM5, Strava, season required rate, past-season import, boys and Pyle MS.
 
 ## Open questions
