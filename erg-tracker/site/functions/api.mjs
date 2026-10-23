@@ -1,7 +1,7 @@
 import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -31,6 +31,8 @@ export async function handle(req, envFn, deps = {}) {
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
+  if (path === '/api/insights') return who.kind === 'team' ? json({ ...insightsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
   // Results vs goal: an athlete sees only her own; coaches see everyone's and can look back a week.
   const coach = who.kind === 'team';
@@ -50,12 +52,19 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const { todayPlan, ...rest } = view;
-    return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [], own, coach, meta });
+    const { todayPlan, insights, ...rest } = view;
+    return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
+      insights: coach ? insights : own ? ownInsights(insights) : null, own, coach, meta });
   }
   return json({ error: 'Not found' }, 404);
 }
 
+/** Her own insights without the load-jump flag and trailing average, which are for coaches (David, 2026-10-23). */
+function ownInsights(i) {
+  const { jumpPct, ...rest } = i;
+  return { ...rest, load: i.load.map((w) => ({ weekStart: w.weekStart, total: w.total, rpe: w.rpe, sessions: w.sessions })) };
+}
+
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };

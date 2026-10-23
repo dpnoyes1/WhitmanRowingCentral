@@ -841,4 +841,15 @@ test('ops: new school year closes the right year and retires graduates', () => {
   assert.deepStrictEqual(Array.from(g.graduatesToRetire(roster, 2027)).map((r) => r.Name), ['Fake Senior', 'Fake Missed']);
 });
 
+test('site feed: break ranges from Settings', () => {
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_('12/23/2026-01/03/2027; 2027-02-19 to 2027-02-15'))),
+    [{ from: '2026-12-23', to: '2027-01-03' }, { from: '2027-02-15', to: '2027-02-19' }]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_(''))), []);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_('12/23/2026'))), []);
+  const inputs = dummyFeedInputs();
+  inputs.settings = Object.assign({}, inputs.settings, { 'oyo.break.dates': '12/23/2026-01/03/2027', 'oyo.break.required': '30', 'oyo.break.elite': '' });
+  const b = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12)))).settings.oyoBreak;
+  assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: null });
+});
+
 console.log(`${passed} tests passed`);
