@@ -6,7 +6,7 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const COOKIE = 'wrc_session';
-export const SESSION_DAYS = 120;
+export const SESSION_DAYS = 365;   // stay signed in all season (David, 2026-10-23)
 
 function sign(secret, payload) {
   return createHmac('sha256', secret).update(payload).digest('base64url');

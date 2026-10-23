@@ -4,7 +4,7 @@ import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
 import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
-import { getFeed, clearFeedCache } from '../lib/feed.mjs';
+import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
@@ -176,7 +176,7 @@ test('feed: posts the key, caches 5 minutes, serves stale on error', async () =>
     return new Response(JSON.stringify(feed));
   };
   await getFeed(env, { fetchImpl, now: 0 });
-  await getFeed(env, { fetchImpl, now: 60000 });
+  await getFeed(env, { fetchImpl, now: 30000 });
   assert.strictEqual(calls, 1);
   fail = true;
   const r = await getFeed(env, { fetchImpl, now: 6 * 60000 });
@@ -184,6 +184,24 @@ test('feed: posts the key, caches 5 minutes, serves stale on error', async () =>
   await assert.rejects(getFeed(env, { fetchImpl, now: 25 * 3600000 }));
   clearFeedCache();
   await assert.rejects(getFeed(env, { fetchImpl: async () => new Response('{"error":"unauthorized"}'), now: 0 }), /unauthorized/);
+  clearFeedCache();
+  // Shared copy (Netlify Blobs): a fresh one means no Sheet call at all.
+  let saved = null;
+  const shared = { get: async () => saved, set: async (e) => { saved = e; } };
+  calls = 0; fail = false;
+  await refreshFeed(env, { fetchImpl, now: 0, shared });
+  assert.strictEqual(calls, 1);
+  clearFeedCache();
+  let got = await getFeed(env, { fetchImpl, now: 10 * 60000, shared });
+  assert.ok(!got.stale && got.data.athletes.length === 30 && calls === 1, 'served from the shared copy');
+  clearFeedCache();
+  await getFeed(env, { fetchImpl, now: 20 * 60000, shared });
+  assert.strictEqual(calls, 2, 'old shared copy: ask the Sheet');
+  assert.strictEqual(saved.at, 20 * 60000, 'and save what it said');
+  clearFeedCache(); fail = true;
+  got = await getFeed(env, { fetchImpl, now: 60 * 60000, shared });
+  assert.ok(got.stale, 'Sheet down: the shared copy, marked stale');
+  await assert.rejects(refreshFeed(env, { fetchImpl, shared: null }), /Blobs/);
   clearFeedCache();
 });
 
