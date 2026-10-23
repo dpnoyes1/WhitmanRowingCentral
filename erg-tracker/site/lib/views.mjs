@@ -328,6 +328,8 @@ export function weekView(feed, today, id = null, opts = {}) {
         const r = (s.results || []).filter((x) => x.athleteId === athleteId).pop();
         return r ? resultView(r, s.pieces) : null;
       };
+      // An older feed has no results yet: say nothing rather than "Not logged".
+      if (!Array.isArray(s.results)) return out;
       if (results === 'own' && a) {
         out.result = of(a.id);
         out.missed = !out.result && day < today;

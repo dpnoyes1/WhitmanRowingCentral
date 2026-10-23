@@ -291,6 +291,10 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
   const prev = weekView(feed, TODAY, null, { offset: -1, results: 'all' });
   assert.strictEqual(prev.weekStart, '2026-10-12');
   assert.ok(prev.days.flatMap((d) => d.sessions).some((s) => s.results.some((x) => x.result)), 'last week has results');
+  // A feed from before results (v2) shows no "Not logged".
+  const old = JSON.parse(JSON.stringify(feed));
+  old.weeks.forEach((w) => w.sessions.forEach((x) => delete x.results));
+  assert.ok(weekView(old, TODAY, rower.id, { results: 'own' }).days.flatMap((d) => d.sessions).every((x) => !x.missed && !x.result));
   // Over the API: an athlete gets only her own result, never a teammate's, and can't look back.
   const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
