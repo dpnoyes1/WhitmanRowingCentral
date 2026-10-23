@@ -16,6 +16,9 @@ function onOpen() {
     .addItem('Check week against plan', 'checkWeekAgainstPlan')
     .addSeparator()
     .addItem('Rebuild form (new link)', 'rebuildForm')
+    .addSeparator()
+    .addItem('Load dummy data', 'loadDummyData')
+    .addItem('Clear dummy data', 'clearDummyData')
     .addToUi();
 }
 

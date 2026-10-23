@@ -116,4 +116,4 @@ Wellness check-ins, menstrual tracking, visible weight anywhere, XBoat, excused/
 
 - Apps Script source: `apps-script/*.gs`. Paste into the Sheet's Extensions > Apps Script, or push with `clasp` (see `docs/SETUP.md`).
 - Tests: `node erg-tracker/tests/run.js` (no dependencies). Run before every commit. Keep pure logic (parsing, GMS, schedule) free of Sheet/Form calls so it stays testable and portable to the Netlify site.
-- Next planned step: dummy data generator so David can explore usage before real setup.
+- Dummy data (decided 2026-10-23): `apps-script/Dummy.gs`, menu **Load dummy data** / **Clear dummy data**. 30 made-up athletes (4 each 7th-9th novices, 6 each 10th-12th varsity), practices Oct 5-23 2026 plus a planned week Oct 26-30, OYO, make-ups, weights, and three rounds of 2k and 20' (late Aug, Sep, Oct); not everyone improves every round. Seeded, so it is the same each load. Marks: Athlete IDs A901+, Roster Notes / Weights Note start `DUMMY`, Source `Dummy`, IDs contain `-DUMMY-`, Workout IDs start `DUMMY-`. David will clear it all before adding real athletes.

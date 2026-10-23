@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -379,6 +379,137 @@ test('profile: roster columns appended and formulas reference them', () => {
     let depth = 0; for (const c of f) { if (c === '(') depth++; if (c === ')') depth--; assert.ok(depth >= 0, f); }
     assert.strictEqual(depth, 0, 'balanced parens: ' + f);
   }
+});
+
+const dummySettings = () => { const s = {}; g.SETTINGS_DEFAULTS.forEach(r => { s[r[0]] = r[1]; }); return s; };
+const dummy = g.buildDummyData({ settings: dummySettings() });
+
+test('dummy: 30 athletes, novices 7th-9th, varsity 10th-12th, unique fake-marked names', () => {
+  const today = new Date(2026, 9, 23);
+  assert.strictEqual(dummy.roster.length, 30);
+  const grades = {};
+  dummy.roster.forEach(r => {
+    const y = g.schoolYear(r['Grad year'], today);
+    grades[r.Squad + ' ' + y] = (grades[r.Squad + ' ' + y] || 0) + 1;
+    assert.ok(g.isDummyRow_(g.TABS.ROSTER, r), r.Name);
+    assert.ok(/^A9\d\d$/.test(r['Athlete ID']), r['Athlete ID']);
+    assert.ok(g.ageGroup(r.Birthday, today), r.Name);
+  });
+  assert.deepStrictEqual(grades, { 'Novice 7th': 4, 'Novice 8th': 4, 'Novice 9th': 4,
+    'Varsity 10th': 6, 'Varsity 11th': 6, 'Varsity 12th': 6 });
+  assert.strictEqual(new Set(dummy.roster.map(r => r.Name)).size, 30);
+});
+
+test('dummy: same data every run, every row marked, columns match headers', () => {
+  const again = g.buildDummyData({ settings: dummySettings() });
+  assert.strictEqual(JSON.stringify(again), JSON.stringify(dummy));
+  const tabs = { roster: 'ROSTER', weights: 'WEIGHTS', practices: 'PRACTICES', workouts: 'WORKOUTS',
+    schedule: 'SCHEDULE', entries: 'ENTRIES', intervals: 'INTERVALS', benchmarks: 'BENCHMARKS' };
+  Object.keys(tabs).forEach(k => {
+    const name = g.TABS[tabs[k]];
+    const writable = g.HEADERS[name].slice(0, g.writableWidth_(name));
+    dummy[k].forEach(r => {
+      Object.keys(r).forEach(h => assert.ok(writable.includes(h), k + ' has unknown column ' + h));
+      assert.ok(g.isDummyRow_(name, r), k + ' row not marked');
+    });
+  });
+  assert.strictEqual(g.writableWidth_(g.TABS.ROSTER), g.HEADERS[g.TABS.ROSTER].indexOf('Age group'));
+  assert.ok(!g.isDummyRow_(g.TABS.ENTRIES, { 'Entry ID': 'E12AB', Source: 'Form' }));
+  assert.ok(!g.isDummyRow_(g.TABS.ROSTER, { Notes: 'Captain' }));
+});
+
+test('dummy: sessions link to intervals and tests, times in seconds, at most 10 intervals', () => {
+  const byEntry = {};
+  dummy.intervals.forEach(iv => { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
+  const entryIds = new Set(dummy.entries.map(e => e['Entry ID']));
+  assert.strictEqual(entryIds.size, dummy.entries.length);
+  dummy.intervals.forEach(iv => assert.ok(entryIds.has(iv['Entry ID'])));
+  dummy.entries.forEach(e => {
+    const ivs = byEntry[e['Entry ID']] || [];
+    if (e.Status === 'Out') { assert.strictEqual(ivs.length, 0); return; }
+    assert.ok(ivs.length >= 1 && ivs.length <= g.MAX_INTERVALS, e['Entry ID']);
+    near(e['Work s'], ivs.reduce((s, iv) => s + Number(iv['Work s']), 0), 0.05, 'work s');
+    assert.strictEqual(typeof e['Warmup s'], 'number');
+    ivs.forEach(iv => assert.strictEqual(iv['Work s'], Math.round(iv['Work s'] * 10) / 10));
+  });
+  const benchIds = new Set(dummy.benchmarks.map(b => b['Benchmark ID']));
+  dummy.benchmarks.forEach(b => {
+    const e = dummy.entries.find(x => x['Entry ID'] === b['Entry ID']);
+    assert.ok(e && e['Benchmark ID'] === b['Benchmark ID'], b['Benchmark ID']);
+    if (b.Test === '2000m') near(b['Splits s'].split(',').reduce((s, x) => s + Number(x), 0), b['Time s'], 0.05, 'splits');
+  });
+  dummy.entries.filter(e => e['Benchmark ID']).forEach(e => assert.ok(benchIds.has(e['Benchmark ID'])));
+  assert.ok(dummy.entries.every(e => !Object.keys(e).some(k => /weight/i.test(k))));
+});
+
+test('dummy: three test rounds a month apart, mostly better but not always', () => {
+  const dates = [...new Set(dummy.benchmarks.map(b => g.dayKey_(b.Date)))].sort();
+  assert.deepStrictEqual(dates, ['2026-08-24', '2026-08-27', '2026-09-21', '2026-09-24', '2026-10-19', '2026-10-22']);
+  const twoK = {};
+  dummy.benchmarks.filter(b => b.Test === '2000m').forEach(b => { (twoK[b['Athlete ID']] = twoK[b['Athlete ID']] || []).push(b); });
+  let improvedOverall = 0, slower = 0, full = 0;
+  Object.values(twoK).forEach(rows => {
+    rows.sort((a, b) => a.Date - b.Date);
+    const t = rows.map(r => r['Time s']);
+    if (t.length === 3) { full++; if (t[2] < t[0]) improvedOverall++; }
+    for (let i = 1; i < t.length; i++) if (t[i] > t[i - 1]) { slower++; break; }
+  });
+  assert.ok(full >= 20, 'most athletes took all three 2ks: ' + full);
+  assert.ok(improvedOverall >= full * 0.75, 'most improved: ' + improvedOverall + '/' + full);
+  assert.ok(slower >= 4, 'some got slower in a round: ' + slower);
+});
+
+test('dummy: weights only on Weights, one per athlete per round they joined for', () => {
+  assert.ok(dummy.weights.length >= 80 && dummy.weights.length <= 90, dummy.weights.length);
+  dummy.weights.forEach(w => assert.ok(w['Weight lb'] >= 90 && w['Weight lb'] <= 185, w['Weight lb']));
+  ['entries', 'intervals', 'benchmarks', 'roster', 'schedule', 'workouts'].forEach(k =>
+    assert.ok(!JSON.stringify(dummy[k]).match(/weight|\blb\b/i), k + ' mentions weight'));
+});
+
+test('dummy: practices Oct 5-23, plan checks run, one rower flagged with no benchmark', () => {
+  const pr = dummy.entries.filter(e => e['Session type'] === 'Practice');
+  const days = [...new Set(pr.map(e => g.dayKey_(e.Date)).filter(k => k >= '2026-10-01'))].sort();
+  assert.strictEqual(days.length, 15);
+  assert.strictEqual(days[0], '2026-10-05');
+  assert.strictEqual(days[14], '2026-10-23');
+  const squads = {}; dummy.roster.forEach(r => { squads[r['Athlete ID']] = r.Squad; });
+  let checked = 0, matched = 0;
+  dummy.entries.forEach(e => {
+    if (e.Status === 'Out' || e['Session type'] === 'OYO') return;
+    const p = g.plannedFor(e, squads[e['Athlete ID']], dummy.schedule);
+    assert.ok(p, 'no plan for ' + e['Entry ID']);
+    const c = g.checkAgainstPlan(dummy.intervals.filter(iv => iv['Entry ID'] === e['Entry ID']),
+      g.workoutPieces(dummy.workouts, p['Workout ID']), {}, dummySettings());
+    checked++; if (c.matches) matched++;
+  });
+  assert.ok(matched / checked > 0.95, matched + '/' + checked);
+  const plan = g.buildWeekPlan({ schedule: dummy.schedule, workouts: dummy.workouts, roster: dummy.roster,
+    benchmarks: dummy.benchmarks, settings: dummySettings(), weekStart: new Date(2026, 9, 26), publishedOnly: true });
+  assert.ok(plan.sessions.length >= 5);
+  assert.deepStrictEqual([...new Set(plan.flags.map(f => f.athlete))], ['Hazel Whitcomb']);
+});
+
+test('dummy: varied attendance, a 5+ day absence, make-ups and OYO below and above goals', () => {
+  const outs = {};
+  dummy.entries.filter(e => e.Status === 'Out').forEach(e => { (outs[e.Athlete] = outs[e.Athlete] || []).push(e); });
+  assert.ok((outs['Julia Thornton'] || []).length >= 5, 'return-to-training case');
+  assert.ok(Object.keys(outs).length >= 8, 'several athletes logged an Out');
+  const makeups = dummy.entries.filter(e => e['Session type'] === 'Make-up');
+  assert.ok(makeups.length >= 5);
+  makeups.forEach(m => {
+    const gap = (m.Date - m['Make-up for date']) / 864e5;
+    assert.ok(gap > 0 && gap <= 7, 'make-up within 7 days');
+  });
+  assert.ok(dummy.entries.filter(e => e.Status === 'Modified').length >= 5);
+  const mult = {}; g.ACTIVITIES.forEach(a => { mult[a[0]] = a[1]; });
+  const week1 = {};
+  dummy.entries.filter(e => e['Session type'] === 'OYO' && e.Date < new Date(2026, 9, 12)).forEach(e => {
+    week1[e.Athlete] = (week1[e.Athlete] || 0) + e['Work s'] / 60 * mult[e.Activity];
+  });
+  const v = Object.values(week1);
+  assert.ok(v.filter(x => x < 60).length >= 3, 'some miss Required');
+  assert.ok(v.filter(x => x >= 120).length >= 5, 'some reach Elite');
+  assert.ok(new Set(dummy.entries.filter(e => e['Session type'] === 'OYO').map(e => e.Activity)).size >= 6);
 });
 
 console.log(`${passed} tests passed`);

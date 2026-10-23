@@ -41,6 +41,28 @@ You now have all ten tabs, the Form, a raw responses backup tab, and two trigger
 
 Targets use season-best watts (school year from `school_year_start`), falling back to last season. Rejected benchmark rows are ignored. Weight is never used.
 
+## Explore with dummy data (optional)
+
+Before entering real athletes, run **Erg Tracker > Load dummy data**. It adds 30 made-up athletes (12 novices in 7th-9th, 18 varsity in 10th-12th) with:
+- practices from Oct 5 to Oct 23, 2026, including Out days, Modified days, and make-ups
+- OYO sessions; some athletes miss Required and some reach Elite
+- a published plan, including the week of Oct 26 so **Preview week ahead** has something to show
+- weights
+- three rounds of 2k and 20' tests (late August, September and October)
+
+One athlete is out for 6 practices with a ramp-back week. Another has no tests yet, so she shows up as a FLAG. Not everyone improves every round.
+
+Try **Preview week ahead** (2026-10-26) and **Check week against plan** (2026-10-05, 2026-10-12 or 2026-10-19).
+
+**Erg Tracker > Clear dummy data** removes only the dummy rows. It finds them by these marks:
+- Athlete IDs A901 and up
+- `DUMMY` in Roster Notes and Weights Note
+- Source `Dummy`
+- `-DUMMY-` in Entry and Benchmark IDs
+- `DUMMY-` at the start of Workout IDs
+
+Clear it before adding real athletes.
+
 ## 5. Share
 
 - Share the link saved in **Settings > form.share_url** with athletes. Use that link, not the Form's plain link: it prefills warmup 15:00 and drag factor 105.
