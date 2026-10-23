@@ -39,12 +39,15 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 - Total meters include rest meters. Rest never counts toward performance scoring.
 - Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
 - Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
-- Load = session RPE (1-10) x minutes. Spike flag placeholder: +30% vs 4-week average (not confirmed).
+- Load trend (David, 2026-10-23): weekly weighted minutes per athlete. Coaches see a flag when a week is more than Settings `load.jump_pct` (15) above the average of the 3 weeks before; in her first weeks the average uses the weeks since her first session (her first week is never flagged). `loadTrend` in `site/lib/stats.mjs`. The old `spike_threshold_pct` row is unused.
+- Effort: no new Form question (no soreness; wellness stays out of scope). The site charts weekly average Session RPE, weighted by training minutes.
 - Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor default 105; flag anything else for coaches.
 
 ## OYO goals
 
 Weekly weighted minutes. Standard group Required 60 / Elite 120. Performance group per-athlete (placeholder 90/180; Roster overrides). Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
+
+Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practices or scheduled workouts, so everything is OYO. Settings `oyo.break.dates` holds the range(s) and `oyo.break.required` / `oyo.break.elite` the goals for everyone in a break week (blank = her usual goal). A Mon-Sun week with 4+ break days is a break week (`isBreakWeek` / `oyoGoals` in `site/lib/stats.mjs`). Real dates go in Settings only.
 
 ## Benchmarks, GMS and stars
 
@@ -124,6 +127,7 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 - GMS % goes only to the signed-in athlete for her own page and to coaches (team session), enforced by `/api/athlete/:id`; teammates get stars only. Coaches also see each athlete's Today card and can open any athlete's week at `#/week/ID`. Stars next to names are public; the Stars ranking tab and `/api/stars` are coaches only (David, 2026-10-23). The team view shows GMS averages only (`teamGmsForSite`).
 - Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
 - Week ahead (layer 3, David 2026-10-23): **Week** tab shows only the coming week, Monday to Saturday (this week through Saturday, next week from Sunday), her squad's sessions and only her own targets. Her own page has a **Today** card with today's targets. No 2k or 20' yet: she sees "No target yet: do a 2k or 20' to get one." and coaches see the FLAG row in the Sheet's plan report (coach view and Slack later). Results vs goal (David, 2026-10-23): once logged, each session shows her splits per piece against her target (✓ in range, ↓ under, ↑ over; same rule as the Sheet's Plan check), and past sessions she didn't log say "Not logged". An athlete sees only her own results. Coaches see everyone in the session's squad (logged or not) in a fold-out under each workout, can open any athlete's week, and can look back one week (`#/week/prev`, `?week=prev`). The feed's `weeks` covers last, this and next week; each session carries `results` from `feedWeekResults_` in `Feed.gs`. Benchmark tests are scored, not ranged. BikeErg (David, 2026-10-23): same monitor, double the distance, so its meters count as half (`rowEquivalentIntervals` in `Plan.gs`; 2:00/1000m bike = 2:00/500m row = 202.5 W); its split shows with a * and is ranged against the RowErg target, and it never counts as a benchmark. Other machines show no split or range.
+- Insights (David, 2026-10-23): her own page and coaches only (teammates get none; `/api/athlete/:id` sets `insights` to null): RPE by week, steady-state (UT2/UT1 RowErg, BikeErg at half meters) split by week with a faster/slower trend, 2k and 20' this school year with the change from the last one, an estimated 2k from a 20' newer than her last 2k (8.5 s rule), and this month's practices logged (make-ups count) with her streak. The load flag and trailing average are coaches only. Coaches get an **Insights** tab (`/api/insights`) with every rower, flagged first. No public consistency ranking.
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
 - Deploy previews require a Netlify login. Production needs a site sign-in.
 
@@ -136,7 +140,7 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 
 ## Open questions
 
-- Spike threshold (placeholder +30%). Performance default targets (placeholder 90/180).
+- Performance default targets (placeholder 90/180).
 - Rewards for milestones and Elite. Team shoutouts in Slack.
 
 ## Out of scope by decision

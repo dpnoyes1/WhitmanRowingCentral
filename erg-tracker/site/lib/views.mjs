@@ -5,7 +5,7 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, TESTS
+  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -50,7 +50,7 @@ export function teamView(feed, today) {
       practiceMin += w.practice;
       oyoMin += w.oyo;
       if (w.oyo > 0) anyOyo++;
-      const s = oyoStatus(w.oyo, a);
+      const s = oyoStatus(w.oyo, oyoGoals(a, monday, feed.settings));
       if (s !== 'short') met++;
       if (s === 'elite') elite++;
     });
@@ -113,6 +113,7 @@ export function athleteView(feed, id, today) {
   const season = record.filter((r) => r.date >= yearStart);
   const week = record.filter((r) => r.date >= monday);
   const thisWeek = weekMinutes(mine, feed.settings, monday)[id] || { practice: 0, oyo: 0, total: 0 };
+  const goals = oyoGoals(a, monday, feed.settings);
 
   let seasonMin = 0, seasonMeters = 0;
   mine.forEach((e) => {
@@ -129,10 +130,10 @@ export function athleteView(feed, id, today) {
 
   return {
     today, weekStart: monday, yearStart,
-    athlete: { ...athleteSummary(a), active: a.active, oyoGroup: a.oyoGroup, oyoRequired: a.oyoRequired, oyoElite: a.oyoElite },
+    athlete: { ...athleteSummary(a), active: a.active, oyoGroup: a.oyoGroup, oyoRequired: goals.oyoRequired, oyoElite: goals.oyoElite, breakWeek: goals.breakWeek },
     week: {
       practicesDone: week.filter((r) => r.done).length, practicesExpected: week.length,
-      practiceMin: round(thisWeek.practice), oyoMin: round(thisWeek.oyo), oyoStatus: oyoStatus(thisWeek.oyo, a)
+      practiceMin: round(thisWeek.practice), oyoMin: round(thisWeek.oyo), oyoStatus: oyoStatus(thisWeek.oyo, goals)
     },
     season: {
       practicesDone: season.filter((r) => r.done).length, practicesExpected: season.length,
@@ -154,12 +155,82 @@ export function athleteView(feed, id, today) {
     })),
     tests,
     gms: athleteGms(feed, id, today),
+    insights: athleteInsights(feed, a, mine, record, weeks, yearStart, today),   // her own page and coaches only (api.mjs)
     todayPlan: (weekView(feed, today, id, { results: 'own' }).days.find((d) => d.day === today) || { sessions: [] }).sessions,   // her own page and coaches only (api.mjs strips it for anyone else)
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
       .map((e) => sessionRow(e, feed.settings))
   };
+}
+
+// ---- load, effort, progress and consistency (David, 2026-10-23) ---------------
+
+function loadRow(w) {
+  return { weekStart: w.weekStart, total: round(w.total, 1), rpe: round(w.rpe, 1), sessions: w.sessions,
+    trailing: round(w.trailing, 1), trailingWeeks: w.trailingWeeks, changePct: round(w.changePct), flag: w.flag };
+}
+
+function trendRow(t) {
+  return t && { changeS: round(t.changeS, 1), recentS: round(t.recentS, 1), earlierS: round(t.earlierS, 1), weeksEach: t.weeksEach };
+}
+
+/**
+ * Private insights for her own page and coaches: weekly load with RPE and the
+ * jump flag (api.mjs keeps the flag for coaches), steady-state split by week,
+ * 2k and 20' this school year with the change from the one before, a projected
+ * 2k from a newer 20', and this month's consistency.
+ */
+function athleteInsights(feed, a, mine, record, weeks, yearStart, today) {
+  const steady = steadySplits(mine, weeks);
+  const progress = {};
+  ['2000m', '20min'].forEach((t) => {
+    let prev = null;
+    progress[t] = feed.benchmarks
+      .filter((b) => b.athleteId === a.id && b.test === t && b.valid && b.date >= yearStart && resultValue(b))
+      .sort((x, y) => (x.date < y.date ? -1 : 1))
+      .map((b) => {
+        const row = { ...testRow(b), change: prev === null ? null : round(resultValue(b) - prev, 1) };
+        prev = resultValue(b);
+        return row;
+      });
+  });
+  const proj = projected2k(a.id, feed.benchmarks, yearStart);
+  return {
+    jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
+    load: loadTrend(mine, feed.settings, weeks).map(loadRow),
+    steady: steady.map((w) => ({ weekStart: w.weekStart, splitS: round(w.splitS, 1), meters: round(w.meters) })),
+    splitTrend: trendRow(splitTrend(steady)),
+    progress,
+    projected2k: proj && { ...proj, timeS: round(proj.timeS, 1) },
+    month: { ...monthConsistency(record, today), streak: practiceStreak(record) }
+  };
+}
+
+/**
+ * Coaches' table, one row per active rower: load this week so far and last
+ * week against the trailing average, RPE, steady-split trend, projected 2k and
+ * this month's consistency. Flagged rowers first.
+ */
+export function insightsView(feed, today) {
+  const monday = weekStart(today);
+  const last = addDays(monday, -7);
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const splitWeeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));
+  const rows = activeRowers(feed).map((a) => {
+    const mine = feed.entries.filter((e) => e.athleteId === a.id);
+    const [prev, cur] = loadTrend(mine, feed.settings, [last, monday]).map(loadRow);
+    const record = practiceRecord(a, feed, today);
+    const proj = projected2k(a.id, feed.benchmarks, yearStart);
+    return {
+      ...athleteSummary(a), lastWeek: prev, thisWeek: cur,
+      splitTrend: trendRow(splitTrend(steadySplits(mine, splitWeeks))),
+      projected2k: proj && round(proj.timeS, 1),
+      month: { ...monthConsistency(record, today), streak: practiceStreak(record) }
+    };
+  });
+  rows.sort((x, y) => (Number(y.thisWeek.flag || y.lastWeek.flag) - Number(x.thisWeek.flag || x.lastWeek.flag)) || x.name.localeCompare(y.name));
+  return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT, rowers: rows };
 }
 
 function testRow(b) {
@@ -241,14 +312,15 @@ export function oyoView(feed, today) {
   const lastWeek = weekMinutes(feed.entries, feed.settings, lastMonday);
   const rowers = activeRowers(feed).map((a) => {
     const now = (thisWeek[a.id] || { oyo: 0 }).oyo, before = (lastWeek[a.id] || { oyo: 0 }).oyo;
+    const g = oyoGoals(a, monday, feed.settings), lg = oyoGoals(a, lastMonday, feed.settings);
     return {
-      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: a.oyoRequired, elite: a.oyoElite,
-      minutes: round(now), status: oyoStatus(now, a),
-      lastWeek: { minutes: round(before), status: oyoStatus(before, a) },
+      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: g.oyoRequired, elite: g.oyoElite,
+      minutes: round(now), status: oyoStatus(now, g),
+      lastWeek: { minutes: round(before), status: oyoStatus(before, lg), required: lg.oyoRequired, elite: lg.oyoElite },
       streak: oyoWeekStreak(a, feed, today)
     };
   }).sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
-  return { today, weekStart: monday, lastWeekStart: lastMonday, rowers };
+  return { today, weekStart: monday, lastWeekStart: lastMonday, breakWeek: isBreakWeek(monday, feed.settings), lastBreakWeek: isBreakWeek(lastMonday, feed.settings), rowers };
 }
 
 /**

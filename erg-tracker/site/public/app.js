@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/oyo, #/athletes, #/athlete/A001, #/me
+// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -79,6 +79,7 @@ function setNav(active) {
   link.hidden = !m;
   if (m) link.textContent = m.name.split(' ')[0];
   document.getElementById('nav-stars').hidden = !isCoach();
+  document.getElementById('nav-insights').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
 
@@ -124,11 +125,15 @@ function wireTips(root) {
 
 // ---- charts --------------------------------------------------------------
 
-/** Stacked weekly bars: practice + OYO minutes. rows: [{ weekStart, practice, oyo }] */
-function weeklyChart(rows, caption) {
+/**
+ * Stacked weekly bars: practice + OYO minutes. rows: [{ weekStart, practice, oyo }].
+ * load (optional, same weeks): [{ rpe, trailing, changePct, flag }]; trailing and
+ * flag only reach coaches, who see the 3-week average as a tick and jumps marked.
+ */
+function weeklyChart(rows, caption, load = null) {
   const narrow = window.innerWidth < 600;
   const W = narrow ? 380 : 640, H = narrow ? 200 : 220, padL = 34, padB = 26, padT = 10;
-  const max = Math.max(60, ...rows.map((r) => r.practice + r.oyo));
+  const max = Math.max(60, ...rows.map((r, i) => Math.max(r.practice + r.oyo, (load && load[i].trailing) || 0)));
   const step = max > 600 ? 240 : max > 240 ? 120 : 60;
   const top = Math.ceil(max / step) * step;
   const y = (v) => padT + (H - padT - padB) * (1 - v / top);
@@ -143,21 +148,30 @@ function weeklyChart(rows, caption) {
     const x = padL + i * bw + (bw - barW) / 2;
     const p = r.practice, o = r.oyo;
     const yp = y(p), yo = y(p + o);
-    const label = `<b>Week of ${fmtDate(r.weekStart)}</b><br>Practice ${fmtMin(p)}<br>OYO ${fmtMin(o)}<br>Total ${fmtMin(p + o)}`;
+    const l = load && load[i];
+    const label = `<b>Week of ${fmtDate(r.weekStart)}</b><br>Practice ${fmtMin(p)}<br>OYO ${fmtMin(o)}<br>Total ${fmtMin(p + o)}` +
+      (l && l.rpe !== null ? `<br>Average RPE ${l.rpe}` : '') +
+      (l && l.trailing !== null && l.trailing !== undefined ? `<br>${l.trailingWeeks}-week average before: ${fmtMin(l.trailing)}${l.changePct === null ? '' : ` (${l.changePct > 0 ? '+' : ''}${l.changePct}%)`}` : '');
     const gap = o > 0 && p > 0 ? 2 : 0;
+    const cx = padL + i * bw + bw / 2;
+    const tick = l && l.trailing ? `<line class="avg-tick" x1="${cx - barW / 2 - 4}" x2="${cx + barW / 2 + 4}" y1="${y(l.trailing)}" y2="${y(l.trailing)}"/>` : '';
+    const flag = l && l.flag ? `<text class="flag-label" x="${cx}" y="${Math.max(padT + 10, Math.min(y(p + o), l.trailing ? y(l.trailing) : H) - 5)}" text-anchor="middle">▲${l.changePct}%</text>` : '';
     return `<g data-tip="${esc(label)}">
       <rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padT - padB}" fill="transparent"/>
       ${p > 0 ? `<rect x="${x}" y="${yp}" width="${barW}" height="${Math.max(0, y(0) - yp)}" fill="var(--series-1)" rx="${o > 0 ? 0 : 4}"/>` : ''}
       ${o > 0 ? `<rect x="${x}" y="${yo}" width="${barW}" height="${Math.max(0, yp - yo - gap)}" fill="var(--series-2)" rx="4"/>` : ''}
-      <text class="axis" x="${padL + i * bw + bw / 2}" y="${H - 8}" text-anchor="middle">${fmtDate(r.weekStart, { month: 'numeric', day: 'numeric' })}</text>
+      ${tick}${flag}
+      <text class="axis" x="${cx}" y="${H - 8}" text-anchor="middle">${fmtDate(r.weekStart, { month: 'numeric', day: 'numeric' })}</text>
     </g>`;
   }).join('');
+  const coachLoad = load && load.some((l) => l.trailing !== undefined);
   const table = `<details class="small"><summary class="muted">Show as a table</summary><div class="table-wrap"><table>
-    <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th></tr>
-    ${rows.map((r) => `<tr><td>${fmtDate(r.weekStart)}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td></tr>`).join('')}
+    <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th>${load ? '<th class="r">RPE</th>' : ''}${coachLoad ? '<th class="r">vs average</th>' : ''}</tr>
+    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
+      ${load ? `<td class="r">${load[i].rpe ?? ''}</td>` : ''}${coachLoad ? `<td class="r">${load[i].changePct === null ? '' : `${load[i].flag ? '▲ ' : ''}${load[i].changePct > 0 ? '+' : ''}${load[i].changePct}%`}</td>` : ''}</tr>`).join('')}
   </table></div></details>`;
   return `<div class="chart">
-    <div class="legend"><span><i style="background:var(--series-1)"></i>Practice</span><span><i style="background:var(--series-2)"></i>OYO</span></div>
+    <div class="legend"><span><i style="background:var(--series-1)"></i>Practice</span><span><i style="background:var(--series-2)"></i>OYO</span>${coachLoad ? '<span><i class="tick-key"></i>Average of the 3 weeks before</span><span class="flag-label">▲ jump</span>' : ''}</div>
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(caption)}">${grid}${bars}</svg>${table}</div>`;
 }
 
@@ -173,6 +187,34 @@ function zoneBar(z) {
   const key = zones.map((k, i) => `<div><span class="legend"><span><i style="background:var(--seq-${i + 1})"></i>${k}</span></span>
     <b>${Math.round((100 * (z[k] || 0)) / total)}%</b><span class="muted">${fmtMin(z[k] || 0)}</span></div>`).join('');
   return `<div class="stack" role="img" aria-label="Minutes by training zone">${seg}</div><div class="zones-key">${key}</div>`;
+}
+
+/**
+ * One series by week as a line with dots; weeks with no value leave a gap.
+ * points: [{ weekStart, value }]. invert puts lower values on top (faster splits).
+ */
+function lineChart(points, { caption, fmt, invert = false, pad = 1, tipLabel, min = null, max = null }) {
+  const have = points.filter((p) => p.value !== null && p.value !== undefined);
+  if (!have.length) return '<p class="muted">Nothing logged yet.</p>';
+  const narrow = window.innerWidth < 600;
+  const W = narrow ? 380 : 640, H = 150, padL = 44, padB = 24, padT = 12, padR = 8;
+  const lo = min ?? Math.min(...have.map((p) => p.value)) - pad, hi = max ?? Math.max(...have.map((p) => p.value)) + pad;
+  const y = (v) => padT + (H - padT - padB) * (invert ? (v - lo) / (hi - lo) : 1 - (v - lo) / (hi - lo));
+  const bw = (W - padL - padR) / points.length;
+  const x = (i) => padL + i * bw + bw / 2;
+  const grid = [lo, (lo + hi) / 2, hi].map((v) => `<line class="grid-line" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"/>` +
+    `<text class="axis" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${fmt(v)}</text>`).join('');
+  let path = '', pen = false;
+  points.forEach((p, i) => {
+    if (p.value === null || p.value === undefined) { pen = false; return; }
+    path += `${pen ? 'L' : 'M'}${x(i).toFixed(1)},${y(p.value).toFixed(1)}`;
+    pen = true;
+  });
+  const dots = points.map((p, i) => `<g data-tip="${esc(`<b>Week of ${fmtDate(p.weekStart)}</b><br>${tipLabel}: ${p.value === null || p.value === undefined ? 'none' : fmt(p.value)}`)}">
+      <rect x="${padL + i * bw}" y="${padT}" width="${bw}" height="${H - padT - padB}" fill="transparent"/>
+      ${p.value === null || p.value === undefined ? '' : `<circle cx="${x(i)}" cy="${y(p.value)}" r="4.5" class="dot-mark"/>`}
+      <text class="axis" x="${x(i)}" y="${H - 6}" text-anchor="middle">${fmtDate(p.weekStart, { month: 'numeric', day: 'numeric' })}</text></g>`).join('');
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(caption)}">${grid}<path d="${path}" class="line-mark"/>${dots}</svg></div>`;
 }
 
 function tile(label, value, sub = '') {
@@ -312,8 +354,9 @@ async function showAthlete(id) {
       ${tile('Practice streak', v.streaks.practices, 'in a row')}
       ${tile('OYO goal streak', v.streaks.oyoWeeks, v.streaks.oyoWeeks === 1 ? 'week' : 'weeks in a row')}
       ${tile('Season training', fmtMin(s.trainingMin), fmtNum(s.meters) + ' m')}
+      ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
-    <div class="card"><h2>OYO this week: ${fmtMin(w.oyoMin)} <span class="pill ${w.oyoStatus === 'short' ? '' : 'good'}">${oyoText}</span></h2>
+    <div class="card"><h2>OYO this week: ${fmtMin(w.oyoMin)} <span class="pill ${w.oyoStatus === 'short' ? '' : 'good'}">${oyoText}</span>${a.breakWeek ? ' <span class="pill">Break week</span>' : ''}</h2>
       <div class="meter" role="img" aria-label="OYO ${Math.round(w.oyoMin)} of ${a.oyoRequired} required, ${a.oyoElite} elite">
         <div class="fill" style="width:${Math.min(100, (100 * w.oyoMin) / oyoMax)}%"></div>
         <div class="mark" style="left:${(100 * a.oyoRequired) / oyoMax}%"><span>Required ${a.oyoRequired}m</span></div>
@@ -322,7 +365,9 @@ async function showAthlete(id) {
     ${makeups}
     ${v.own || v.coach ? gmsCard(v.gms, v.coach) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
-    <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes')}</div>
+    <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes', v.insights && v.insights.load)}
+      ${v.insights ? loadNote(v.insights, v.coach) : ''}</div>
+    ${v.insights ? effortCard(v.insights) + progressCard(v.insights, v.coach) : ''}
     <div class="two">
       <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(v.zones)}</div>
       <div class="card"><h2>Last 10 practices</h2><div class="dots">
@@ -336,6 +381,54 @@ async function showAthlete(id) {
   if (notYou) notYou.onclick = signOut;
   wireTips(app);
   wireFooter();
+}
+
+// ---- load, effort, progress, consistency (own page and coaches only) ------
+
+function monthTile(m, today) {
+  const name = fmtDate(today, { month: 'long' });
+  return tile(`${name} so far`, m.pct === null ? '–' : m.pct + '%', `${m.done} of ${m.expected} practices logged`);
+}
+
+function loadNote(ins, coach) {
+  if (!coach) return '<p class="muted small">Only you and your coaches see your effort and progress below.</p>';
+  const flagged = ins.load.filter((l) => l.flag);
+  return `<p class="muted small">The tick is her average for the 3 weeks before (fewer in her first weeks). ▲ marks a week more than ${ins.jumpPct}% above it.
+    ${flagged.length ? `<b>${flagged.length} week${flagged.length > 1 ? 's' : ''} flagged.</b>` : 'No jumps in these weeks.'}</p>`;
+}
+
+function effortCard(ins) {
+  return `<div class="card"><h2>Effort (average session RPE)</h2>
+    ${lineChart(ins.load.map((l) => ({ weekStart: l.weekStart, value: l.rpe })), { caption: 'Average session RPE by week', fmt: (v) => String(Math.round(v * 10) / 10), min: 1, max: 10, tipLabel: 'Average RPE' })}
+    <p class="muted small">RPE 1-10 from the form, averaged over the week's training minutes. Rising effort with the same splits can mean she's tired.</p></div>`;
+}
+
+function changeText(d, lowerBetter) {
+  if (d === null || d === undefined) return '';
+  if (d === 0) return '<span class="muted">same</span>';
+  const better = lowerBetter ? d < 0 : d > 0;
+  const amt = lowerBetter ? `${Math.abs(d).toFixed(1)}s` : `${fmtNum(Math.abs(d))} m`;
+  return `<span class="${better ? 'good-text' : 'muted'}">${better ? '▲' : '▼'} ${amt} ${lowerBetter ? (better ? 'faster' : 'slower') : (better ? 'more' : 'less')}</span>`;
+}
+
+function progressCard(ins, coach) {
+  const who = coach ? 'her' : 'your';
+  const t = ins.splitTrend;
+  const trend = !t ? '<p class="muted">Not enough steady erg work logged yet to show a trend.</p>'
+    : `<p>${Math.abs(t.changeS) < 0.5 ? 'About the same as' : `<b>${Math.abs(t.changeS).toFixed(1)}s/500m ${t.changeS < 0 ? 'faster' : 'slower'}</b> than`} ${t.weeksEach > 1 ? `the ${t.weeksEach} weeks before` : 'the week before'}
+      <span class="muted">(${fmtTime(t.earlierS)} → ${fmtTime(t.recentS)})</span></p>`;
+  const rows = (test) => ins.progress[test].map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td>
+      <td class="r">${changeText(r.change, test === '2000m')}</td></tr>`).join('');
+  const table = (test) => ins.progress[test].length ? `<div><h3>${TEST_LABELS[test]}</h3><div class="table-wrap"><table>
+      <tr><th>Date</th><th class="r">Result</th><th class="r">Split</th><th class="r">Change</th></tr>${rows(test)}</table></div></div>`
+    : `<div><h3>${TEST_LABELS[test]}</h3><p class="muted">None this school year.</p></div>`;
+  const p = ins.projected2k;
+  const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> <span class="muted">from ${who} 20' on ${fmtDate(p.from.date)} (${fmtNum(p.from.meters)} m)${p.last2k ? `; last real 2k ${fmtTime(p.last2k.timeS)} on ${fmtDate(p.last2k.date)}` : ''}. An estimate only: ${who} next 2k test is the real answer.</span></p>` : '';
+  return `<div class="card"><h2>Progress</h2>
+    <h3>Steady-state split (UT2 and UT1 on the erg)</h3>${trend}
+    ${lineChart(ins.steady.map((w) => ({ weekStart: w.weekStart, value: w.splitS })), { caption: 'Steady-state split by week, faster is higher', fmt: fmtTime, invert: true, pad: 1, tipLabel: 'Average split' })}
+    <p class="muted small">Higher on the chart is faster. BikeErg counts at half its meters, like the rest of the site. Rate and drag aren't taken into account, so read it as a rough trend.</p>
+    <h3>Tests this school year</h3>${proj}<div class="two">${table('2000m')}${table('20min')}</div></div>`;
 }
 
 const MAX_STARS = 5;
@@ -578,17 +671,42 @@ async function showStars() {
   wireFooter();
 }
 
+/** Coaches only: load jumps, effort, trends and consistency for every rower. */
+async function showInsights() {
+  const v = await api('/api/insights');
+  setNav('insights');
+  const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${w.changePct === null ? '<span class="muted">–</span>'
+    : `${w.flag ? '<span class="pill warn">▲ ' : ''}${w.changePct > 0 ? '+' : ''}${w.changePct}%${w.flag ? '</span>' : ''}`}</td>`;
+  const trend = (t) => (!t ? '<span class="muted">–</span>' : Math.abs(t.changeS) < 0.5 ? 'same'
+    : `<span class="${t.changeS < 0 ? 'good-text' : ''}">${t.changeS < 0 ? '▲' : '▼'} ${Math.abs(t.changeS).toFixed(1)}s</span>`);
+  const flagged = v.rowers.filter((r) => r.thisWeek.flag || r.lastWeek.flag).length;
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
+    <p class="muted">Coaches only. Weighted minutes against each rower's average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it. ${flagged ? `<b>${flagged} flagged.</b>` : 'Nobody flagged.'}</p></div></div>
+    <div class="card"><div class="table-wrap"><table class="insights">
+      <tr><th>Rower</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
+        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
+      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        ${loadCell(r.thisWeek)}${loadCell(r.lastWeek)}<td class="r">${r.lastWeek.rpe ?? ''}</td>
+        <td class="r">${trend(r.splitTrend)}</td><td class="r">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
+        <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
+        <td class="r">${r.month.streak}</td></tr>`).join('')}
+    </table></div>
+    <p class="muted small">Steady split: her latest weeks of UT2/UT1 erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
+    ${footer(v.meta)}`;
+  wireFooter();
+}
+
 async function showOyo() {
   const v = await api('/api/oyo');
   setNav('oyo');
   let which = 'now';
   const mine = me();
   const render = () => {
-    const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, minutes: r.lastWeek.minutes, status: r.lastWeek.status }))
+    const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
     const met = rows.filter((r) => r.status !== 'short').length, elite = rows.filter((r) => r.status === 'elite').length;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
-      <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
+      <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)}${(which === 'now' ? v.breakWeek : v.lastBreakWeek) ? ' · <b>break week goals</b>' : ''} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
       <div class="card">${rows.map((r) => {
         const max = Math.max(r.elite * 1.15, r.minutes);
@@ -662,6 +780,7 @@ async function route() {
     }
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
+    if (page === 'insights' && isCoach()) return await showInsights();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
     const m = me();
