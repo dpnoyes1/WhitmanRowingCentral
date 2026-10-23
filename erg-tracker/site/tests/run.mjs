@@ -99,7 +99,9 @@ test('leaderboards: ranked best valid result per athlete, raw scores only', () =
   });
   const m20 = v.tests.find((t) => t.test === '20min').allTime;
   m20.forEach((r, i) => { if (i) assert.ok(r.meters <= m20[i - 1].meters); });
-  assert.ok(!/gms|stars|weight/i.test(JSON.stringify(v)));
+  assert.ok(!/gms|weight/i.test(JSON.stringify(v)));
+  const stars = starsView(feed, TODAY).rowers;
+  b2k.season.forEach((r) => { const s = stars.find((x) => x.id === r.id); if (s) assert.strictEqual(r.stars, s.stars); });
 });
 
 test('stars board: stars public, GMS % never; team averages only', () => {

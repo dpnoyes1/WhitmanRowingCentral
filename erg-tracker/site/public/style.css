@@ -148,3 +148,5 @@ td.wrap { white-space: normal; min-width: 220px; }
 .meter .fill.short { background: var(--muted); }
 .meter .fill.required { background: var(--series-2); }
 .meter .fill.elite { background: var(--good); }
+.board .sub { font-size: 0.8rem; line-height: 1.2; white-space: nowrap; }
+@media (max-width: 480px) { .board .date { display: none; } .board th, .board td { padding: 7px 5px; } .board td a { white-space: normal; } }

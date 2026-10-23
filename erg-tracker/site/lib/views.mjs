@@ -177,6 +177,8 @@ const STAR_TESTS = ['2000m', '20min'];
 export function leaderboardsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+  const starCache = {};
+  const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
   const board = (test, from) => {
     const best = {};
     feed.benchmarks.forEach((b) => {
@@ -188,7 +190,7 @@ export function leaderboardsView(feed, today) {
       .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
       .map((b, i) => {
         const a = byId[b.athleteId];
-        return { rank: i + 1, ...athleteSummary(a), active: a.active, ...testRow(b) };
+        return { rank: i + 1, ...athleteSummary(a), active: a.active, stars: stars(a.id), ...testRow(b) };
       });
   };
   return {
@@ -207,20 +209,22 @@ function bestGms(feed, id, test, yearStart, today) {
   return best;
 }
 
+/** Stars this season: the best of the star tests, or null with no star test yet. */
+function seasonStars(feed, id, yearStart, today) {
+  const byTest = {};
+  let stars = null;
+  STAR_TESTS.forEach((t) => {
+    const b = bestGms(feed, id, t, yearStart, today);
+    byTest[t] = b ? b.stars : null;
+    if (b && (stars === null || b.stars > stars)) stars = b.stars;
+  });
+  return { stars, byTest };
+}
+
 /** Public stars board (stars only, never GMS %) plus team GMS averages. */
 export function starsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
-  const rowers = activeRowers(feed).map((a) => {
-    const byTest = {};
-    let stars = 0;
-    STAR_TESTS.forEach((t) => {
-      const b = bestGms(feed, a.id, t, yearStart, today);
-      byTest[t] = b ? b.stars : null;
-      if (b && b.stars > stars) stars = b.stars;
-    });
-    const tested = STAR_TESTS.some((t) => byTest[t] !== null);
-    return { ...athleteSummary(a), stars: tested ? stars : null, byTest };
-  }).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
+  const rowers = activeRowers(feed).map((a) => ({ ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today) })).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   return { today, yearStart, rowers, teamGms: feed.teamGms };
 }
 

@@ -112,7 +112,7 @@ Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ con
 
 ## Leaderboards
 
-One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only. All Time keeps graduated athletes.
+One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes.
 
 ## Team site (decided 2026-10-23)
 

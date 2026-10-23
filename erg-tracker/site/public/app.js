@@ -348,11 +348,12 @@ async function showBoards() {
       <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
         ${seg('squad', [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}</div>
-      <div class="card">${rows.length ? `<div class="table-wrap"><table>
-        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th>Date</th></tr>
+      <div class="card board">${rows.length ? `<div class="table-wrap"><table>
+        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
-          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${state.squad !== 'all' ? ` <span class="muted small">(#${r.rank} overall)</span>` : ''}${r.active ? '' : ' <span class="pill">alum</span>'}</td>
-          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td>${fmtDate(r.date)}</td></tr>`).join('')}
+          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.active ? '' : ' <span class="pill">alum</span>'}
+            <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.squad !== 'all' ? ` <span class="muted">#${r.rank} overall</span>` : ''}</div></td>
+          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r">${r.avgRate || '–'}</td><td class="date">${fmtDate(r.date)}</td></tr>`).join('')}
       </table></div>` : '<p class="muted">No results yet.</p>'}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
