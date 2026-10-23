@@ -48,7 +48,9 @@ When `Feed.gs` (or anything it uses) changes later, update the same deployment s
 
 1. Open the project at <https://app.netlify.com/projects/whitmanrowingcentral>.
 2. Go to **Project configuration > Build & deploy > Continuous deployment**, click **Link repository**, and pick GitHub, then `dpnoyes1/WhitmanRowingCentral`, branch `main`. Leave the build fields as Netlify fills them from `netlify.toml`.
-3. Go to **Project configuration > Environment variables > Add a variable**, and add `TEAM_PASSWORD`, `FEED_KEY` (tick "Contains secret values") and `FEED_URL`. Use the same value for every deploy context.
+3. Go to **Project configuration > Environment variables > Add a variable**, and add `TEAM_PASSWORD` and `FEED_KEY` (tick "Contains secret values" on both) and `FEED_URL`.
+   - Secret variables start with a Production value only. Also fill in **Deploy Previews**, or the preview sign-in says "The site is not set up yet".
+   - `FEED_KEY` is the 64-character key (digits and a-f) from the Sheet, not Netlify's gray "somevalue" placeholder.
 4. Go to **Deploys > Trigger deploy > Deploy project**. New env values only take effect on the next deploy.
 
 Deploy previews (one per pull request) are behind a Netlify login, so only coaches with Netlify access can open them. The live site only needs the team password.
