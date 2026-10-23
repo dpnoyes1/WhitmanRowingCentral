@@ -13,6 +13,20 @@
 [functions]
   node_bundler = "esbuild"
 
+# Short links athletes can type or bookmark (David, 2026-10-23). 302 so the
+# targets can change without browsers holding on to the old ones.
+[[redirects]]
+  from = "/logworkout"
+  to = "https://forms.gle/MdNMVFqvVag8u9ux7"
+  status = 302
+  force = true
+
+[[redirects]]
+  from = "/guide"
+  to = "https://docs.google.com/document/d/17Y0bhSPgsRpcMfYw4ZONJMwEsy_Kad972T73D5LKG10/edit"
+  status = 302
+  force = true
+
 [[headers]]
   for = "/*"
   [headers.values]

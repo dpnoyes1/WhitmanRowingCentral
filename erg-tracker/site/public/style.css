@@ -188,3 +188,8 @@ table.pieces td.target { font-weight: 600; white-space: nowrap; }
 .results-sort { margin: 8px 0; }
 details.team-results .rank { width: 2em; }
 details.team-results:not(.by-speed) .rank { display: none; }
+/* Links to the Google Form (/logworkout) and the logging guide (/guide), see netlify.toml. */
+nav a.nav-log { font-weight: 600; }
+.today-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
+a.btn.log-btn { text-decoration: none; }
+.login-links { margin-top: 12px; text-align: center; }

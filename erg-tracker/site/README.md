@@ -7,6 +7,8 @@ public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/board
 functions/   refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/oyo, /api/week, /api/week/:id)
 lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
+netlify.toml short links: /logworkout goes to the Google Form, /guide to the logging guide (a Google Doc).
+             Both are linked from the sign-in page, the menu and the Today card.
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests
 tests/       run.mjs: `node erg-tracker/site/tests/run.mjs`
 ```
