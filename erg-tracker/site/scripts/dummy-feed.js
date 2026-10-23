@@ -21,7 +21,7 @@ function dummyFeed(asOf) {
   ctx.SETTINGS_DEFAULTS.forEach(r => { settings[r[0]] = r[1]; });
   const d = ctx.buildDummyData({ settings });
   return JSON.parse(JSON.stringify(ctx.siteFeed({
-    roster: d.roster, entries: d.entries, benchmarks: d.benchmarks, weights: d.weights,
+    roster: d.roster, entries: d.entries, intervals: d.intervals, benchmarks: d.benchmarks, weights: d.weights,
     practices: d.practices, schedule: d.schedule, workouts: d.workouts, squadHistory: [], settings, signLogin
   }, asOf || new Date(2026, 9, 23, 12))));
 }

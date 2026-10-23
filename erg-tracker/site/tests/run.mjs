@@ -271,6 +271,52 @@ test('week ahead: coming week Mon-Sat, her squad, only her own targets', () => {
   assert.ok(today.length > 0 && today.every((s) => s.squad !== 'Varsity'));
 });
 
+test('week results: her own vs goal; coaches see everyone and last week', async () => {
+  const rower = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.role === 'Rower');
+  const v = weekView(feed, TODAY, rower.id, { results: 'own' });
+  const past = v.days.filter((d) => d.day < TODAY).flatMap((d) => d.sessions);
+  assert.ok(past.length > 0);
+  assert.ok(past.every((s) => s.result || s.missed), 'each past session is logged or missed');
+  const r = past.find((s) => s.result).result;
+  const sn = past.find((s) => s.result);
+  assert.strictEqual(r.pieces.length, sn.pieces.length, 'splits grouped per piece');
+  assert.ok(['in', 'below', 'above', ''].includes(r.pieces[0][0].status));
+  assert.ok(!('results' in sn), 'no one else in her week');
+  const others = feed.athletes.filter((a) => a.id !== rower.id).map((a) => a.name);
+  assert.ok(others.every((n) => !JSON.stringify(v).includes(n)));
+  // Coaches: every rower in the session's squad, logged or not.
+  const all = weekView(feed, TODAY, null, { results: 'all' });
+  const s0 = all.days[0].sessions[0];
+  assert.ok(s0.results.length > 5 && s0.results.some((x) => x.result) && s0.results.every((x) => 'targets' in x));
+  const prev = weekView(feed, TODAY, null, { offset: -1, results: 'all' });
+  assert.strictEqual(prev.weekStart, '2026-10-12');
+  assert.ok(prev.days.flatMap((d) => d.sessions).some((s) => s.results.some((x) => x.result)), 'last week has results');
+  // A feed from before results (v2) shows no "Not logged".
+  const old = JSON.parse(JSON.stringify(feed));
+  old.weeks.forEach((w) => w.sessions.forEach((x) => delete x.results));
+  assert.ok(weekView(old, TODAY, rower.id, { results: 'own' }).days.flatMap((d) => d.sessions).every((x) => !x.missed && !x.result));
+  // Over the API: an athlete gets only her own result, never a teammate's, and can't look back.
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
+  clearFeedCache();
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), rower.id);
+  const team = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const get = async (p, cookie) => (await handle(new Request('https://x' + p, { headers: { cookie } }), env, deps)).json();
+  let body = await get('/api/week?week=prev', her);
+  assert.strictEqual(body.weekStart, '2026-10-19', 'athletes cannot look back');
+  assert.ok(body.days.flatMap((d) => d.sessions).some((x) => x.result) && !JSON.stringify(body).includes('"results"'));
+  const mate = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.id !== rower.id);
+  body = await get('/api/week/' + mate.id, her);
+  assert.ok(body.days.flatMap((d) => d.sessions).every((x) => !('result' in x)), 'no teammate results');
+  body = await get('/api/athlete/' + mate.id, her);
+  assert.deepStrictEqual(body.todayPlan, [], 'no teammate Today card');
+  body = await get('/api/week?week=prev', team);
+  assert.strictEqual(body.weekStart, '2026-10-12');
+  body = await get('/api/week/' + mate.id, team);
+  assert.ok(body.days.flatMap((d) => d.sessions).some((x) => x.result), 'coach sees her results');
+  clearFeedCache();
+});
+
 test('login: wrong password 401, right one sets the cookie, logout clears it', async () => {
   const vals = { TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' };
   globalThis.Netlify = { env: { get: (k) => vals[k] } };

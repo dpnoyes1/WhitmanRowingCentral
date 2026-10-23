@@ -217,7 +217,7 @@ function buildWeekPlan(opts) {
       date: r.Date, day: dayKey_(r.Date), squad: r.Squad || 'All', session: r.Session || 'Practice',
       workoutId: String(r['Workout ID']).trim(), name: pieces.length ? pieces[0].name : '',
       notes: r.Notes || '', published: isActive_(r.Published),
-      pieces: pieces.map(function (p) { return { label: pieceLabel(p), notes: p.notes }; }),
+      pieces: pieces.map(function (p) { return { label: pieceLabel(p), notes: p.notes, reps: p.reps }; }),
       athletes: athletes
     };
   });
@@ -239,6 +239,20 @@ function plannedFor(entry, athleteSquad, schedule) {
     return r;
   }
   return null;
+}
+
+/**
+ * BikeErg intervals as RowErg-equivalent meters. Same monitor, double the
+ * distance: 2:00/1000m on the bike = 2:00/500m on the rower = 202.5 W
+ * (David, 2026-10-23). Other activities come back unchanged.
+ */
+function rowEquivalentIntervals(intervals, activity) {
+  if (!/bikeerg/i.test(String(activity || ''))) return intervals;
+  return intervals.map(function (iv) {
+    var out = Object.assign({}, iv);
+    ['Work m', 'Rest m'].forEach(function (k) { if (Number(iv[k]) > 0) out[k] = Number(iv[k]) / 2; });
+    return out;
+  });
 }
 
 /**

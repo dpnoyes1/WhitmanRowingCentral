@@ -683,7 +683,7 @@ test('dummy: athletes at every star level, some earning a new star', () => {
 });
 
 const dummyFeedInputs = () => ({
-  roster: dummy.roster, entries: dummy.entries, benchmarks: dummy.benchmarks, weights: dummy.weights,
+  roster: dummy.roster, entries: dummy.entries, intervals: dummy.intervals, benchmarks: dummy.benchmarks, weights: dummy.weights,
   practices: dummy.practices, schedule: dummy.schedule, workouts: dummy.workouts, squadHistory: [],
   settings: dummySettings()
 });
@@ -749,9 +749,26 @@ test('site feed: shape, GMS and stars per result, week plans without coach flags
     assert.ok(keys === 'secondsFaster,splitFaster,stars,targetS' || keys === 'metersMore,splitFaster,stars,targetM', keys);
   });
   assert.ok(feed.benchmarks.filter(b => b.test === '20min').every(b => b.gmsPct === null || b.gmsPct > 50));
-  assert.strictEqual(feed.weeks.length, 2);
-  assert.deepStrictEqual(feed.weeks.map(w => w.weekStart), ['2026-10-19', '2026-10-26']);
-  assert.ok(feed.weeks[1].sessions.length > 0, 'planned week of Oct 26');
+  assert.strictEqual(feed.weeks.length, 3);
+  assert.deepStrictEqual(feed.weeks.map(w => w.weekStart), ['2026-10-12', '2026-10-19', '2026-10-26']);
+  assert.ok(feed.weeks[2].sessions.length > 0, 'planned week of Oct 26');
+  // Results: logged sessions checked against the plan, raw splits only.
+  const done = feed.weeks[1].sessions.flatMap(sn => sn.results);
+  assert.ok(done.length > 50, 'this week has results: ' + done.length);
+  assert.ok(feed.weeks[2].sessions.every(sn => sn.results.length === 0), 'nothing logged ahead');
+  assert.ok(done.every(r => r.intervals.every(iv => iv.splitS === null || (iv.splitS > 80 && iv.splitS < 200))));
+  assert.ok(done.some(r => r.test) && done.filter(r => r.test).every(r => r.hit === null), 'tests are scored, not ranged');
+  // BikeErg: half the meters, so its /1000m split lines up with the RowErg /500m target.
+  const bike = feed.weeks.flatMap(w => w.sessions.flatMap(sn => sn.results)).filter(r => r.activity === 'BikeErg');
+  assert.ok(bike.length > 0 && bike.every(r => r.intervals.every(iv => iv.splitS > 80 && iv.splitS < 200)), 'bike splits are row-equivalent');
+  assert.ok(bike.some(r => r.hit !== null), 'bike sessions are ranged');
+  const conv = g.rowEquivalentIntervals([{ 'Work s': 120, 'Work m': 1000 }], 'BikeErg')[0];
+  assert.strictEqual(Math.round(g.wattsFromSplit(conv['Work s'] * 500 / conv['Work m']) * 10) / 10, 202.5, '2:00/1000m bike = 202.5 W');
+  assert.strictEqual(g.rowEquivalentIntervals([{ 'Work m': 1000 }], 'Erg (RowErg)')[0]['Work m'], 1000);
+  const lastWeek = feed.weeks[0].sessions.flatMap(sn => sn.results);
+  assert.ok(lastWeek.some(r => r.hit === true) && lastWeek.some(r => r.hit === false), 'a mix of in and out of range');
+  assert.ok(done.every(r => ['in', 'below', 'above', ''].includes(r.intervals[0] ? r.intervals[0].status : '')));
+  assert.deepStrictEqual(Object.keys(done[0]).sort(), ['activity', 'athleteId', 'date', 'entryId', 'flag', 'hit', 'intervals', 'matches', 'reason', 'status', 'test', 'type']);
   assert.ok(feed.weeks.every(w => !('coachFlags' in w)));
   assert.ok(feed.teamGms.length >= 1 && feed.teamGms[0].schoolYear === '2026-27');
   assert.ok(JSON.parse(JSON.stringify(feed)), 'JSON-safe');

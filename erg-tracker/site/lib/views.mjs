@@ -154,7 +154,7 @@ export function athleteView(feed, id, today) {
     })),
     tests,
     gms: athleteGms(feed, id, today),
-    todayPlan: (weekView(feed, today, id).days.find((d) => d.day === today) || { sessions: [] }).sessions,   // shown only on the athlete's own page (shared password: honor system)
+    todayPlan: (weekView(feed, today, id, { results: 'own' }).days.find((d) => d.day === today) || { sessions: [] }).sessions,   // her own page and coaches only (api.mjs strips it for anyone else)
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
@@ -277,22 +277,46 @@ export function comingMonday(today) {
 }
 
 /**
- * The coming week's published plan, Monday to Saturday. With an athlete id,
+ * One logged result shaped for the page: her splits grouped under each planned
+ * piece (a piece with reps gets that many splits), each marked in / below /
+ * above her target range. Splits are RowErg /500m; other machines have none.
+ */
+function resultView(r, pieces) {
+  let at = 0;
+  return {
+    date: r.date, type: r.type, status: r.status, activity: r.activity, test: !!r.test, matches: r.matches, reason: r.reason, hit: r.hit,
+    pieces: pieces.map((p) => {
+      const ivs = r.intervals.slice(at, at + (p.reps || 1));
+      at += p.reps || 1;
+      return ivs.map((iv) => ({ splitS: iv.splitS, status: iv.status }));
+    }),
+    extra: r.intervals.slice(at).map((iv) => ({ splitS: iv.splitS, status: iv.status }))
+  };
+}
+
+/**
+ * A week's published plan, Monday to Saturday: the coming week, or with
+ * opts.offset = -1 the one before (coaches look back). With an athlete id,
  * only her squad's sessions and only her own targets (David, 2026-10-23);
  * without one, every session and no targets.
+ * opts.results: 'own' adds her result to each session (or missed: true once
+ * the day has passed); 'all' adds every rower in the session's squad with
+ * her result or null (coaches only); 'none' adds nothing.
  */
-export function weekView(feed, today, id = null) {
+export function weekView(feed, today, id = null, opts = {}) {
   const a = id ? feed.athletes.find((x) => x.id === id) : null;
   if (id && !a) return null;
-  const monday = comingMonday(today);
+  const results = opts.results || 'none';
+  const monday = addDays(comingMonday(today), 7 * (opts.offset || 0));
   const plan = (feed.weeks || []).find((w) => w.weekStart === monday) || { sessions: [] };
-  const forSquad = (s) => !a || !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === a.squad.toLowerCase();
+  const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
+  const rowers = activeRowers(feed).sort((x, y) => x.name.localeCompare(y.name));
   let pieces = 0, targeted = 0;
   const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
     day,
-    sessions: plan.sessions.filter((s) => s.day === day && forSquad(s)).map((s) => {
+    sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquad(s, a.squad))).map((s) => {
       const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
-      return {
+      const out = {
         session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
         pieces: s.pieces.map((p, i) => {
           const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
@@ -300,10 +324,27 @@ export function weekView(feed, today, id = null) {
           return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
         })
       };
+      const of = (athleteId) => {
+        const r = (s.results || []).filter((x) => x.athleteId === athleteId).pop();
+        return r ? resultView(r, s.pieces) : null;
+      };
+      // An older feed has no results yet: say nothing rather than "Not logged".
+      if (!Array.isArray(s.results)) return out;
+      if (results === 'own' && a) {
+        out.result = of(a.id);
+        out.missed = !out.result && day < today;
+      }
+      if (results === 'all') {
+        out.results = rowers.filter((r) => inSquad(s, r.squad)).map((r) => {
+          const t = (s.athletes || []).find((x) => x.athlete === r.name);
+          return { ...athleteSummary(r), result: of(r.id), targets: t ? t.targets.map((x) => x.target || null) : [] };
+        });
+      }
+      return out;
     })
   }));
   return {
-    today, weekStart: monday, weekEnd: addDays(monday, 5),
+    today, weekStart: monday, weekEnd: addDays(monday, 5), offset: opts.offset || 0,
     athlete: a ? athleteSummary(a) : null,
     days,
     // No 2k or 20' to base targets on: she sees a note; coaches see it as a FLAG row in the Sheet's plan report.

@@ -145,7 +145,7 @@ function checkWeekAgainstPlan() {
       var best = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, planned.Date, inp.settings.school_year_start);
       if (best) bases[b] = best.watts;
     });
-    var c = checkAgainstPlan(byEntry[e['Entry ID']] || [], pieces, bases, inp.settings);
+    var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), pieces, bases, inp.settings);
     var detail = c.reason || c.intervals.map(function (iv) { return iv.n + ': ' + (iv.watts || '?') + ' W' + (iv.status ? ' ' + iv.status : ''); }).join(', ');
     out.push([Utilities.formatDate(e.Date, tz, 'EEE yyyy-MM-dd'), e.Athlete, e['Session type'], planned['Workout ID'],
       c.matches ? 'Yes' : 'No', c.hit === null ? '' : c.hit ? 'Yes' : 'No', detail, planFlag(e, c)]);
@@ -166,7 +166,7 @@ function weekPlanForSite(inputs, weekStart) {
     weekStart: dayKey_(plan.weekStart),
     sessions: plan.sessions.map(function (sn) {
       return {
-        day: sn.day, session: sn.session, squad: sn.squad, workout: sn.name || sn.workoutId, notes: sn.notes,
+        day: sn.day, session: sn.session, squad: sn.squad, workoutId: sn.workoutId, workout: sn.name || sn.workoutId, notes: sn.notes,
         pieces: sn.pieces,
         athletes: sn.athletes.map(function (a) {
           return { athlete: a.athlete, targets: a.targets.map(function (t) { return { piece: t.label, target: t.text }; }) };
