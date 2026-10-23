@@ -1,35 +1,57 @@
-# Setup steps
+# Setup guide
 
-About 15 minutes. You need a Google account that will own the Sheet and Form (use the one coaches will share).
+How to stand up the erg tracker for a program from zero, and keep it running season to season. Whitman Rowing is the worked example: wherever you see a Whitman name, address or time, use your own.
 
-## 1. Create the Sheet and paste the script
+## What you're building
 
-1. Go to [sheets.new](https://sheets.new) and name the spreadsheet **Whitman Erg Tracker**.
+| Piece | What it does | Who sees it |
+|---|---|---|
+| Google Sheet | The database. Apps Script inside it builds every tab, the Form and the reports. | Coaches only |
+| Google Form | Athletes log each practice, OYO session and test. | Athletes (by link) |
+| Team site on Netlify | Dashboards, leaderboards, stars, week ahead with targets. Reads the Sheet through a private feed. | Athletes and coaches, behind a sign-in |
+| Alerts and backups | An hourly site check that tells you when the feed or sign-in breaks, and a weekly copy of the Sheet in Drive. | You |
+
+## Accounts you need
+
+Make these under a coaching account the program owns, not a personal one, so the next head coach can take them over.
+
+1. **Google account** (Whitman: a coaching Gmail). Owns the Sheet, Form, Apps Script, backups and alert emails.
+2. **GitHub account** with a copy of this repo (Whitman: `dpnoyes1/WhitmanRowingCentral`, private). Netlify builds the site from it.
+3. **Netlify account** (free plan is enough). Hosts the team site (Whitman: `whitmanrowingcentral.netlify.app`).
+4. Later, optional: **Slack** for alerts and the logging bot, and a **Concept2 Logbook** developer app for automatic sync (see the end of this guide).
+
+Never put passwords, keys, webhook URLs or athlete data in the repo. Secrets go in Netlify environment variables or the Sheet's Script Properties; athlete data stays in the Sheet.
+
+## Part A: Sheet and Form (about 15 minutes)
+
+### 1. Create the Sheet and paste the script
+
+1. Go to [sheets.new](https://sheets.new) while signed in to the program's Google account and name the spreadsheet (Whitman: **Whitman Erg Tracker**).
 2. Open **Extensions > Apps Script**. A script editor opens in a new tab.
 3. Name the project **Erg Tracker** (click "Untitled project" at the top).
-4. Delete the sample `Code.gs` file's contents. Then for each file in this repo's `apps-script/` folder, click **+ > Script**, give it the same name without `.gs` (`Config`, `Time`, `Gms`, `Sheet`, `Form`, `Submit`, `Setup`), and paste the file's contents. You can delete the empty `Code.gs` afterwards.
+4. Delete the sample `Code.gs` file's contents. Then for each file in this repo's `apps-script/` folder, click **+ > Script**, give it the same name without `.gs` (`Config`, `Dummy`, `Feed`, `Form`, `Gms`, `Ops`, `Plan`, `PlanSheet`, `Profile`, `Regatta`, `RegattaSheet`, `Setup`, `Sheet`, `Submit`, `TeamGms`, `TeamGmsSheet`, `Time`). clasp is quicker if you're comfortable with a terminal; see the end of Part A, and paste the file's contents. You can delete the empty `Code.gs` afterwards.
 5. Click the gear icon (**Project Settings**), tick **Show "appsscript.json" manifest file in editor**, go back to the editor and replace `appsscript.json` with the repo's version.
 6. Click **Save** (the disk icon).
 
-## 2. Run setup
+### 2. Run setup
 
 1. Go back to the Sheet tab and reload the page. An **Erg Tracker** menu appears after a few seconds.
 2. Click **Erg Tracker > Set up Sheet and Form**.
 3. Google asks you to authorize the script. Click **Continue**, choose your account, then **Advanced > Go to Erg Tracker (unsafe) > Allow**. ("Unsafe" just means Google hasn't reviewed your personal script.)
 4. Run **Set up Sheet and Form** again if it stopped after authorizing. When it finishes it shows the share link.
 
-You now have all ten tabs, the Form, a raw responses backup tab, and two triggers (form submit, and edit logging).
+You now have every tab, the Form, a raw responses backup tab, and four triggers: form submit, edit logging, the hourly site check and the Sunday backup (Part C).
 
-## 3. Fill in the basics
+### 3. Fill in the basics
 
 1. **Roster tab:** add each athlete's Name, Slack member ID, Squad, Role (Rower or Coxswain), OYO group, Active = Yes, Birthday and Grad year. Leave Athlete ID blank; it fills itself. Age group and School year fill themselves from Birthday and Grad year. The Form's name lists update when you edit the Roster. If they don't, use **Erg Tracker > Refresh form name lists from Roster**.
-2. **Settings tab:** check the coach names, then set `season.winter_start` and `season.winter_end` (YYYY-MM-DD).
+2. **Settings tab:** check the coach names, `timezone`, `school_year_start` and the `shift.*` practice times (Whitman's are the girls' winter shifts), then set `season.winter_start` and `season.winter_end` (YYYY-MM-DD). Set `site.url` to your team site's address once you have one (Part B).
 3. **Erg Tracker > Generate practice schedule** fills the Practices tab. Mark holidays and snow days as Canceled in the Status column.
 4. **Weights tab** is hidden. To open it: the menu at the bottom-left (all sheets list) > Weights. Coaches type weights there directly. It is never on the Form.
 5. **Team GMS:** **Erg Tracker > Team GMS report** rebuilds the "Team GMS (coach)" tab (team, squad and rank band averages, this year to date vs past years). Near the end of each season run **Erg Tracker > Save squads for this school year** so later years compare against the squads as they were.
 6. **Regattas:** add one row per race on the **Races** tab (result, top 3 times, lineup by seat), then **Erg Tracker > Regatta report** rebuilds the "Regatta report (coach)" tab.
 
-## 4. Plan a week
+### 4. Plan a week
 
 1. **Workouts tab** is the library. One row per piece, so a workout is one or more rows sharing a Workout ID (e.g. `PYR`).
    - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone UT1.
@@ -43,7 +65,7 @@ You now have all ten tabs, the Form, a raw responses backup tab, and two trigger
 
 Targets use season-best watts (school year from `school_year_start`), falling back to last season. Rejected benchmark rows are ignored. Weight is never used.
 
-## Explore with dummy data (optional)
+### Explore with dummy data (optional)
 
 Before entering real athletes, run **Erg Tracker > Load dummy data**. It adds 30 made-up athletes (12 novices in 7th-9th, 18 varsity in 10th-12th) with:
 - practices from Oct 5 to Oct 23, 2026, including Out days, Modified days, and make-ups
@@ -65,12 +87,12 @@ Try **Preview week ahead** (2026-10-26) and **Check week against plan** (2026-10
 
 Clear it before adding real athletes.
 
-## 5. Share
+### 5. Share
 
 - Share the link saved in **Settings > form.share_url** with athletes. Use that link, not the Form's plain link: it prefills warmup 15:00 and drag factor 105.
 - Share the Sheet itself only with coaches.
 
-## 6. Test it
+### 6. Test it
 
 Submit one Practice with two intervals and one 2000m test through the share link, then check:
 - Entries has one row, with Warmup s = 900 if you left 15:00.
@@ -79,16 +101,58 @@ Submit one Practice with two intervals and one 2000m test through the share link
 
 Delete the test rows when you're done (the Change log will record the deletions as edits).
 
-## If something goes wrong
+### If something goes wrong
 
 - A submission didn't appear: check the **Change log** for a `SUBMIT ERROR` row. The usual cause is an athlete name not on the Roster. Fix the Roster, then run **Erg Tracker > Process missed form responses**. It only adds responses that aren't already in the Sheet.
 - Every raw answer is also in the **Form responses (raw)** tab, so nothing is lost.
 - To change a question's wording, ask Claude to change it in `Config.gs`, then paste the new file and run **Erg Tracker > Rebuild form (new link)**. Editing the question directly in the Form editor breaks the link between that question and the Sheet.
 
-## Optional: clasp instead of copy/paste
+### Optional: clasp instead of copy/paste
 
 If you'd rather push code from the repo: `npm i -g @google/clasp`, `clasp login`, enable the Apps Script API at script.google.com/home/usersettings, copy the script ID from Project Settings into `.clasp.json` as `{"scriptId": "...", "rootDir": "apps-script"}`, then `clasp push`.
 
-## Team site
+## Part B: Team site (about 20 minutes)
 
-To publish the data feed and connect the Netlify site, follow `site/README.md` (One-time setup).
+Follow `site/README.md` (One-time setup). In short:
+
+1. In the Sheet: **Erg Tracker > Site feed key**, then publish the feed as a web app (Execute as Me, access Anyone). Copy its URL.
+2. In Netlify: **Add new project > Import from Git**, pick your copy of this repo. `netlify.toml` at the repo root sets everything else.
+3. Add the environment variables `TEAM_PASSWORD`, `FEED_KEY` and `FEED_URL` (secret values ticked), then deploy.
+4. In the Sheet's Settings, set `site.url` to the site's address, and add the coaches' sign-ins to `site.coaches`. Athletes sign in with their name and birthday (or `site.test_password` while you're testing).
+
+To make it look like your program, change the name in `site/public/index.html` and `site/public/app.js` ("Whitman Rowing"), the colors in `site/public/style.css`, the Form title in `apps-script/Form.gs`, and the short links in `netlify.toml` (`/logworkout` points at your Form's share link).
+
+## Part C: Alerts and backups (5 minutes)
+
+1. Reload the Sheet and click **Erg Tracker > Turn on alerts and backups**. Google asks you to allow a few more things (send email, fetch web pages, create files in Drive): allow them. It shows what the site check sees right now.
+   - **Do this right after any update that adds these permissions.** Until you allow them, the Form's submit trigger can't run either.
+2. **Alerts.** Every hour the Sheet checks the team site: the home page loads, the site can read the feed, the data isn't stale, and athletes have sign-in codes. When something breaks you get one alert, a reminder once a day while it stays broken, and one "working again" message. A form submission that can't be saved also alerts you (details stay in the Change log). Alerts go by email to `alerts.email` in Settings (blank: the Sheet's owner), or to Slack once you set that up.
+3. **Backups.** Every Sunday night a values-only copy of every tab goes into the Drive folder **Erg tracker backups**. The newest 12 are kept (`backup.keep`); older ones go to the Drive trash. **Erg Tracker > Back up now** makes one any time. A backup is a plain spreadsheet: to restore a tab, copy its rows back into the live Sheet.
+
+The backups hold everything in the Sheet, weights and birthdays included, so keep the folder private to coaches.
+
+### Slack alerts (optional, later)
+
+1. Go to <https://api.slack.com/apps>, **Create New App > From scratch**, name it (e.g. "Erg Tracker") and pick your workspace.
+2. Open **Incoming Webhooks**, turn it on, click **Add New Webhook to Workspace**, and pick where alerts go: your own DM or a private channel such as #erg-alerts.
+3. Copy the webhook URL (starts with `https://hooks.slack.com/`). In the Sheet: **Erg Tracker > Slack alerts webhook**, paste it, OK. A test message arrives in Slack.
+
+The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
+
+## Part D: Each new school year
+
+Results, stars, leaderboards and targets already start over on `school_year_start` (Aug 1 at Whitman); nothing needs resetting, and All Time boards keep every result. Between the last race and the first fall practice:
+
+1. **Erg Tracker > Start new school year.** It closes out the year (the one that just ended if you run it in the first three months after `school_year_start`, otherwise the current one) and asks before doing anything. It:
+   - saves an archive copy of the whole Sheet as "Erg tracker archive 2026-27" in the backups folder (never trashed),
+   - saves each rower's squad for that year (Squad history), so Team GMS compares against the squads as they were,
+   - sets athletes whose Grad year is that year or earlier to Active = No (logged in the Change log). They stay in the history and on All Time boards.
+
+   It never deletes anything.
+2. Then by hand: move novices up on the Roster and add new athletes, set the new `season.winter_start` / `season.winter_end` and run **Generate practice schedule**, clear `site.test_password` if athletes now use their birthdays, and change `TEAM_PASSWORD` in Netlify (then redeploy).
+
+## Part E: Later
+
+- **Concept2 Logbook sync** (planned): register an app at <https://log.concept2.com/developers> under the program's account, read-only, with the callback `https://<your site>/.netlify/functions/concept2-callback`. The client secret goes in Netlify environment variables only.
+- **Slack bot** (planned): `/log` entry from Slack, confirmation cards and coach messages, built on the Slack app from Part C.
+- **Another program's copy**: everything above, under that program's own Google, GitHub, Netlify, Slack and Concept2 accounts. Nothing is shared between copies.

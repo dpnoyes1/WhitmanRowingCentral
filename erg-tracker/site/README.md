@@ -58,3 +58,7 @@ Deploy previews (one per pull request) are behind a Netlify login, so only coach
 ## Local check
 
 `node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs` runs both test suites. Netlify runs them as the build command, so a failing test stops a deploy.
+
+## Health check
+
+`functions/health.mjs` answers `POST /api/health` with `{"key": FEED_KEY}`: whether the env vars are set, the feed loads and is fresh, and athletes have sign-in codes (counts and times only). Without the key it says nothing. The Sheet calls it every hour (`apps-script/Ops.gs`) and alerts the head coach when something breaks; see `docs/SETUP.md` Part C.

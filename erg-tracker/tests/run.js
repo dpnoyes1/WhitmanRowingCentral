@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -780,6 +780,65 @@ test('site feed: key check', () => {
   assert.ok(!g.feedKeyMatches_('abc123', 'abc12'));
   assert.ok(!g.feedKeyMatches_('abc123', ''));
   assert.ok(!g.feedKeyMatches_('abc123', undefined));
+});
+
+test('ops: site health problems', () => {
+  const ok = { status: 200, body: { ok: true, checks: { env: true, feed: true, fresh: true, athleteLogins: true } } };
+  assert.deepStrictEqual(Array.from(g.healthProblems(200, ok)), []);
+  assert.ok(/down/.test(g.healthProblems(503, ok)[0]));
+  assert.ok(/could not reach/.test(g.healthProblems('no answer', { error: 'DNS' }).join(' ')));
+  assert.ok(/FEED_KEY/.test(g.healthProblems(200, { status: 401, body: { error: 'unauthorized' } })[0]));
+  const broken = { status: 503, body: { ok: false, feedError: 'feed HTTP 500', checks: { env: true, feed: false } } };
+  assert.ok(/feed HTTP 500/.test(g.healthProblems(200, broken)[0]));
+  const stale = { status: 503, body: { checks: { env: true, feed: true, fresh: false, athleteLogins: true }, generatedAt: 'x' } };
+  assert.ok(/old data/.test(g.healthProblems(200, stale)[0]));
+  const noCodes = { status: 503, body: { athletes: 30, checks: { env: true, feed: true, fresh: true, athleteLogins: false } } };
+  assert.ok(/can't sign in/.test(g.healthProblems(200, noCodes)[0]));
+  assert.ok(/404/.test(g.healthProblems(200, { status: 404, body: null })[0]), 'health endpoint not deployed');
+});
+
+test('ops: alert once on break, daily while broken, once on recovery', () => {
+  const H = 3600 * 1000;
+  let t = g.alertTransition(null, [], 0);
+  assert.strictEqual(t.send, null);
+  t = g.alertTransition(t.state, ['x'], 1 * H);
+  assert.strictEqual(t.send, 'down');
+  t = g.alertTransition(t.state, ['x'], 2 * H);
+  assert.strictEqual(t.send, null);
+  t = g.alertTransition(t.state, ['x'], 25 * H);
+  assert.strictEqual(t.send, 'still');
+  assert.strictEqual(t.state.since, 1 * H);
+  t = g.alertTransition(t.state, [], 26 * H);
+  assert.strictEqual(t.send, 'up');
+  t = g.alertTransition(t.state, [], 27 * H);
+  assert.strictEqual(t.send, null);
+  assert.ok(/working again/.test(g.alertText('up', [], '', 'https://x')));
+  assert.ok(/• a\n• b/.test(g.alertText('down', ['a', 'b'], '', 'https://x')));
+});
+
+test('ops: backups keep the newest, never archives', () => {
+  const names = ['Erg tracker backup 2026-10-04 2300', 'Erg tracker backup 2026-10-18 2300', 'Erg tracker backup 2026-10-11 2300',
+    'Erg tracker archive 2025-26', 'Something else'];
+  assert.deepStrictEqual(Array.from(g.backupsToTrash(names, 2)), ['Erg tracker backup 2026-10-04 2300']);
+  assert.deepStrictEqual(Array.from(g.backupsToTrash(names, 12)), []);
+  assert.strictEqual(g.backupsToTrash(names, 0).length, 2, 'always keep at least one');
+});
+
+test('ops: new school year closes the right year and retires graduates', () => {
+  const y = (d) => { const r = g.rolloverYear(new Date(d + 'T12:00:00'), '08-01'); return [r.label, r.gradYear]; };
+  assert.deepStrictEqual(y('2027-06-10'), ['2026-27', 2027]);
+  assert.deepStrictEqual(y('2027-07-31'), ['2026-27', 2027]);
+  assert.deepStrictEqual(y('2027-08-15'), ['2026-27', 2027], 'just after Aug 1: the year that ended');
+  assert.deepStrictEqual(y('2027-10-31'), ['2026-27', 2027]);
+  assert.deepStrictEqual(y('2027-11-02'), ['2027-28', 2028]);
+  const roster = [
+    { Name: 'Fake Senior', Active: 'Yes', 'Grad year': 2027 },
+    { Name: 'Fake Junior', Active: 'Yes', 'Grad year': 2028 },
+    { Name: 'Fake Old', Active: 'No', 'Grad year': 2025 },
+    { Name: 'Fake Missed', Active: 'Yes', 'Grad year': 2026 },
+    { Name: 'Fake NoYear', Active: 'Yes', 'Grad year': '' }
+  ];
+  assert.deepStrictEqual(Array.from(g.graduatesToRetire(roster, 2027)).map((r) => r.Name), ['Fake Senior', 'Fake Missed']);
 });
 
 console.log(`${passed} tests passed`);

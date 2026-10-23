@@ -7,6 +7,7 @@ import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
+import { handleHealth } from '../functions/health.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -369,6 +370,33 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   // The coach password works with or without a name.
   assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
   assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  clearFeedCache();
+});
+
+test('health: key required, counts only, flags a broken feed or missing sign-in codes', async () => {
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const post = (body) => new Request('https://x/api/health', { method: 'POST', body: JSON.stringify(body) });
+  const serve = (f) => ({ fetchImpl: async () => new Response(JSON.stringify(f)), shared: null });
+  clearFeedCache();
+  assert.strictEqual((await handleHealth(post({}), env, serve(feed))).status, 401);
+  assert.strictEqual((await handleHealth(post({ key: 'wrong' }), env, serve(feed))).status, 401);
+  let res = await handleHealth(post({ key: 'fake-key' }), env, serve(feed));
+  let b = await res.json();
+  assert.strictEqual(res.status, 200);
+  assert.ok(b.ok && b.athletes === 30 && b.athleteCodes > 0, JSON.stringify(b));
+  assert.ok(!JSON.stringify(b).includes(feed.athletes[0].name), 'no names');
+  assert.ok(!JSON.stringify(b).includes(feed.logins[0].code), 'no codes');
+  clearFeedCache();
+  b = await (await handleHealth(post({ key: 'fake-key' }), env, serve({ ...feed, logins: [] }))).json();
+  assert.ok(!b.ok && b.checks.athleteLogins === false);
+  clearFeedCache();
+  res = await handleHealth(post({ key: 'fake-key' }), env, { fetchImpl: async () => new Response('oops', { status: 500 }), shared: null });
+  b = await res.json();
+  assert.ok(res.status === 503 && b.checks.feed === false && /500/.test(b.feedError), JSON.stringify(b));
+  const noTeam = (k) => (k === 'TEAM_PASSWORD' ? undefined : env(k));
+  clearFeedCache();
+  b = await (await handleHealth(post({ key: 'fake-key' }), noTeam, serve(feed))).json();
+  assert.ok(!b.ok && b.checks.env === false);
   clearFeedCache();
 });
 

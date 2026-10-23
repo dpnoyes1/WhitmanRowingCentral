@@ -20,6 +20,10 @@ function onOpen() {
     .addSeparator()
     .addItem('Rebuild form (new link)', 'rebuildForm')
     .addItem('Site feed key', 'siteFeedKey')
+    .addItem('Turn on alerts and backups', 'turnOnAlertsAndBackups')
+    .addItem('Slack alerts webhook', 'slackAlertsWebhook')
+    .addItem('Back up now', 'backupNow')
+    .addItem('Start new school year', 'startNewSchoolYear')
     .addSeparator()
     .addItem('Load dummy data', 'loadDummyData')
     .addItem('Clear dummy data', 'clearDummyData')
@@ -42,6 +46,7 @@ function setup() {
 
   refreshFormDropdowns();
   installTriggers_(form);
+  installOpsTriggers_();
   setSetting_('form.share_url', prefilledUrl_(form, getSettings()));
 
   SpreadsheetApp.getUi().alert('Setup done.\n\nShare this link with athletes (it prefills warmup and drag factor):\n' +
