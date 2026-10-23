@@ -319,6 +319,17 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   assert.strictEqual(c.hit, true);
 });
 
+test('copy last week: dates +7, drafts only, other weeks untouched', () => {
+  const rows = g.copyWeekRows(SCHEDULE, D(2026, 11, 9));
+  assert.strictEqual(rows.length, 3, 'only 2-8 Nov is copied');
+  assert.strictEqual(rows.map(r => r.Date.getDate()).join(), '9,11,12');
+  assert.ok(rows.every(r => r.Published === false));
+  assert.strictEqual(rows[1]['Workout ID'], 'P1');
+  assert.strictEqual(rows[1].Squad, 'Varsity');
+  Object.keys(rows[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.SCHEDULE].includes(k), 'schedule column ' + k));
+  assert.strictEqual(g.copyWeekRows(SCHEDULE, D(2026, 12, 7)).length, 0);
+});
+
 test('no weight anywhere in plan code', () => {
   for (const f of ['Plan.gs', 'PlanSheet.gs']) {
     const src = fs.readFileSync(path.join(dir, f), 'utf8').replace(/Weight is never an input here\./, '').replace(/setFontWeight/g, '');
