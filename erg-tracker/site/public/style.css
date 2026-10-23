@@ -6,9 +6,9 @@
   --text: #16181d;
   --text-2: #4f525a;
   --muted: #73767e;
-  --accent: #1f3a68;
-  --accent-ink: #ffffff;
-  --link: #2a5db0;
+  --accent: #74b0da;      /* Whitman blue (David, 2026-10-23); white text fails contrast on it, so ink is navy */
+  --accent-ink: #0b1f33;
+  --link: #2b6f9e;        /* the same blue, darkened to read as text on white */
   --series-1: #2a78d6;   /* practice */
   --series-2: #eb6834;   /* OYO */
   --seq-1: #b7d3f5; --seq-2: #7aaee9; --seq-3: #2a78d6; --seq-4: #174a8b;   /* UT2 -> AN */
@@ -21,7 +21,7 @@
   :root:not([data-theme="light"]) {
     color-scheme: dark;
     --bg: #121315; --surface: #1b1c1f; --border: #2e3035; --text: #eeeeec; --text-2: #c3c4c7; --muted: #9a9ca2;
-    --accent: #9db8e8; --accent-ink: #10203d; --link: #8fb4f0;
+    --accent: #74b0da; --accent-ink: #0b1f33; --link: #8cc0e4;
     --series-1: #3987e5; --series-2: #d95926;
     --seq-1: #24476f; --seq-2: #2f6cb3; --seq-3: #5a9be6; --seq-4: #a9cbf3;
     --good: #4ac26b; --warn: #d4a72c; --bad: #f47067; --track: #2a2c30;
@@ -30,7 +30,7 @@
 :root[data-theme="dark"] {
   color-scheme: dark;
   --bg: #121315; --surface: #1b1c1f; --border: #2e3035; --text: #eeeeec; --text-2: #c3c4c7; --muted: #9a9ca2;
-  --accent: #9db8e8; --accent-ink: #10203d; --link: #8fb4f0;
+  --accent: #74b0da; --accent-ink: #0b1f33; --link: #8cc0e4;
   --series-1: #3987e5; --series-2: #d95926;
   --seq-1: #24476f; --seq-2: #2f6cb3; --seq-3: #5a9be6; --seq-4: #a9cbf3;
   --good: #4ac26b; --warn: #d4a72c; --bad: #f47067; --track: #2a2c30;
@@ -59,7 +59,7 @@ nav { display: flex; gap: 4px; flex-wrap: wrap; }
 nav[hidden], nav a[hidden] { display: none; }
 .login .error:empty { display: none; }
 nav a { padding: 6px 10px; border-radius: 8px; font-size: .95rem; }
-nav a.on, nav a:hover { background: rgba(255, 255, 255, .16); }
+nav a.on, nav a:hover { background: rgba(255, 255, 255, .35); }
 
 main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
