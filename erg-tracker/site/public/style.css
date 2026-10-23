@@ -151,3 +151,13 @@ td.wrap { white-space: normal; min-width: 220px; }
 .board .sub { font-size: 0.8rem; line-height: 1.2; white-space: nowrap; }
 @media (max-width: 480px) { .board .date { display: none; } .board th, .board td { padding: 7px 5px; } .board td a { white-space: normal; } }
 .board .sub .stars { font-size: .72rem; letter-spacing: -1px; }
+
+/* week ahead */
+.session + .session { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
+.session-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+table.pieces { margin-top: 6px; }
+table.pieces td { white-space: normal; }
+table.pieces td.target { font-weight: 600; white-space: nowrap; }
+.card.day.past { opacity: .6; }
+.card.day.is-today, .card.today { border-color: var(--accent, #2f6fdf); }
+@media (max-width: 480px) { table.pieces td.target { white-space: normal; min-width: 7.5em; } }

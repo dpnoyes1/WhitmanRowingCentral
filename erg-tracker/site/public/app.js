@@ -269,6 +269,7 @@ async function showAthlete(id) {
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
       ${mine && mine.id === id ? '<a href="#/pick" class="small">Not you?</a>' : !mine ? `<button class="btn ghost" id="this-is-me">This is me</button>` : ''}</div>
+    ${mine && mine.id === id ? todayCard(v.todayPlan) : ''}
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
@@ -332,6 +333,50 @@ function gmsCard(gms) {
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td><td class="small wrap">${g.stars === null ? '' : nextStarText(g)}</td></tr>`).join('')}
     </table></div><p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
+}
+
+// ---- week ahead ----
+
+const NO_TARGET = "No target yet: do a 2k or 20' to get one.";
+
+/** One session: workout name, then each piece with her target (when she has one). */
+function sessionBlock(s, withTargets) {
+  return `<div class="session"><div class="session-head"><b>${esc(s.workout)}</b>
+      ${/^(varsity|novice)$/i.test(s.squad) ? `<span class="pill">${esc(s.squad)}</span>` : ''}${s.session !== 'Practice' ? ` <span class="pill">${esc(s.session)}</span>` : ''}</div>
+    ${s.notes ? `<p class="muted small">${esc(s.notes)}</p>` : ''}
+    <table class="pieces">${s.pieces.map((p) => `<tr><td>${esc(p.label)}${p.notes ? `<div class="muted small">${esc(p.notes)}</div>` : ''}</td>
+      ${withTargets ? `<td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>` : ''}</tr>`).join('')}</table></div>`;
+}
+
+/** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
+function fmtTarget(t) {
+  const m = t.match(/^(.*?)\s*\(([^)]*)\)$/);
+  return m ? `${esc(m[1])}<div class="muted small">${esc(m[2])}</div>` : esc(t);
+}
+
+function todayCard(sessions) {
+  if (!sessions || !sessions.length) return '';
+  const none = sessions.every((s) => s.pieces.every((p) => !p.target));
+  return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small"><a href="#/week">The rest of the week</a></p></div>`;
+}
+
+async function showWeek() {
+  const mine = me();
+  const v = await api(mine ? '/api/week/' + encodeURIComponent(mine.id) : '/api/week');
+  setNav('week');
+  const range = `${fmtDate(v.weekStart, { month: 'short', day: 'numeric' })} to ${fmtDate(v.weekEnd, { month: 'short', day: 'numeric' })}`;
+  const any = v.days.some((d) => d.sessions.length);
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Week ahead</h1>
+      <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
+      ${v.athlete ? '' : '<a href="#/pick" class="small">Pick your name to see your targets</a>'}</div>
+    ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
+    ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
+        <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
+        ${d.sessions.length ? d.sessions.map((s) => sessionBlock(s, !!v.athlete)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
+      : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
+    <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.</p>${footer(v.meta)}`;
+  wireFooter();
 }
 
 async function showBoards() {
@@ -452,6 +497,7 @@ async function route() {
   try {
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
+    if (page === 'week') return await showWeek();
     if (page === 'boards') return await showBoards();
     if (page === 'stars') return await showStars();
     if (page === 'oyo') return await showOyo();
