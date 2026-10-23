@@ -5,7 +5,7 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, TESTS
+  resultValue, better, TESTS
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -152,6 +152,7 @@ export function athleteView(feed, id, today) {
       season: pbs[t].season && testRow(pbs[t].season), allTime: testRow(pbs[t].allTime)
     })),
     tests,
+    gms: athleteGms(feed, id, today),   // shown only on the athlete's own page (shared password: honor system)
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
@@ -161,4 +162,96 @@ export function athleteView(feed, id, today) {
 
 function testRow(b) {
   return { date: b.date, test: b.test, timeS: b.timeS, meters: b.meters, avgRate: b.avgRate, valid: b.valid, result: resultValue(b) };
+}
+
+// ---- layer 2: leaderboards, stars, OYO board, GMS ---------------------------
+
+const STAR_TESTS = ['2000m', '20min'];
+
+/**
+ * One board per test: best valid raw result per athlete, ranked, for this
+ * school year and all time. All time keeps inactive and graduated athletes.
+ * Raw erg scores only; no GMS on boards. The page filters by squad and shows
+ * both ranks ("#1 Jane Smith (#4 overall)").
+ */
+export function leaderboardsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+  const board = (test, from) => {
+    const best = {};
+    feed.benchmarks.forEach((b) => {
+      const a = byId[b.athleteId];
+      if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
+      if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
+    });
+    return Object.values(best)
+      .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
+      .map((b, i) => {
+        const a = byId[b.athleteId];
+        return { rank: i + 1, ...athleteSummary(a), active: a.active, ...testRow(b) };
+      });
+  };
+  return {
+    today, yearStart,
+    tests: TESTS.map((t) => ({ test: t, season: board(t, yearStart), allTime: board(t, '0000-00-00') }))
+  };
+}
+
+/** Best result by GMS % this season for one athlete and test, or null. */
+function bestGms(feed, id, test, yearStart, today) {
+  let best = null;
+  feed.benchmarks.forEach((b) => {
+    if (b.athleteId !== id || b.test !== test || b.gmsPct === null || b.date < yearStart || b.date > today) return;
+    if (!best || b.gmsPct > best.gmsPct) best = b;
+  });
+  return best;
+}
+
+/** Public stars board (stars only, never GMS %) plus team GMS averages. */
+export function starsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const rowers = activeRowers(feed).map((a) => {
+    const byTest = {};
+    let stars = 0;
+    STAR_TESTS.forEach((t) => {
+      const b = bestGms(feed, a.id, t, yearStart, today);
+      byTest[t] = b ? b.stars : null;
+      if (b && b.stars > stars) stars = b.stars;
+    });
+    const tested = STAR_TESTS.some((t) => byTest[t] !== null);
+    return { ...athleteSummary(a), stars: tested ? stars : null, byTest };
+  }).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
+  return { today, yearStart, rowers, teamGms: feed.teamGms };
+}
+
+/** Public OYO board: this week's and last week's weighted OYO minutes vs each goal. */
+export function oyoView(feed, today) {
+  const monday = weekStart(today);
+  const lastMonday = addDays(monday, -7);
+  const thisWeek = weekMinutes(feed.entries, feed.settings, monday);
+  const lastWeek = weekMinutes(feed.entries, feed.settings, lastMonday);
+  const rowers = activeRowers(feed).map((a) => {
+    const now = (thisWeek[a.id] || { oyo: 0 }).oyo, before = (lastWeek[a.id] || { oyo: 0 }).oyo;
+    return {
+      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: a.oyoRequired, elite: a.oyoElite,
+      minutes: round(now), status: oyoStatus(now, a),
+      lastWeek: { minutes: round(before), status: oyoStatus(before, a) },
+      streak: oyoWeekStreak(a, feed, today)
+    };
+  }).sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
+  return { today, weekStart: monday, lastWeekStart: lastMonday, rowers };
+}
+
+/**
+ * GMS for one athlete's own page: best GMS % this season per test, stars,
+ * and the next star as time or meters only (never weight).
+ */
+export function athleteGms(feed, id, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  return ['2000m', '20min', '500m', '100m'].map((t) => {
+    const b = bestGms(feed, id, t, yearStart, today);
+    if (!b) return null;
+    return { test: t, date: b.date, result: resultValue(b), timeS: b.timeS, meters: b.meters,
+      gmsPct: b.gmsPct, stars: STAR_TESTS.includes(t) ? b.stars : null, nextStar: b.nextStar };
+  }).filter(Boolean);
 }

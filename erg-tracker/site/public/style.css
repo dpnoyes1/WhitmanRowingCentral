@@ -135,3 +135,16 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .pill.bad { color: var(--bad); }
 .pick { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .foot { margin-top: 24px; color: var(--muted); font-size: .8rem; }
+
+/* layer 2 */
+.filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.stars { color: #c58a00; letter-spacing: 1px; white-space: nowrap; }
+.star-off { color: var(--track); }
+tr.me td, .oyo-row.me { background: color-mix(in srgb, var(--series-1) 10%, transparent); }
+td.wrap { white-space: normal; min-width: 220px; }
+.oyo-row { padding: 6px 4px; border-radius: 6px; }
+.oyo-name { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+.meter.slim { height: 8px; margin: 6px 0 4px; }
+.meter .fill.short { background: var(--muted); }
+.meter .fill.required { background: var(--series-2); }
+.meter .fill.elite { background: var(--good); }
