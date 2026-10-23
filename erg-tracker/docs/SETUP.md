@@ -22,7 +22,7 @@ You now have all ten tabs, the Form, a raw responses backup tab, and two trigger
 
 ## 3. Fill in the basics
 
-1. **Roster tab:** add each athlete's Name, Slack member ID, Squad, Role (Rower or Coxswain), OYO group and Active = Yes. Leave Athlete ID blank; it fills itself. The Form's name lists update when you edit the Roster. If they don't, use **Erg Tracker > Refresh form name lists from Roster**.
+1. **Roster tab:** add each athlete's Name, Slack member ID, Squad, Role (Rower or Coxswain), OYO group, Active = Yes, Birthday and Grad year. Leave Athlete ID blank; it fills itself. Age group and School year fill themselves from Birthday and Grad year. The Form's name lists update when you edit the Roster. If they don't, use **Erg Tracker > Refresh form name lists from Roster**.
 2. **Settings tab:** check the coach names, then set `season.winter_start` and `season.winter_end` (YYYY-MM-DD).
 3. **Erg Tracker > Generate practice schedule** fills the Practices tab. Mark holidays and snow days as Canceled in the Status column.
 4. **Weights tab** is hidden. To open it: the menu at the bottom-left (all sheets list) > Weights. Coaches type weights there directly. It is never on the Form.
