@@ -265,7 +265,7 @@ async function showAthlete(id) {
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
-    ${v.own ? todayCard(v.todayPlan) : ''}
+    ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
@@ -280,7 +280,7 @@ async function showAthlete(id) {
         <div class="mark" style="left:${(100 * a.oyoElite) / oyoMax}%"><span>Elite ${a.oyoElite}m</span></div>
       </div></div>
     ${makeups}
-    ${v.own ? gmsCard(v.gms) : starsLine(v.gms)}
+    ${v.own || v.coach ? gmsCard(v.gms, v.coach) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes')}</div>
     <div class="two">
@@ -321,10 +321,10 @@ function nextStarText(g) {
   return `Next star: <b>${fmtNum(n.metersMore)} m more</b> on your 20' (${fmtNum(n.targetM)} m, about ${n.splitFaster.toFixed(1)}s/500m faster).`;
 }
 
-/** Her own page only: GMS % per test and how far to the next star, in time or meters. */
-function gmsCard(gms) {
+/** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
+function gmsCard(gms, coach = false) {
   if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="muted">No tests with a GMS yet this season.</p></div>';
-  return `<div class="card"><h2>Gold Medal Standard <span class="pill">only you see this</span></h2>
+  return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th><th></th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td><td class="small wrap">${g.stars === null ? '' : nextStarText(g)}</td></tr>`).join('')}
@@ -350,27 +350,36 @@ function fmtTarget(t) {
   return m ? `${esc(m[1])}<div class="muted small">${esc(m[2])}</div>` : esc(t);
 }
 
-function todayCard(sessions) {
+/** Today's plan with targets. Coaches viewing an athlete pass her id so the week link opens her week. */
+function todayCard(sessions, id = null) {
   if (!sessions || !sessions.length) return '';
   const none = sessions.every((s) => s.pieces.every((p) => !p.target));
   return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
-    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small"><a href="#/week">The rest of the week</a></p></div>`;
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small"><a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a></p></div>`;
 }
 
-async function showWeek() {
-  const v = await api('/api/week');
+/** Week ahead. Athletes get their own targets; coaches can open any athlete's week at #/week/ID. */
+async function showWeek(id = null) {
+  const v = await api(id ? '/api/week/' + encodeURIComponent(id) : '/api/week');
   setNav('week');
   const range = `${fmtDate(v.weekStart, { month: 'short', day: 'numeric' })} to ${fmtDate(v.weekEnd, { month: 'short', day: 'numeric' })}`;
   const any = v.days.some((d) => d.sessions.length);
+  // Coaches pick any athlete to see her targets.
+  const team = SESSION && SESSION.kind === 'team' ? (await api('/api/team')).athletes : null;
+  const picker = team ? `<div><select id="pick" aria-label="Show targets for">
+      <option value="">Whole team (no targets)</option>
+      ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Week ahead</h1>
       <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
-      </div>
+      ${picker}</div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
     ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
         <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
         ${d.sessions.length ? d.sessions.map((s) => sessionBlock(s, !!v.athlete)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
       : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
     <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.</p>${footer(v.meta)}`;
+  const pick = document.getElementById('pick');
+  if (pick) pick.onchange = () => { location.hash = pick.value ? '#/week/' + encodeURIComponent(pick.value) : '#/week'; };
   wireFooter();
 }
 
@@ -493,7 +502,7 @@ async function route() {
     if (!SESSION) SESSION = await api('/api/session');
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
-    if (page === 'week') return await showWeek();
+    if (page === 'week') return await showWeek(arg ? decodeURIComponent(arg) : null);
     if (page === 'boards') return await showBoards();
     if (page === 'stars') return await showStars();
     if (page === 'oyo') return await showOyo();

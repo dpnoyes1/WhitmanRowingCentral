@@ -3,7 +3,7 @@
 Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the coach password (TEAM_PASSWORD). Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
 
 ```
-public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars, #/oyo, #/athletes, #/athlete/A001, #/me)
+public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars, #/oyo, #/athletes, #/athlete/A001, #/week/A001 for coaches, #/me)
 functions/   login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars, /api/oyo, /api/week, /api/week/:id)
 lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet, 5-minute cache),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
@@ -17,7 +17,7 @@ tests/       run.mjs: `node erg-tracker/site/tests/run.mjs`
 2. `lib/feed.mjs` calls it from the server and keeps the result for 5 minutes.
 3. `lib/views.mjs` shapes it for each page. Multipliers, OYO goals and completion are applied here, when the data is read.
 
-The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster notes. For sign-in it sends one keyed code per athlete (`logins`), which never leaves the server. GMS % and stars are worked out in the Sheet; each athlete's GMS % goes only to her, for her own page.
+The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster notes. For sign-in it sends one keyed code per athlete (`logins`), which never leaves the server. GMS % and stars are worked out in the Sheet; each athlete's GMS % goes only to her own page and to coaches.
 
 ## Environment variables (Netlify, never in the repo)
 
