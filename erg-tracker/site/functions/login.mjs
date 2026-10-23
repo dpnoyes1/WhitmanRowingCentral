@@ -1,4 +1,4 @@
-import { passwordMatches, sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor } from '../lib/auth.mjs';
+import { passwordMatches, sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -24,7 +24,17 @@ export async function handleLogin(req, envFn, deps = {}) {
   let athlete = null;
   if (body.name) {
     try {
-      athlete = athleteFor(envFn, (await getFeed(envFn, deps)).data, body.name, body.password);
+      const feed = (await getFeed(envFn, deps)).data;
+      athlete = athleteFor(envFn, feed, body.name, body.password);
+      // Counts only (no names, dates or codes), to tell a missing Settings row from a typo.
+      if (!athlete) {
+        const logins = feed.logins || [];
+        console.log('login failed:', JSON.stringify({
+          feedVersion: feed.version, generatedAt: feed.generatedAt, athleteCodes: logins.filter((l) => !l.coach).length,
+          coachCodes: logins.filter((l) => l.coach).length, dateParsed: !!parseBirthday(body.password),
+          nameIsAthlete: feed.athletes.some((a) => nameKey(a.name) === nameKey(body.name))
+        }));
+      }
     } catch (err) {
       console.error('feed error:', err.message);
       return json({ error: 'Sign-in is not working right now. Try again in a minute.' }, 502);
