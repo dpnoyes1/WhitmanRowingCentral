@@ -88,3 +88,7 @@ Delete the test rows when you're done (the Change log will record the deletions 
 ## Optional: clasp instead of copy/paste
 
 If you'd rather push code from the repo: `npm i -g @google/clasp`, `clasp login`, enable the Apps Script API at script.google.com/home/usersettings, copy the script ID from Project Settings into `.clasp.json` as `{"scriptId": "...", "rootDir": "apps-script"}`, then `clasp push`.
+
+## Team site
+
+To publish the data feed and connect the Netlify site, follow `site/README.md` (One-time setup).

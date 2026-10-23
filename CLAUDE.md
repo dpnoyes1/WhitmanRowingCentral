@@ -4,9 +4,11 @@ Home for Whitman Rowing's coaching tools. Owner: David Noyes (Head Coach). David
 
 | Folder | What | Status |
 |---|---|---|
-| `erg-tracker/` | Erg and OYO training tracker, girls pilot (Google Sheet + Form + Apps Script, Netlify dashboards later) | Session 1: Sheet, Form, Apps Script |
+| `erg-tracker/` | Erg and OYO training tracker, girls pilot (Google Sheet + Form + Apps Script; team site in `erg-tracker/site/` on Netlify) | Sheet, Form, Apps Script live; team site layer 1 |
 
 Each tool keeps its own rules in its folder's `CLAUDE.md`. Read it before changing that tool.
+
+`netlify.toml` at the repo root builds the whitmanrowingcentral.netlify.app site from `erg-tracker/site/`.
 
 Repo-wide rules:
 - Never commit passwords, API keys or tokens. Netlify sites read them from environment variables.

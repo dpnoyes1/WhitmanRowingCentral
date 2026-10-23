@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -665,6 +665,61 @@ test('dummy: athletes at every star level, some earning a new star', () => {
   Object.values(stars).forEach(a => { levels[a.best] += 1; });
   levels.forEach((n, i) => assert.ok(n >= 3, i + ' stars: ' + n + ' athletes'));
   assert.ok(Object.values(stars).filter(a => a.best > a.first).length >= 5, 'some earn a new star');
+});
+
+const dummyFeedInputs = () => ({
+  roster: dummy.roster, entries: dummy.entries, benchmarks: dummy.benchmarks, weights: dummy.weights,
+  practices: dummy.practices, schedule: dummy.schedule, workouts: dummy.workouts, squadHistory: [],
+  settings: dummySettings()
+});
+
+test('site feed: never sends weight, birthdays or coach notes', () => {
+  const feed = JSON.parse(JSON.stringify(g.siteFeed(dummyFeedInputs(), new Date(2026, 9, 23, 12))));
+  const text = JSON.stringify(feed);
+  assert.ok(!/weight|birthday|coach ?note|slack|notes"?:"DUMMY/i.test(text.replace(/"multipliers":\{[^}]*\}/, '')), 'forbidden key in feed');
+  dummy.roster.forEach(r => assert.ok(!text.includes(JSON.stringify(r.Birthday)), 'birthday leaked for ' + r.Name));
+  const lbs = new Set(dummy.weights.map(w => w['Weight lb']));
+  feed.athletes.forEach(a => Object.values(a).forEach(v => assert.ok(typeof v !== 'number' || !lbs.has(v) || v === a.oyoRequired || v === a.oyoElite)));
+  const outNotes = dummy.entries.filter(e => e['Coach note']).map(e => e['Coach note']);
+  assert.ok(outNotes.length > 0);
+  outNotes.forEach(n => assert.ok(!text.includes(n), 'coach note leaked: ' + n));
+  feed.entries.forEach(e => assert.deepStrictEqual(Object.keys(e).filter(k => /note|hr|weight/i.test(k)), []));
+});
+
+test('site feed: shape, GMS and stars per result, week plans without coach flags', () => {
+  const feed = JSON.parse(JSON.stringify(g.siteFeed(dummyFeedInputs(), new Date(2026, 9, 23, 12))));
+  assert.strictEqual(feed.today, '2026-10-23');
+  assert.strictEqual(feed.athletes.length, 30);
+  assert.ok(feed.athletes.every(a => a.grade && a.oyoRequired > 0 && a.oyoElite >= a.oyoRequired));
+  assert.strictEqual(feed.entries.length, dummy.entries.length);
+  assert.ok(feed.entries.every(e => /^\d{4}-\d{2}-\d{2}$/.test(e.date)));
+  const twoK = feed.benchmarks.filter(b => b.test === '2000m');
+  assert.ok(twoK.length > 0 && twoK.every(b => b.gmsPct > 50 && b.gmsPct < 130 && b.stars >= 0 && b.stars <= 3));
+  // Matches Gms.gs directly for one result.
+  const b0 = dummy.benchmarks.find(b => b.Test === '2000m');
+  const lb = g.weightOn_(dummy.weights, b0['Athlete ID'], b0.Date);
+  const f0 = feed.benchmarks.find(b => b.id === b0['Benchmark ID']);
+  near(f0.gmsPct, g.gmsPercent('2000m', b0['Time s'], lb), 0.05, 'gms %');
+  assert.strictEqual(f0.stars, g.gmsStars('2000m', b0['Time s'], lb));
+  feed.benchmarks.filter(b => b.nextStar).forEach(b => {
+    const keys = Object.keys(b.nextStar).sort().join(',');
+    assert.ok(keys === 'secondsFaster,splitFaster,stars,targetS' || keys === 'metersMore,splitFaster,stars,targetM', keys);
+  });
+  assert.ok(feed.benchmarks.filter(b => b.test === '20min').every(b => b.gmsPct === null || b.gmsPct > 50));
+  assert.strictEqual(feed.weeks.length, 2);
+  assert.deepStrictEqual(feed.weeks.map(w => w.weekStart), ['2026-10-19', '2026-10-26']);
+  assert.ok(feed.weeks[1].sessions.length > 0, 'planned week of Oct 26');
+  assert.ok(feed.weeks.every(w => !('coachFlags' in w)));
+  assert.ok(feed.teamGms.length >= 1 && feed.teamGms[0].schoolYear === '2026-27');
+  assert.ok(JSON.parse(JSON.stringify(feed)), 'JSON-safe');
+});
+
+test('site feed: key check', () => {
+  assert.ok(g.feedKeyMatches_('abc123', 'abc123'));
+  assert.ok(!g.feedKeyMatches_('abc123', 'abc124'));
+  assert.ok(!g.feedKeyMatches_('abc123', 'abc12'));
+  assert.ok(!g.feedKeyMatches_('abc123', ''));
+  assert.ok(!g.feedKeyMatches_('abc123', undefined));
 });
 
 console.log(`${passed} tests passed`);

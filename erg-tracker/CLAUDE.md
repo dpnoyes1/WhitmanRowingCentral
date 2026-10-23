@@ -7,7 +7,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 ## Stack
 
 - **Google Sheet** is the database. **Google Form** is manual entry. **Apps Script** (bound to the Sheet, source in `apps-script/`) builds the tabs and Form and converts submissions.
-- **Netlify site** (not built yet) serves dashboards. Netlify Functions read the Sheet and check passwords.
+- **Netlify site** `whitmanrowingcentral.netlify.app` (source in `site/`, see `site/README.md`) serves dashboards. Netlify Functions check the password and read the Sheet through a private Apps Script web app feed (`apps-script/Feed.gs`, POST with `FEED_KEY`), cached 5 minutes.
 - Team password and coach password live in Netlify environment variables only. Never commit them. Rotate each season.
 - Athletes never get access to the Sheet itself. Only coaches do.
 - No Claude artifacts for athlete-facing views (claude.ai accounts are 18+).
@@ -114,6 +114,16 @@ Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ con
 
 One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only. All Time keeps graduated athletes.
 
+## Team site (decided 2026-10-23)
+
+- One shared team password, then the athlete picks her name; the device remembers it (localStorage). David: fine for now, may rework later (per-athlete PIN was the alternative).
+- Full names on the site. Data refreshes at most every 5 minutes.
+- The feed (`siteFeed` in `Feed.gs`) sends no weight, birthdays, coach notes (Out notes can be medical), Slack IDs, Roster notes or HR. GMS %, stars and next-star gaps are computed in the Sheet. Tests in `tests/run.js` check this.
+- GMS % appears only on the athlete's own page (honor system, since the password is shared). Stars are public. The team view shows GMS averages only (`teamGmsForSite`).
+- Weighted minutes are computed in `site/lib/stats.mjs`. A Modified practice or make-up is weighted by `modified_multiplier` *instead of* its activity multiplier (assumption: it is usually BikeErg, so the two are not stacked). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
+- Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
+- Deploy previews require a Netlify login. Production only needs the team password.
+
 ## Phases
 
 1. Pilot: Sheet + Form + Apps Script (this repo now), then Netlify dashboards (team, athlete, coach) with GMS, stars and passwords.
@@ -133,4 +143,6 @@ Wellness check-ins, menstrual tracking, visible weight anywhere, XBoat, excused/
 
 - Apps Script source: `apps-script/*.gs`. Paste into the Sheet's Extensions > Apps Script, or push with `clasp` (see `docs/SETUP.md`).
 - Tests: `node erg-tracker/tests/run.js` (no dependencies). Run before every commit. Keep pure logic (parsing, GMS, schedule) free of Sheet/Form calls so it stays testable and portable to the Netlify site.
+- Site tests: `node erg-tracker/site/tests/run.mjs` (uses the dummy feed from `site/scripts/dummy-feed.js`). Netlify runs both suites as its build command.
+- After changing `Feed.gs` or anything it calls, the Apps Script web app needs a new version (Deploy > Manage deployments > edit > New version), not only a clasp push.
 - Dummy data (decided 2026-10-23): `apps-script/Dummy.gs`, menu **Load dummy data** / **Clear dummy data**. 30 made-up athletes (4 each 7th-9th novices, 6 each 10th-12th varsity), practices Oct 5-23 2026 plus a planned week Oct 26-30, OYO, make-ups, weights, and three rounds of 2k and 20' (late Aug, Sep, Oct); not everyone improves every round. Seeded, so it is the same each load. Marks: Athlete IDs A901+, Roster Notes / Weights Note start `DUMMY`, Source `Dummy`, IDs contain `-DUMMY-`, Workout IDs start `DUMMY-`. David will clear it all before adding real athletes.
