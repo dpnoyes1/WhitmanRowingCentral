@@ -9,7 +9,7 @@
 
 /** Installable trigger target (form submit). */
 function onFormSubmit(e) {
-  processResponse_(e.response);
+  if (processResponse_(e.response) === 'error') alertSubmitError_();
 }
 
 function processResponse_(response) {

@@ -131,6 +131,14 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
 - Deploy previews require a Netlify login. Production needs a site sign-in.
 
+## Alerts, backups and new school year (David, 2026-10-23)
+
+Logic in `apps-script/Ops.gs`, guide in `docs/SETUP.md` Parts C and D.
+- **Alerts:** hourly trigger `checkSiteHealth` loads Settings `site.url` and POSTs `/api/health` (`site/functions/health.mjs`, keyed with FEED_KEY, counts only). One alert when it breaks, a daily reminder while broken, one on recovery; failed form submissions alert too (no athlete details). Slack incoming webhook (Script Property `SLACK_ALERT_WEBHOOK`, menu **Slack alerts webhook**) when set, else email to `alerts.email` (blank: Sheet owner). David wants Slack later, when standing up real athletes; email until then.
+- **Backups:** Sunday 23:00 trigger `backupSheet`: values-only copy of every tab (not `makeCopy`, which would copy the linked Form) into Drive "Erg tracker backups" (`backup.folder_id`), newest `backup.keep` (12) kept.
+- **New school year** (menu): never deletes data (David). Archive copy (never trashed), `saveSquads_` for the closing year, Active = No for Grad year <= that year's seniors, logged in Change log. Results, stars and boards already reset by `school_year_start`.
+- These add OAuth scopes (Drive, external fetch, email, triggers). After pushing, run **Turn on alerts and backups** in the Sheet to authorize, or the form submit trigger stops.
+
 ## Phases
 
 1. Pilot: Sheet + Form + Apps Script (this repo now), then Netlify dashboards (team, athlete, coach) with GMS, stars and passwords.

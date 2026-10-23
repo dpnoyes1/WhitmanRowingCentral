@@ -74,6 +74,12 @@ function teamGmsMinGroup_(settings) {
 function snapshotSquads() {
   var s = getSettings();
   var label = schoolYearLabel(teamGmsYearStart_(new Date(), s.school_year_start).getFullYear());
+  var n = saveSquads_(label);
+  SpreadsheetApp.getUi().alert('Saved ' + n + ' squads for ' + label + '.');
+}
+
+/** Replaces Squad history rows for `label` with the current Roster squads. Returns how many. */
+function saveSquads_(label) {
   var sheet = tab_(TABS.SQUAD_HISTORY);
   var keep = readObjects_(TABS.SQUAD_HISTORY).filter(function (h) { return String(h['School year']).trim() !== label; });
   var add = readObjects_(TABS.ROSTER).filter(function (r) {
@@ -83,5 +89,5 @@ function snapshotSquads() {
   });
   if (sheet.getLastRow() > 1) sheet.getRange(2, 1, sheet.getLastRow() - 1, sheet.getLastColumn()).clearContent();
   appendObjects_(TABS.SQUAD_HISTORY, keep.concat(add));
-  SpreadsheetApp.getUi().alert('Saved ' + add.length + ' squads for ' + label + '.');
+  return add.length;
 }
