@@ -28,7 +28,22 @@ function appendObjects_(tabName, objs) {
     });
   });
   var sheet = tab_(tabName);
-  sheet.getRange(sheet.getLastRow() + 1, 1, rows.length, headers.length).setValues(rows);
+  sheet.getRange(lastDataRow_(sheet, headers.length) + 1, 1, rows.length, headers.length).setValues(rows);
+}
+
+/**
+ * Last row with data in the first `width` columns. getLastRow() is not enough:
+ * unticked checkboxes (Schedule) and header array formulas (Roster) fill every
+ * row with FALSE or "". A row of only blanks and FALSE counts as empty.
+ */
+function lastDataRow_(sheet, width) {
+  var last = sheet.getLastRow();
+  if (last < 2) return 1;
+  var values = sheet.getRange(2, 1, last - 1, width).getValues();
+  for (var i = values.length - 1; i >= 0; i--) {
+    if (values[i].some(function (v) { return v !== '' && v !== null && v !== false; })) return i + 2;
+  }
+  return 1;
 }
 
 /** Reads a tab as an array of {header: value}. */
