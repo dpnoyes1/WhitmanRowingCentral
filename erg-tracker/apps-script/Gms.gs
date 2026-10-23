@@ -14,11 +14,12 @@ var GMS_DEFAULTS = {
   offset20min: 8.5,      // 2k split = 20' split - 8.5s
   divisor500: 0.895,     // 2k split = 500m split / 0.895
   divisor100: 0.786,     // 2k split = 100m split / 0.786
-  // Stars use the slower edge of each boat band (predicted 1500m seconds).
+  // Stars 1-4 (David, 2026-10-23): every 2k or 20' earns 1, and each boat
+  // band above it adds one. Bands use the slower edge (predicted 1500m seconds).
   stars: [
-    { stars: 3, label: '1v8', maxP: 300 },
-    { stars: 2, label: '2v8', maxP: 315 },
-    { stars: 1, label: '3v/Fr8', maxP: 330 }
+    { stars: 4, label: '1v8', maxP: 300 },
+    { stars: 3, label: '2v8', maxP: 315 },
+    { stars: 2, label: '3v/Fr8', maxP: 330 }
   ]
 };
 
@@ -54,7 +55,7 @@ function gmsPercent(test, result, weightLbs, opts) {
   return 100 * o.standard / gmsPredicted1500(t2k, weightLbs, o);
 }
 
-/** Stars earned (0-3). Only 2000m and 20min earn stars. */
+/** Stars earned (1-4). Only 2000m and 20min earn stars; other tests return 0. */
 function gmsStars(test, result, weightLbs, opts) {
   var o = opts || GMS_DEFAULTS;
   if (test !== '2000m' && test !== '20min') return 0;
@@ -62,12 +63,12 @@ function gmsStars(test, result, weightLbs, opts) {
   for (var i = 0; i < o.stars.length; i++) {
     if (p <= o.stars[i].maxP) return o.stars[i].stars;
   }
-  return 0;
+  return 1;
 }
 
 /**
  * What it takes to reach the next star, phrased as speed only.
- * Returns null at 3 stars. For 2000m: { targetSeconds, secondsFaster,
+ * Returns null at 4 stars. For 2000m: { targetSeconds, secondsFaster,
  * splitFaster }. For 20min: { targetMeters, metersMore, splitFaster }.
  */
 function gmsNextStar(test, result, weightLbs, opts) {

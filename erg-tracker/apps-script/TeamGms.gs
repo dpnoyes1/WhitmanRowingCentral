@@ -42,9 +42,10 @@ function gmsOptionsFromSettings(s) {
     divisor500: num('gms.divisor_500m', d.divisor500),
     divisor100: num('gms.divisor_100m', d.divisor100),
     stars: [
-      { stars: 3, label: '1v8', maxP: num('gms.star3_s', 300) },
-      { stars: 2, label: '2v8', maxP: num('gms.star2_s', 315) },
-      { stars: 1, label: '3v/Fr8', maxP: num('gms.star1_s', 330) }
+      // Setting keys keep their old names: star3_s is the 4-star band, and so on.
+      { stars: 4, label: '1v8', maxP: num('gms.star3_s', 300) },
+      { stars: 3, label: '2v8', maxP: num('gms.star2_s', 315) },
+      { stars: 2, label: '3v/Fr8', maxP: num('gms.star1_s', 330) }
     ]
   };
 }

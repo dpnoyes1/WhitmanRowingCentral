@@ -283,6 +283,7 @@ async function showAthlete(id) {
         <div class="mark" style="left:${(100 * a.oyoElite) / oyoMax}%"><span>Elite ${a.oyoElite}m</span></div>
       </div></div>
     ${makeups}
+    ${mine && mine.id === id ? gmsCard(v.gms) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes')}</div>
     <div class="two">
@@ -298,6 +299,119 @@ async function showAthlete(id) {
   if (claim) claim.onclick = () => { store.set(ME_KEY, JSON.stringify({ id: a.id, name: a.name })); showAthlete(id); };
   wireTips(app);
   wireFooter();
+}
+
+const MAX_STARS = 4;
+const starText = (n) => '★'.repeat(n) + '<span class="star-off">' + '★'.repeat(MAX_STARS - n) + '</span>';
+const BOAT = { 4: '1v8 pace', 3: '2v8 pace', 2: '3v/Fr8 pace', 1: 'working toward 3v/Fr8' };
+
+/** Stars only, for anyone viewing someone else's page. */
+function starsLine(gms) {
+  const s = gms.filter((g) => g.stars !== null);
+  if (!s.length) return '';
+  const best = Math.max(...s.map((g) => g.stars));
+  return `<div class="card"><h2>Stars <span class="stars" aria-label="${best} stars">${starText(best)}</span></h2>
+    <p class="muted small">${s.map((g) => `${TEST_LABELS[g.test]}: ${g.stars} star${g.stars === 1 ? '' : 's'}`).join(' · ')}</p></div>`;
+}
+
+function nextStarText(g) {
+  const n = g.nextStar;
+  if (g.stars === MAX_STARS) return 'Top band reached.';
+  if (!n) return '';
+  if (g.test === '2000m') {
+    return `Next star: <b>${n.secondsFaster.toFixed(1)}s faster</b> on your 2k (${fmtTime(n.targetS)}, about ${n.splitFaster.toFixed(1)}s/500m).`;
+  }
+  return `Next star: <b>${fmtNum(n.metersMore)} m more</b> on your 20' (${fmtNum(n.targetM)} m, about ${n.splitFaster.toFixed(1)}s/500m faster).`;
+}
+
+/** Her own page only: GMS % per test and how far to the next star, in time or meters. */
+function gmsCard(gms) {
+  if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="muted">No tests with a GMS yet this season.</p></div>';
+  return `<div class="card"><h2>Gold Medal Standard <span class="pill">only you see this</span></h2>
+    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th><th></th></tr>
+    ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
+      <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td><td class="small wrap">${g.stars === null ? '' : nextStarText(g)}</td></tr>`).join('')}
+    </table></div><p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
+}
+
+async function showBoards() {
+  const v = await api('/api/leaderboards');
+  setNav('boards');
+  const state = { test: store.get('wrc.board') || '2000m', window: store.get('wrc.window') || 'season', squad: store.get(SQUAD_KEY) || 'all' };
+  const mine = me();
+  const render = () => {
+    const t = v.tests.find((x) => x.test === state.test) || v.tests[0];
+    const rows = t[state.window].filter((r) => state.squad === 'all' || r.squad.toLowerCase() === state.squad);
+    const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
+      `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Leaderboards</h1>
+      <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.</p></div></div>
+      <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
+        ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
+        ${seg('squad', [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}</div>
+      <div class="card board">${rows.length ? `<div class="table-wrap"><table>
+        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
+        ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
+          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.active ? '' : ' <span class="pill">alum</span>'}
+            <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.squad !== 'all' ? ` <span class="muted">#${r.rank} overall</span>` : ''}</div></td>
+          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r">${r.avgRate || '–'}</td><td class="date">${fmtDate(r.date)}</td></tr>`).join('')}
+      </table></div>` : '<p class="muted">No results yet.</p>'}</div>${footer(v.meta)}`;
+    app.querySelectorAll('[data-k]').forEach((b) => {
+      b.onclick = () => {
+        state[b.dataset.k] = b.dataset.v;
+        store.set({ test: 'wrc.board', window: 'wrc.window', squad: SQUAD_KEY }[b.dataset.k], b.dataset.v);
+        render();
+      };
+    });
+    wireFooter();
+  };
+  render();
+}
+
+async function showStars() {
+  const v = await api('/api/stars');
+  setNav('stars');
+  const groups = [4, 3, 2, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const untested = v.rowers.filter((r) => r.stars === null);
+  const cur = v.teamGms[0], prev = v.teamGms[1];
+  const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
+  const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
+    <p class="muted">Best 2k or 20' this school year. Every 2k or 20' earns ★; then ★★ 3v/Fr8, ★★★ 2v8, ★★★★ 1v8 boat speed.</p></div></div>
+    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars">${starText(g.n)}</span> ${BOAT[g.n]} <span class="muted small">${g.rows.length}</span></h2>
+      <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}</span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
+    ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
+    <div class="card"><h2>Team Gold Medal Standard</h2>
+      <p class="muted small">Average of each rower's best GMS % this school year, through ${fmtDate(cur.throughDate)}${prev ? `, next to last year through the same date` : ''}. Groups under 3 rowers are hidden.</p>
+      <div class="table-wrap"><table><tr><th>Group</th><th class="r">${esc(cur.schoolYear)}</th>${prev ? `<th class="r">${esc(prev.schoolYear)}</th>` : ''}</tr>
+      ${keys.map((k) => `<tr><td>${esc(cur.groups[k].label)}</td><td class="r">${avg(cur, k)}</td>${prev ? `<td class="r">${avg(prev, k)}</td>` : ''}</tr>`).join('')}
+      </table></div><p class="muted small">Ranks use raw erg speed.</p></div>${footer(v.meta)}`;
+  wireFooter();
+}
+
+async function showOyo() {
+  const v = await api('/api/oyo');
+  setNav('oyo');
+  let which = 'now';
+  const mine = me();
+  const render = () => {
+    const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, minutes: r.lastWeek.minutes, status: r.lastWeek.status }))
+      .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
+    const met = rows.filter((r) => r.status !== 'short').length, elite = rows.filter((r) => r.status === 'elite').length;
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
+      <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
+      <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
+      <div class="card">${rows.map((r) => {
+        const max = Math.max(r.elite * 1.15, r.minutes);
+        return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}">
+          <div class="oyo-name"><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${fmtMin(r.minutes)} / ${r.required}m${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</span></div>
+          <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
+            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div></div>`;
+      }).join('')}<p class="muted small">Marks: Required and Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
+    app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
+    wireFooter();
+  };
+  render();
 }
 
 function bestsTable(v) {
@@ -338,6 +452,9 @@ async function route() {
   try {
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
+    if (page === 'boards') return await showBoards();
+    if (page === 'stars') return await showStars();
+    if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
     if (page === 'pick') return await showPick();
     const m = me();

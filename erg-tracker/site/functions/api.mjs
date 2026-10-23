@@ -1,7 +1,7 @@
 import { signedIn } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, athleteView } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -22,6 +22,9 @@ export async function handle(req, envFn, deps = {}) {
   const meta = { generatedAt: data.generatedAt, stale: feed.stale };
 
   if (path === '/api/team') return json({ ...teamView(data, today), meta });
+  if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
+  if (path === '/api/stars') return json({ ...starsView(data, today), meta });
+  if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
   const m = path.match(/^\/api\/athlete\/([A-Za-z0-9-]+)$/);
   if (m) {
     const view = athleteView(data, m[1], today);
@@ -32,4 +35,4 @@ export async function handle(req, envFn, deps = {}) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo'], method: 'GET' };

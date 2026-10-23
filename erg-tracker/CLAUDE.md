@@ -64,7 +64,7 @@ GMS math (implemented in `apps-script/Gms.gs`, tested against the planning examp
 1. 2k-equivalent split: 20' split - 8.5s; 500m split / 0.895; 100m split (time x 5) / 0.786. T = split x 4.
 2. Predicted 1500m 8+ time: P = 0.75 x T x (W / 270)^0.222.
 3. GMS % = 300 / P (always vs 1v8 standard 5:00).
-4. Stars: 1 star P <= 5:30 (3v/Fr8), 2 stars P <= 5:15 (2v8), 3 stars P <= 5:00 (1v8).
+4. Stars, 1 to 4 (David, 2026-10-23): any valid 2k or 20' earns 1 star; 2 stars P <= 5:30 (3v/Fr8), 3 stars P <= 5:15 (2v8), 4 stars P <= 5:00 (1v8). Settings keys `gms.star1_s`..`star3_s` keep their names and hold the 2-, 3- and 4-star edges.
 5. Next star shown as time only, e.g. "next star: 2.2s faster on your 2k (7:42.8, ~0.6s/500m)". 20' gap as split/meters.
 Stars are public; GMS % is visible to each athlete. Novices use the same standards.
 
@@ -112,7 +112,7 @@ Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ con
 
 ## Leaderboards
 
-One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only. All Time keeps graduated athletes.
+One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes.
 
 ## Team site (decided 2026-10-23)
 

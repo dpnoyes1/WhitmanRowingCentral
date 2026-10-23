@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, athleteView } from '../lib/views.mjs';
+import { teamView, athleteView, leaderboardsView, starsView, oyoView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -66,7 +66,7 @@ test('team view: three groups, averages only', () => {
   assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars/i.test(JSON.stringify(t)), 'no GMS or weight on the team view');
 });
 
-test('athlete view: bests, streaks, make-ups, no GMS yet', () => {
+test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => {
   feed.athletes.forEach((a) => {
     const v = athleteView(feed, a.id, TODAY);
     assert.strictEqual(v.athlete.name, a.name);
@@ -78,11 +78,59 @@ test('athlete view: bests, streaks, make-ups, no GMS yet', () => {
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
       assert.strictEqual(b.allTime.result, best);
     });
-    assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(v)), a.name);
+    const { gms, ...rest } = v;
+    assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(rest)), a.name);
+    assert.ok(!/"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(gms)), a.name);
   });
   assert.strictEqual(athleteView(feed, 'A000', TODAY), null);
   const tested = feed.athletes.filter((a) => athleteView(feed, a.id, TODAY).bests.length > 0).length;
   assert.ok(tested >= 28, 'most athletes have bests: ' + tested);
+});
+
+test('leaderboards: ranked best valid result per athlete, raw scores only', () => {
+  const v = leaderboardsView(feed, TODAY);
+  const b2k = v.tests.find((t) => t.test === '2000m');
+  assert.ok(b2k.season.length >= 25);
+  b2k.season.forEach((r, i) => {
+    assert.strictEqual(r.rank, i + 1);
+    if (i) assert.ok(r.timeS >= b2k.season[i - 1].timeS);
+    const mine = feed.benchmarks.filter((b) => b.athleteId === r.id && b.test === '2000m' && b.valid && b.date >= v.yearStart);
+    assert.strictEqual(r.timeS, Math.min(...mine.map((b) => b.timeS)));
+  });
+  const m20 = v.tests.find((t) => t.test === '20min').allTime;
+  m20.forEach((r, i) => { if (i) assert.ok(r.meters <= m20[i - 1].meters); });
+  assert.ok(!/gms|weight/i.test(JSON.stringify(v)));
+  const stars = starsView(feed, TODAY).rowers;
+  b2k.season.forEach((r) => { const s = stars.find((x) => x.id === r.id); if (s) assert.strictEqual(r.stars, s.stars); });
+});
+
+test('stars board: stars public, GMS % never; team averages only', () => {
+  const v = starsView(feed, TODAY);
+  assert.strictEqual(v.rowers.length, 30);
+  assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 4)));
+  assert.ok(new Set(v.rowers.map((r) => r.stars)).size >= 3, 'a spread of stars');
+  const { teamGms, ...rest } = v;
+  assert.ok(!/gmsPct|nextStar|weight/i.test(JSON.stringify(rest)));
+  assert.ok(!/A9\d\d|name/.test(JSON.stringify(teamGms)), 'team GMS has no names or IDs');
+});
+
+test('OYO board: everyone, sorted by share of Required, statuses match goals', () => {
+  const v = oyoView(feed, TODAY);
+  assert.strictEqual(v.rowers.length, 30);
+  v.rowers.forEach((r, i) => {
+    assert.strictEqual(r.status, r.minutes >= r.elite ? 'elite' : r.minutes >= r.required ? 'required' : 'short');
+    if (i) assert.ok(r.minutes / r.required <= v.rowers[i - 1].minutes / v.rowers[i - 1].required + 1e-9);
+  });
+  assert.strictEqual(v.lastWeekStart, '2026-10-12');
+});
+
+test('own-page GMS: next star in time or meters, never weight', () => {
+  const withNext = feed.athletes.map((a) => athleteView(feed, a.id, TODAY).gms).flat().filter((g) => g.nextStar);
+  assert.ok(withNext.length > 10);
+  withNext.forEach((g) => {
+    if (g.test === '2000m') assert.ok(g.nextStar.secondsFaster > 0 && g.nextStar.targetS < g.timeS);
+    else assert.ok(g.nextStar.metersMore > 0 && g.nextStar.targetM > g.meters);
+  });
 });
 
 test('auth: tokens, cookies, password', () => {
@@ -137,6 +185,10 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual((await res.json()).athletes.length, 30);
   res = await handle(new Request('https://x/api/athlete/A901', { headers: { cookie } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, 'A901');
+  for (const p of ['/api/leaderboards', '/api/stars', '/api/oyo']) {
+    res = await handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
+    assert.strictEqual(res.status, 200, p);
+  }
   res = await handle(new Request('https://x/api/athlete/nope', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 404);
   clearFeedCache();
