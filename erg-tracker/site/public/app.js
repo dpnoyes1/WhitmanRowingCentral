@@ -301,9 +301,9 @@ async function showAthlete(id) {
   wireFooter();
 }
 
-const MAX_STARS = 4;
+const MAX_STARS = 5;
 const starText = (n) => '★'.repeat(n) + '<span class="star-off">' + '★'.repeat(MAX_STARS - n) + '</span>';
-const BOAT = { 4: '1v8 pace', 3: '2v8 pace', 2: '3v/Fr8 pace', 1: 'working toward 3v/Fr8' };
+const BAND = { 5: '100% GMS or better', 4: '97% GMS', 3: '96% GMS', 2: '95% GMS', 1: 'under 95% GMS' };
 
 /** Stars only, for anyone viewing someone else's page. */
 function starsLine(gms) {
@@ -371,14 +371,14 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const groups = [4, 3, 2, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const groups = [5, 4, 3, 2, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
   const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
-    <p class="muted">Best 2k or 20' this school year. Every 2k or 20' earns ★; then ★★ 3v/Fr8, ★★★ 2v8, ★★★★ 1v8 boat speed.</p></div></div>
-    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars">${starText(g.n)}</span> ${BOAT[g.n]} <span class="muted small">${g.rows.length}</span></h2>
+    <p class="muted">Best 2k or 20' this school year. Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
+    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars">${starText(g.n)}</span> ${BAND[g.n]} <span class="muted small">${g.rows.length}</span></h2>
       <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}</span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
     <div class="card"><h2>Team Gold Medal Standard</h2>
