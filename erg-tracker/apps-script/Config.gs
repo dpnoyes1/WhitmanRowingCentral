@@ -20,7 +20,8 @@ var TABS = {
 var HEADERS = {};
 HEADERS[TABS.ROSTER] = [
   'Athlete ID', 'Name', 'Slack member ID', 'Squad', 'Role', 'OYO group',
-  'OYO required min', 'OYO elite min', 'Active', 'Notes'
+  'OYO required min', 'OYO elite min', 'Active', 'Notes',
+  'Birthday', 'Grad year', 'Age group', 'School year'
 ];
 HEADERS[TABS.ENTRIES] = [
   'Entry ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
@@ -66,6 +67,17 @@ TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
 TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
+
+/**
+ * Columns the Sheet fills itself with one array formula in the header cell.
+ * Each builder gets {header: column letter} and returns the formula. The
+ * formulas mirror ageGroup() / schoolYear() in Profile.gs.
+ */
+var COMPUTED_COLUMNS = {};
+COMPUTED_COLUMNS[TABS.ROSTER] = {
+  'Age group': function (c) { return ageGroupFormula_(c['Birthday']); },
+  'School year': function (c) { return schoolYearFormula_(c['Grad year']); }
+};
 
 /** Tabs whose manual edits are written to the Change log. */
 var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, TABS.ROSTER];

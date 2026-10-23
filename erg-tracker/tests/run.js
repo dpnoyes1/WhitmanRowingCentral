@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -336,6 +336,49 @@ test('no weight anywhere in plan code', () => {
     assert.ok(!/weight|\blbs?\b/i.test(src), f + ' must not use weight');
   }
   assert.ok(!/weight/i.test(JSON.stringify([g.HEADERS[g.TABS.WORKOUTS], g.HEADERS[g.TABS.SCHEDULE]])));
+});
+
+test('profile: age group by age on Jan 1', () => {
+  const today = new Date(2027, 2, 15);              // racing season 2027
+  const D = (y, m, d) => new Date(y, m - 1, d);
+  // 17 on Dec 31 2026 -> 17 on Jan 1 2027 -> not U17
+  assert.strictEqual(g.ageGroup(D(2009, 12, 31), today), 'U19');
+  assert.strictEqual(g.ageGroup(D(2010, 1, 1), today), 'U19');   // turns 17 on Jan 1 itself
+  assert.strictEqual(g.ageGroup(D(2010, 1, 2), today), 'U17');   // still 16 on Jan 1
+  assert.strictEqual(g.ageGroup(D(2011, 1, 2), today), 'U16');
+  assert.strictEqual(g.ageGroup(D(2012, 1, 2), today), 'U15');
+  assert.strictEqual(g.ageGroup(D(2014, 6, 1), today), 'U15');
+  assert.strictEqual(g.ageGroup(D(2007, 5, 5), today), 'U19');
+  assert.strictEqual(g.ageGroup('', today), '');
+});
+
+test('profile: school year rolls over July 1', () => {
+  assert.strictEqual(g.schoolYear(2029, new Date(2026, 5, 30)), '9th');   // June 30 2026, end of 2025-26
+  assert.strictEqual(g.schoolYear(2029, new Date(2026, 6, 1)), '10th');   // July 1 2026, start of 2026-27
+  assert.strictEqual(g.schoolYear(2027, new Date(2026, 9, 23)), '12th');
+  assert.strictEqual(g.schoolYear(2031, new Date(2026, 9, 23)), '8th');
+  assert.strictEqual(g.schoolYear(2032, new Date(2026, 9, 23)), '7th');
+  assert.strictEqual(g.schoolYear(2033, new Date(2026, 9, 23)), '');
+  assert.strictEqual(g.schoolYear(2026, new Date(2026, 9, 23)), 'Graduated');
+  assert.strictEqual(g.schoolYear('', new Date(2026, 9, 23)), '');
+});
+
+test('profile: roster columns appended and formulas reference them', () => {
+  const h = g.HEADERS[g.TABS.ROSTER];
+  assert.strictEqual(h.slice(0, 10).join(), 'Athlete ID,Name,Slack member ID,Squad,Role,OYO group,OYO required min,OYO elite min,Active,Notes');
+  assert.strictEqual(h.slice(10).join(), 'Birthday,Grad year,Age group,School year');
+  const letters = {}; h.forEach((x, i) => { letters[x] = g.columnLetter_(i + 1); });
+  assert.strictEqual(letters['Birthday'], 'K');
+  assert.strictEqual(letters['Grad year'], 'L');
+  assert.strictEqual(g.columnLetter_(27), 'AA');
+  const ag = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['Age group'](letters);
+  const sy = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['School year'](letters);
+  assert.ok(ag.startsWith('={"Age group";') && ag.includes('K2:K') && ag.includes('DATE(YEAR(TODAY()),1,1)'), ag);
+  assert.ok(sy.startsWith('={"School year";') && sy.includes('L2:L') && sy.includes('MONTH(TODAY())>=7'), sy);
+  for (const f of [ag, sy]) {
+    let depth = 0; for (const c of f) { if (c === '(') depth++; if (c === ')') depth--; assert.ok(depth >= 0, f); }
+    assert.strictEqual(depth, 0, 'balanced parens: ' + f);
+  }
 });
 
 console.log(`${passed} tests passed`);
