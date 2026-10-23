@@ -512,4 +512,20 @@ test('dummy: varied attendance, a 5+ day absence, make-ups and OYO below and abo
   assert.ok(new Set(dummy.entries.filter(e => e['Session type'] === 'OYO').map(e => e.Activity)).size >= 6);
 });
 
+test('dummy: athletes at every star level, some earning a new star', () => {
+  const weightOn = (id, date) => dummy.weights.filter(w => w['Athlete ID'] === id && w.Date <= date)
+    .sort((a, b) => b.Date - a.Date)[0]['Weight lb'];
+  const stars = {};
+  dummy.benchmarks.forEach(b => {
+    const n = g.gmsStars(b.Test, b.Test === '2000m' ? b['Time s'] : b.Meters, weightOn(b['Athlete ID'], b.Date));
+    const a = stars[b['Athlete ID']] = stars[b['Athlete ID']] || { first: null, best: 0 };
+    if (a.first === null) a.first = n;
+    a.best = Math.max(a.best, n);
+  });
+  const levels = [0, 0, 0, 0];
+  Object.values(stars).forEach(a => { levels[a.best] += 1; });
+  levels.forEach((n, i) => assert.ok(n >= 3, i + ' stars: ' + n + ' athletes'));
+  assert.ok(Object.values(stars).filter(a => a.best > a.first).length >= 5, 'some earn a new star');
+});
+
 console.log(`${passed} tests passed`);
