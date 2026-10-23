@@ -219,6 +219,8 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.ok(!/gmsPct|nextStar/.test(mateText) && JSON.parse(mateText).coach === false);
   res = await handle(new Request('https://x/api/week', { headers: { cookie: her } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, tested.id);
+  // Star rankings are coaches only.
+  assert.strictEqual((await handle(new Request('https://x/api/stars', { headers: { cookie: her } }), env, deps)).status, 403);
   // No response ever carries a sign-in code.
   const codes = feed.logins.map((l) => l.code);
   assert.ok(codes.length > 0);
