@@ -701,6 +701,34 @@ test('site feed: never sends weight, birthdays or coach notes', () => {
   feed.entries.forEach(e => assert.deepStrictEqual(Object.keys(e).filter(k => /note|hr|weight/i.test(k)), []));
 });
 
+test('site feed: sign-in codes are keyed HMACs of the birthday, never the date', () => {
+  const crypto = require('crypto');
+  const sign = (id, day) => crypto.createHmac('sha256', 'k').update('login:' + id + ':' + day).digest('hex');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.siteFeed(dummyFeedInputs(), new Date(2026, 9, 23, 12)))).logins, [], 'no signer, no codes');
+  const feed = JSON.parse(JSON.stringify(g.siteFeed(Object.assign(dummyFeedInputs(), { signLogin: sign }), new Date(2026, 9, 23, 12))));
+  const withBirthday = dummy.roster.filter(r => r.Birthday && g.isActive_(r.Active));
+  assert.strictEqual(feed.logins.length, withBirthday.length);
+  withBirthday.forEach(r => {
+    const day = g.dayKey_(r.Birthday);
+    assert.strictEqual(feed.logins.find(l => l.id === r['Athlete ID']).code, sign(r['Athlete ID'], day));
+    assert.ok(!JSON.stringify(feed).includes(day), 'birthday date leaked for ' + r.Name);
+  });
+  assert.ok(!/birthday/i.test(JSON.stringify(feed)));
+  // Settings test password: every athlete gets the same date; coaches by name (made-up people).
+  const inputs = Object.assign(dummyFeedInputs(), { signLogin: sign });
+  inputs.settings['site.test_password'] = 'Fri Jan 01 2010 00:00:00 GMT-0500 (Eastern Standard Time)';
+  inputs.settings['site.coaches'] = 'Pat Example 02/03/1980; Sam  O\'Test 1975-12-31; no date here';
+  const t = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12))));
+  withBirthday.forEach(r => assert.strictEqual(t.logins.find(l => l.id === r['Athlete ID']).code, sign(r['Athlete ID'], '2010-01-01')));
+  assert.deepStrictEqual(t.logins.filter(l => l.coach).map(l => l.code), [sign('coach:pat example', '1980-02-03'), sign('coach:sam otest', '1975-12-31')]);
+  assert.ok(!/Pat|1980|1975/.test(JSON.stringify(t.logins)), 'coach names and dates stay out');
+  assert.strictEqual(g.feedParseDay_('1/1/2010'), '2010-01-01');
+  assert.strictEqual(g.feedParseDay_(''), '');
+  // Same bytes as Apps Script's signer (Utilities returns signed bytes).
+  g.Utilities = { computeHmacSha256Signature: (v, key) => Array.from(crypto.createHmac('sha256', key).update(v).digest()).map(b => (b > 127 ? b - 256 : b)) };
+  assert.strictEqual(g.feedLoginSigner_('k')('A901', '2010-03-14'), sign('A901', '2010-03-14'));
+});
+
 test('site feed: shape, GMS and stars per result, week plans without coach flags', () => {
   const feed = JSON.parse(JSON.stringify(g.siteFeed(dummyFeedInputs(), new Date(2026, 9, 23, 12))));
   assert.strictEqual(feed.today, '2026-10-23');
