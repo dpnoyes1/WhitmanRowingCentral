@@ -14,12 +14,13 @@ var GMS_DEFAULTS = {
   offset20min: 8.5,      // 2k split = 20' split - 8.5s
   divisor500: 0.895,     // 2k split = 500m split / 0.895
   divisor100: 0.786,     // 2k split = 100m split / 0.786
-  // Stars 1-4 (David, 2026-10-23): every 2k or 20' earns 1, and each boat
-  // band above it adds one. Bands use the slower edge (predicted 1500m seconds).
+  // Stars 1-5 by GMS % (David, 2026-10-23): every 2k or 20' earns 1, and each
+  // band's lower edge is in it (exactly 95.0% is 2 stars).
   stars: [
-    { stars: 4, label: '1v8', maxP: 300 },
-    { stars: 3, label: '2v8', maxP: 315 },
-    { stars: 2, label: '3v/Fr8', maxP: 330 }
+    { stars: 5, minPct: 100 },
+    { stars: 4, minPct: 97 },
+    { stars: 3, minPct: 96 },
+    { stars: 2, minPct: 95 }
   ]
 };
 
@@ -55,20 +56,20 @@ function gmsPercent(test, result, weightLbs, opts) {
   return 100 * o.standard / gmsPredicted1500(t2k, weightLbs, o);
 }
 
-/** Stars earned (1-4). Only 2000m and 20min earn stars; other tests return 0. */
+/** Stars earned (1-5). Only 2000m and 20min earn stars; other tests return 0. */
 function gmsStars(test, result, weightLbs, opts) {
   var o = opts || GMS_DEFAULTS;
   if (test !== '2000m' && test !== '20min') return 0;
-  var p = gmsPredicted1500(gmsEquivalent2k(test, result, o), weightLbs, o);
+  var pct = 100 * o.standard / gmsPredicted1500(gmsEquivalent2k(test, result, o), weightLbs, o);
   for (var i = 0; i < o.stars.length; i++) {
-    if (p <= o.stars[i].maxP) return o.stars[i].stars;
+    if (pct >= o.stars[i].minPct) return o.stars[i].stars;
   }
   return 1;
 }
 
 /**
  * What it takes to reach the next star, phrased as speed only.
- * Returns null at 4 stars. For 2000m: { targetSeconds, secondsFaster,
+ * Returns null at the top star. For 2000m: { targetSeconds, secondsFaster,
  * splitFaster }. For 20min: { targetMeters, metersMore, splitFaster }.
  */
 function gmsNextStar(test, result, weightLbs, opts) {
@@ -79,7 +80,8 @@ function gmsNextStar(test, result, weightLbs, opts) {
     if (o.stars[i].stars === have + 1) next = o.stars[i];
   }
   if (!next) return null;
-  var t2kNeeded = next.maxP / (o.factor1500 * Math.pow(weightLbs / o.refWeight, o.exponent));
+  var maxP = o.standard * 100 / next.minPct;
+  var t2kNeeded = maxP / (o.factor1500 * Math.pow(weightLbs / o.refWeight, o.exponent));
   if (test === '2000m') {
     return {
       stars: next.stars,

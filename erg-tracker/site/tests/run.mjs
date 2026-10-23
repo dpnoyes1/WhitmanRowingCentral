@@ -107,7 +107,7 @@ test('leaderboards: ranked best valid result per athlete, raw scores only', () =
 test('stars board: stars public, GMS % never; team averages only', () => {
   const v = starsView(feed, TODAY);
   assert.strictEqual(v.rowers.length, 30);
-  assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 4)));
+  assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 5)));
   assert.ok(new Set(v.rowers.map((r) => r.stars)).size >= 3, 'a spread of stars');
   const { teamGms, ...rest } = v;
   assert.ok(!/gmsPct|nextStar|weight/i.test(JSON.stringify(rest)));
