@@ -41,9 +41,10 @@ export async function handle(req, envFn, deps = {}) {
   if (m) {
     const view = athleteView(data, m[1], today);
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
-    // GMS % only to the athlete herself; everyone else (coaches too, for now) sees stars.
+    // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    return json({ ...view, gms: own ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), own, meta });
+    const coach = who.kind === 'team';
+    return json({ ...view, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), own, coach, meta });
   }
   return json({ error: 'Not found' }, 404);
 }

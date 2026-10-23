@@ -197,14 +197,15 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual(res.status, 404);
   res = await handle(new Request('https://x/api/week/nope', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 404);
-  // Coach session: no athlete, and no GMS % on anyone's page.
+  // Coach session: no athlete, and sees everything, GMS % included, on every page.
   res = await handle(new Request('https://x/api/session', { headers: { cookie } }), env, deps);
   assert.deepStrictEqual((await res.json()).athlete, null);
   const tested = starsView(feed, TODAY).rowers.find((r) => r.stars !== null);
   res = await handle(new Request('https://x/api/athlete/' + tested.id, { headers: { cookie } }), env, deps);
   let body = await res.json();
   assert.strictEqual(body.own, false);
-  assert.ok(body.gms.length && body.gms.every((g) => Object.keys(g).join() === 'test,stars'));
+  assert.strictEqual(body.coach, true);
+  assert.ok(body.gms.some((g) => g.gmsPct > 0));
   // Athlete session: her own GMS %, only stars for a teammate, her week by default.
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), tested.id);
   res = await handle(new Request('https://x/api/session', { headers: { cookie: her } }), env, deps);
@@ -214,7 +215,8 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.ok(body.own && body.gms.some((g) => g.gmsPct > 0));
   const mate = starsView(feed, TODAY).rowers.find((r) => r.stars !== null && r.id !== tested.id);
   res = await handle(new Request('https://x/api/athlete/' + mate.id, { headers: { cookie: her } }), env, deps);
-  assert.ok(!/gmsPct|nextStar/.test(await res.text()));
+  const mateText = await res.text();
+  assert.ok(!/gmsPct|nextStar/.test(mateText) && JSON.parse(mateText).coach === false);
   res = await handle(new Request('https://x/api/week', { headers: { cookie: her } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, tested.id);
   // No response ever carries a sign-in code.

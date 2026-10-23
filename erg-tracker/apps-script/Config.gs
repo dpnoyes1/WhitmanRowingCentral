@@ -130,7 +130,7 @@ var SETTINGS_DEFAULTS = [
   ['default_drag_factor', '105', 'Prefilled; other values flagged for coaches'],
   ['makeup_window_days', '7', 'Make-ups must be within this many days'],
   ['site.test_password', '', 'MM/DD/YYYY. While set, every athlete signs in to the team site with this date instead of her birthday'],
-  ['site.coaches', '', 'Coach sign-ins for the team site: "First Last MM/DD/YYYY", separated by ;. Coaches see everything public, no GMS %'],
+  ['site.coaches', '', 'Coach sign-ins for the team site: "First Last MM/DD/YYYY", separated by ;. Coaches see everything, GMS % included'],
   ['return_to_training_days', '5', 'Consecutive days out that trigger a ramp-back week'],
   ['autoaccept_hours', '48', 'Phase 2: unchanged auto-labels accepted after this'],
   ['spike_threshold_pct', '30', 'PLACEHOLDER: load spike vs 4-week average'],
