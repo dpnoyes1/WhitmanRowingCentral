@@ -7,6 +7,7 @@ const app = document.getElementById('app');
 const tip = document.getElementById('tip');
 const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on sign-in
 const SQUAD_KEY = 'wrc.squad';
+const RESULTS_SORT_KEY = 'wrc.resultsSort';
 const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
 
 // ---- small helpers -------------------------------------------------------
@@ -390,17 +391,55 @@ function sessionBlock(s, withTargets, today = '') {
     ${s.results ? teamResults(s, today) : ''}</div>`;
 }
 
-/** Coaches: everyone in the session's squad, logged or not, with splits against their targets. */
+/** Average logged split (RowErg-equivalent /500m) across every piece, or null. */
+function avgSplit(r) {
+  const all = [...r.pieces.flat(), ...r.extra].map((x) => x.splitS).filter((x) => x !== null);
+  return all.length ? all.reduce((x, y) => x + y, 0) / all.length : null;
+}
+
+/**
+ * Coaches: everyone in the session's squad, logged or not, with splits against
+ * their targets. Sortable by name or by speed (average split, fastest first;
+ * no split last). The choice sticks across fold-outs.
+ */
 function teamResults(s, today) {
   const logged = s.results.filter((x) => x.result);
   const inRange = logged.filter((x) => x.result.hit === true).length;
   const ahead = today && s.day > today;
+  const sort = store.get(RESULTS_SORT_KEY) || 'name';
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length ? ` · ${inRange} all in range` : ''}</summary>
-    <div class="table-wrap"><table><tr><th>Name</th><th>Status</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr>
-    ${s.results.map((x) => `<tr><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
+    <div class="seg results-sort" role="group" aria-label="Sort results">
+      <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
+    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th>Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
+    ${s.results.map((x) => {
+      const avg = x.result ? avgSplit(x.result) : null;
+      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
       <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
-      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`).join('')}
-    </table></div></details>`;
+      <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
+      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`;
+    }).join('')}
+    </tbody></table></div></details>`;
+}
+
+/** Orders every results table on the page by name or speed and numbers the speed ranks. */
+function sortResults(root, sort) {
+  root.querySelectorAll('details.team-results').forEach((d) => {
+    d.querySelectorAll('.results-sort button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sort === sort)));
+    const body = d.querySelector('tbody');
+    const rows = [...body.rows];
+    const speed = (r) => (r.dataset.speed === '' ? Infinity : Number(r.dataset.speed));
+    rows.sort((a, b) => (sort === 'speed' ? speed(a) - speed(b) : 0) || a.dataset.name.localeCompare(b.dataset.name));
+    let n = 0;
+    rows.forEach((r) => { r.cells[0].textContent = sort === 'speed' && r.dataset.speed !== '' ? ++n : ''; body.appendChild(r); });
+    d.classList.toggle('by-speed', sort === 'speed');
+  });
+}
+
+function wireResultsSort(root) {
+  sortResults(root, store.get(RESULTS_SORT_KEY) || 'name');
+  root.querySelectorAll('.results-sort button').forEach((b) => {
+    b.onclick = () => { store.set(RESULTS_SORT_KEY, b.dataset.sort); sortResults(root, b.dataset.sort); };
+  });
 }
 
 /** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
@@ -450,6 +489,7 @@ async function showWeek(id = null, prev = false) {
       Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m, which lines up with the RowErg /500m target; BikeErg never counts as a benchmark. Other machines show no split.</p>${footer(v.meta)}`;
   const pick = document.getElementById('pick');
   if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
+  wireResultsSort(app);
   wireFooter();
 }
 
