@@ -29,6 +29,7 @@ export function teamView(feed, today) {
   const monday = weekStart(today);
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const rowers = activeRowers(feed);
+  const starsOf = (id) => seasonStars(feed, id, yearStart, today).stars;
   const weeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));
   const byWeek = Object.fromEntries(weeks.map((w) => [w, weekMinutes(feed.entries, feed.settings, w)]));
   const zoneFrom = addDays(monday, -7 * (ZONE_WEEKS - 1));
@@ -79,7 +80,7 @@ export function teamView(feed, today) {
 
   return {
     today, weekStart: monday, zonesFrom: zoneFrom,
-    athletes: rowers.map(athleteSummary).sort((a, b) => a.name.localeCompare(b.name)),
+    athletes: rowers.map((a) => ({ ...athleteSummary(a), stars: starsOf(a.id) })).sort((a, b) => a.name.localeCompare(b.name)),
     groups: {
       all: group(rowers),
       varsity: group(rowers.filter((a) => /^varsity$/i.test(a.squad))),
@@ -210,15 +211,18 @@ function bestGms(feed, id, test, yearStart, today) {
   return best;
 }
 
-/** Stars this season: the best of the star tests, or null with no star test yet. */
-function seasonStars(feed, id, yearStart, today) {
+/**
+ * Stars this season: the average of her 2k and 20' stars, so halves are
+ * possible (David, 2026-10-23). One test only: that test's stars. None: null.
+ */
+export function seasonStars(feed, id, yearStart, today) {
   const byTest = {};
-  let stars = null;
   STAR_TESTS.forEach((t) => {
     const b = bestGms(feed, id, t, yearStart, today);
     byTest[t] = b ? b.stars : null;
-    if (b && (stars === null || b.stars > stars)) stars = b.stars;
   });
+  const have = Object.values(byTest).filter((s) => s !== null);
+  const stars = have.length ? Math.round((2 * have.reduce((x, y) => x + y, 0)) / have.length) / 2 : null;
   return { stars, byTest };
 }
 

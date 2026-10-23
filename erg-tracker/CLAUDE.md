@@ -66,7 +66,7 @@ GMS math (implemented in `apps-script/Gms.gs`, tested against the planning examp
 3. GMS % = 300 / P (always vs 1v8 standard 5:00).
 4. Stars, 1 to 5 by GMS % (David, 2026-10-23): any valid 2k or 20' earns 1 star; 2 stars at 95%, 3 at 96%, 4 at 97%, 5 at 100% or better. A band's lower edge is in it. Settings `gms.star2_pct`..`star5_pct`.
 5. Next star shown as time only, e.g. "next star: 2.2s faster on your 2k (7:42.8, ~0.6s/500m)". 20' gap as split/meters.
-Stars are public; GMS % is visible to each athlete. Novices use the same standards.
+An athlete's season stars on the site are the average of her best 2k and best 20' stars this school year, so half stars happen (David, 2026-10-23; one test only: that test's stars). They show next to names on Athletes, Leaderboards and athlete pages. Stars are public; GMS % is visible to each athlete. Novices use the same standards.
 
 ## Team GMS view
 

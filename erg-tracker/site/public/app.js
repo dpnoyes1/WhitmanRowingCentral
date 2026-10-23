@@ -253,7 +253,7 @@ async function showAthletes() {
     <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
     ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
-        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
+        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   document.getElementById('q').oninput = (ev) => {
     const q = ev.target.value.trim().toLowerCase();
@@ -309,16 +309,22 @@ async function showAthlete(id) {
 }
 
 const MAX_STARS = 5;
-const starText = (n) => '★'.repeat(n) + '<span class="star-off">' + '★'.repeat(MAX_STARS - n) + '</span>';
-const BAND = { 5: '100% GMS or better', 4: '97% GMS', 3: '96% GMS', 2: '95% GMS', 1: 'under 95% GMS' };
+/** Filled, half and empty stars; n can end in .5. */
+function starText(n) {
+  const full = Math.floor(n), half = n - full >= 0.5 ? 1 : 0;
+  return '★'.repeat(full) + (half ? '<span class="star-half">★</span>' : '') + '<span class="star-off">' + '★'.repeat(MAX_STARS - full - half) + '</span>';
+}
+const starWord = (n) => `${n} star${n === 1 ? '' : 's'}`;
+/** Average of the 2k and 20' stars, matching seasonStars on the server. */
+const avgStars = (list) => (list.length ? Math.round((2 * list.reduce((x, y) => x + y, 0)) / list.length) / 2 : null);
 
 /** Stars only, for anyone viewing someone else's page. */
 function starsLine(gms) {
   const s = gms.filter((g) => g.stars !== null);
   if (!s.length) return '';
-  const best = Math.max(...s.map((g) => g.stars));
-  return `<div class="card"><h2>Stars <span class="stars" aria-label="${best} stars">${starText(best)}</span></h2>
-    <p class="muted small">${s.map((g) => `${TEST_LABELS[g.test]}: ${g.stars} star${g.stars === 1 ? '' : 's'}`).join(' · ')}</p></div>`;
+  const avg = avgStars(s.map((g) => g.stars));
+  return `<div class="card"><h2>Stars <span class="stars" aria-label="${starWord(avg)}">${starText(avg)}</span></h2>
+    <p class="muted small">${s.map((g) => `${TEST_LABELS[g.test]}: ${starWord(g.stars)}`).join(' · ')}${s.length > 1 ? ' · average of the two' : ''}</p></div>`;
 }
 
 function nextStarText(g) {
@@ -430,15 +436,15 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const groups = [5, 4, 3, 2, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const groups = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
   const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
-    <p class="muted">Best 2k or 20' this school year. Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
-    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars">${starText(g.n)}</span> ${BAND[g.n]} <span class="muted small">${g.rows.length}</span></h2>
-      <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}</span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
+    <p class="muted">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
+    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
+      <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}<span class="by-test muted small">${['2000m', '20min'].map((t) => r.byTest[t] === null ? '' : `${TEST_LABELS[t]} ${r.byTest[t]}★`).filter(Boolean).join(' · ')}</span></span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
     <div class="card"><h2>Team Gold Medal Standard</h2>
       <p class="muted small">Average of each rower's best GMS % this school year, through ${fmtDate(cur.throughDate)}${prev ? `, next to last year through the same date` : ''}. Groups under 3 rowers are hidden.</p>

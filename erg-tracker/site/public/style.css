@@ -148,6 +148,8 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
 .stars { color: #c58a00; letter-spacing: 1px; white-space: nowrap; }
 .star-off { color: var(--track); }
+.star-half { background: linear-gradient(90deg, #c58a00 50%, var(--track) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
+.athletes .stars.small, .athletes .by-test { display: block; font-size: .78rem; }
 tr.me td, .oyo-row.me { background: color-mix(in srgb, var(--series-1) 10%, transparent); }
 td.wrap { white-space: normal; min-width: 220px; }
 .oyo-row { padding: 6px 4px; border-radius: 6px; }
