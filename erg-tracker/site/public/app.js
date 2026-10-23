@@ -7,6 +7,8 @@ const app = document.getElementById('app');
 const tip = document.getElementById('tip');
 const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on sign-in
 const SQUAD_KEY = 'wrc.squad';
+const RESULTS_SORT_KEY = 'wrc.resultsSort';
+const SESSION_KEY = 'wrc.session';   // who is signed in, so pages open without waiting on /api/session
 const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
 
 // ---- small helpers -------------------------------------------------------
@@ -39,6 +41,16 @@ const split = (r) => {
 
 let SESSION = null;   // { kind: 'athlete' | 'team', athlete: { id, name, squad } | null }
 
+function setSession(s) {
+  SESSION = s && { kind: s.kind, athlete: s.athlete };
+  store.set(SESSION_KEY, SESSION ? JSON.stringify(SESSION) : null);
+}
+
+/** The remembered session, or null. The cookie still decides: any 401 clears it. */
+function savedSession() {
+  try { return JSON.parse(store.get(SESSION_KEY)) || null; } catch { return null; }
+}
+
 /** The signed-in athlete, or null for a coach. */
 function me() {
   return SESSION && SESSION.athlete;
@@ -46,13 +58,13 @@ function me() {
 
 async function signOut() {
   await fetch('/api/logout', { method: 'POST' });
-  SESSION = null;
+  setSession(null);
   showLogin();
 }
 
 async function api(path) {
   const res = await fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } });
-  if (res.status === 401) { showLogin(); throw new Error('signin'); }
+  if (res.status === 401) { setSession(null); showLogin(); throw new Error('signin'); }
   const body = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(body.error || 'Something went wrong.');
   return body;
@@ -181,7 +193,8 @@ function showLogin() {
       <input id="pw" type="password" autocomplete="current-password" required>
       <button class="btn" type="submit" id="signin"><span class="spinner" aria-hidden="true"></span><span class="label">Sign in</span></button>
       <p id="login-err" class="error small" role="alert"></p>
-    </form></div>`;
+    </form>
+    <p class="small login-links"><a href="/logworkout" target="_blank" rel="noopener">Log a workout</a> · <a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
   document.getElementById('login').onsubmit = async (ev) => {
     ev.preventDefault();
     const err = document.getElementById('login-err');
@@ -200,14 +213,14 @@ function showLogin() {
     } catch { return done('Could not reach the site. Check your connection and try again.'); }
     if (!res.ok) return done(body.error || 'Could not sign in.');
     store.set(OLD_ME_KEY, null);
-    SESSION = null;
+    setSession(null);
     location.hash = '#/';
     route();
   };
 }
 
 async function showTeam() {
-  const t = await api('/api/team');
+  const [t, wk] = await Promise.all([api('/api/team'), api('/api/week').catch(() => null)]);
   setNav('team');
   let squad = store.get(SQUAD_KEY) || 'all';
   const render = () => {
@@ -226,7 +239,8 @@ async function showTeam() {
       <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
         ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
-        <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
+        <div class="stack-col"><div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
+          ${teamTodayCard(wk, squad)}</div>
         <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
       </div>${footer(t.meta)}`;
     app.querySelectorAll('[data-sq]').forEach((b) => { b.onclick = () => { squad = b.dataset.sq; store.set(SQUAD_KEY, squad); render(); }; });
@@ -234,6 +248,22 @@ async function showTeam() {
     wireFooter();
   };
   render();
+}
+
+/**
+ * Team page: today's workout for the chosen squad (an athlete always sees
+ * her own, with her targets). Nothing today: the next scheduled day this week.
+ */
+function teamTodayCard(wk, squad) {
+  if (!wk) return '';
+  // An athlete's week is already her squad only; coaches follow the squad switch.
+  const forSquad = (x) => !!wk.athlete || squad === 'all' || !/^(varsity|novice)$/i.test(x.squad) || x.squad.toLowerCase() === squad;
+  const days = wk.days.filter((d) => d.day >= wk.today).map((d) => ({ ...d, sessions: d.sessions.filter(forSquad) })).filter((d) => d.sessions.length);
+  const d = days[0];
+  const title = !d ? 'Today' : d.day === wk.today ? 'Today' : `Next: ${fmtDay(d.day)}`;
+  const body = d ? d.sessions.map((x) => sessionBlock({ ...x, results: undefined }, !!wk.athlete)).join('')
+    : '<p class="muted small">Nothing scheduled for the rest of this week.</p>';
+  return `<div class="card today"><h2>${title}</h2>${body}<p class="small"><a href="#/week">The whole week</a></p></div>`;
 }
 
 function recentList(t) {
@@ -390,17 +420,55 @@ function sessionBlock(s, withTargets, today = '') {
     ${s.results ? teamResults(s, today) : ''}</div>`;
 }
 
-/** Coaches: everyone in the session's squad, logged or not, with splits against their targets. */
+/** Average logged split (RowErg-equivalent /500m) across every piece, or null. */
+function avgSplit(r) {
+  const all = [...r.pieces.flat(), ...r.extra].map((x) => x.splitS).filter((x) => x !== null);
+  return all.length ? all.reduce((x, y) => x + y, 0) / all.length : null;
+}
+
+/**
+ * Coaches: everyone in the session's squad, logged or not, with splits against
+ * their targets. Sortable by name or by speed (average split, fastest first;
+ * no split last). The choice sticks across fold-outs.
+ */
 function teamResults(s, today) {
   const logged = s.results.filter((x) => x.result);
   const inRange = logged.filter((x) => x.result.hit === true).length;
   const ahead = today && s.day > today;
+  const sort = store.get(RESULTS_SORT_KEY) || 'name';
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length ? ` · ${inRange} all in range` : ''}</summary>
-    <div class="table-wrap"><table><tr><th>Name</th><th>Status</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr>
-    ${s.results.map((x) => `<tr><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
+    <div class="seg results-sort" role="group" aria-label="Sort results">
+      <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
+    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th>Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
+    ${s.results.map((x) => {
+      const avg = x.result ? avgSplit(x.result) : null;
+      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
       <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
-      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`).join('')}
-    </table></div></details>`;
+      <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
+      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`;
+    }).join('')}
+    </tbody></table></div></details>`;
+}
+
+/** Orders every results table on the page by name or speed and numbers the speed ranks. */
+function sortResults(root, sort) {
+  root.querySelectorAll('details.team-results').forEach((d) => {
+    d.querySelectorAll('.results-sort button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sort === sort)));
+    const body = d.querySelector('tbody');
+    const rows = [...body.rows];
+    const speed = (r) => (r.dataset.speed === '' ? Infinity : Number(r.dataset.speed));
+    rows.sort((a, b) => (sort === 'speed' ? speed(a) - speed(b) : 0) || a.dataset.name.localeCompare(b.dataset.name));
+    let n = 0;
+    rows.forEach((r) => { r.cells[0].textContent = sort === 'speed' && r.dataset.speed !== '' ? ++n : ''; body.appendChild(r); });
+    d.classList.toggle('by-speed', sort === 'speed');
+  });
+}
+
+function wireResultsSort(root) {
+  sortResults(root, store.get(RESULTS_SORT_KEY) || 'name');
+  root.querySelectorAll('.results-sort button').forEach((b) => {
+    b.onclick = () => { store.set(RESULTS_SORT_KEY, b.dataset.sort); sortResults(root, b.dataset.sort); };
+  });
 }
 
 /** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
@@ -414,7 +482,8 @@ function todayCard(sessions, id = null) {
   if (!sessions || !sessions.length) return '';
   const none = sessions.every((s) => s.pieces.every((p) => !p.target));
   return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
-    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small"><a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a></p></div>`;
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="/logworkout" target="_blank" rel="noopener">Log a workout</a>
+    <a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a><a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
 }
 
 /**
@@ -450,6 +519,7 @@ async function showWeek(id = null, prev = false) {
       Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m, which lines up with the RowErg /500m target; BikeErg never counts as a benchmark. Other machines show no split.</p>${footer(v.meta)}`;
   const pick = document.getElementById('pick');
   if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
+  wireResultsSort(app);
   wireFooter();
 }
 
@@ -569,7 +639,20 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
   try {
-    if (!SESSION) SESSION = await api('/api/session');
+    if (!SESSION) {
+      const saved = savedSession();
+      if (saved) {
+        // Open the page now; check the session in the background and redraw if it changed.
+        SESSION = saved;
+        api('/api/session').then((s) => {
+          const was = JSON.stringify(saved);
+          setSession(s);
+          if (JSON.stringify(SESSION) !== was) route();
+        }).catch(() => {});
+      } else {
+        setSession(await api('/api/session'));
+      }
+    }
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
     if (page === 'week') {

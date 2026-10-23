@@ -1,0 +1,8 @@
+{
+  "name": "whitmanrowingcentral",
+  "private": true,
+  "description": "Netlify installs these for the team site's functions (erg-tracker/site). Tests need nothing.",
+  "dependencies": {
+    "@netlify/blobs": "11.1.4"
+  }
+}
