@@ -8,6 +8,9 @@ function onOpen() {
   SpreadsheetApp.getUi().createMenu('Erg Tracker')
     .addItem('Set up Sheet and Form', 'setup')
     .addItem('Refresh form name lists from Roster', 'refreshFormDropdowns')
+    .addItem('Team GMS report', 'teamGmsReport')
+    .addItem('Save squads for this school year', 'snapshotSquads')
+    .addItem('Regatta report', 'regattaReport')
     .addItem('Generate practice schedule', 'generatePracticeSchedule')
     .addItem('Process missed form responses', 'processMissedResponses')
     .addSeparator()
@@ -105,6 +108,7 @@ function ensureTab_(name) {
     }
   });
   if (name === TABS.ROSTER) addRosterValidation_(sheet);
+  if (name === TABS.RACES) addRaceValidation_(sheet);
   if (name === TABS.WORKOUTS || name === TABS.SCHEDULE) addPlanValidation_(sheet, name);
   return sheet;
 }

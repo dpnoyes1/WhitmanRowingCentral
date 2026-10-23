@@ -14,7 +14,9 @@ var TABS = {
   SETTINGS: 'Settings',
   CHANGE_LOG: 'Change log',
   WORKOUTS: 'Workouts',
-  SCHEDULE: 'Schedule'
+  SCHEDULE: 'Schedule',
+  SQUAD_HISTORY: 'Squad history',
+  RACES: 'Races'
 };
 
 var HEADERS = {};
@@ -59,12 +61,22 @@ HEADERS[TABS.WORKOUTS] = [
 HEADERS[TABS.SCHEDULE] = [
   'Date', 'Squad', 'Session', 'Workout ID', 'Published', 'Notes'
 ];
+// Squad each rower was on in a past school year ("2025-26"). Missing rows fall back to Roster.
+HEADERS[TABS.SQUAD_HISTORY] = ['School year', 'Athlete ID', 'Athlete', 'Squad'];
+// Coach-only. One row per race; times typed as m:ss and parsed when read. Seat 1 = bow, Seat 8 = stroke; 4+ uses Seats 1-4.
+HEADERS[TABS.RACES] = [
+  'Date', 'Regatta', 'Championship', 'Event', 'Boat', 'Round', 'Time', 'Place',
+  '1st time', '2nd time', '3rd time',
+  'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'Notes'
+];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
+TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
+TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
 TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
 
@@ -135,6 +147,7 @@ var SETTINGS_DEFAULTS = [
   ['gms.offset_20min_s', '8.5', '2k split = 20 min split - offset'],
   ['gms.divisor_500m', '0.895', '2k split = 500m split / divisor'],
   ['gms.divisor_100m', '0.786', '2k split = 100m split / divisor'],
+  ['team_gms.min_group', '3', 'Team site hides a GMS average with fewer rowers than this'],
   ['rate_cap_30r20', '20', '30r20 valid when average rate <= this'],
   ['shift.early.days', 'Mon,Wed,Fri-even', 'Girls winter early shift'],
   ['shift.early.start', '15:30', ''],

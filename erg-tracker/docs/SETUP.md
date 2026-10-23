@@ -26,6 +26,8 @@ You now have all ten tabs, the Form, a raw responses backup tab, and two trigger
 2. **Settings tab:** check the coach names, then set `season.winter_start` and `season.winter_end` (YYYY-MM-DD).
 3. **Erg Tracker > Generate practice schedule** fills the Practices tab. Mark holidays and snow days as Canceled in the Status column.
 4. **Weights tab** is hidden. To open it: the menu at the bottom-left (all sheets list) > Weights. Coaches type weights there directly. It is never on the Form.
+5. **Team GMS:** **Erg Tracker > Team GMS report** rebuilds the "Team GMS (coach)" tab (team, squad and rank band averages, this year to date vs past years). Near the end of each season run **Erg Tracker > Save squads for this school year** so later years compare against the squads as they were.
+6. **Regattas:** add one row per race on the **Races** tab (result, top 3 times, lineup by seat), then **Erg Tracker > Regatta report** rebuilds the "Regatta report (coach)" tab.
 
 ## 4. Plan a week
 

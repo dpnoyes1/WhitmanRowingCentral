@@ -23,7 +23,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 
 ## Sheet tabs
 
-Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule. Full column list in `docs/sheet-schema.md`.
+Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule, Squad history, Races (coach-only). Full column list in `docs/sheet-schema.md`.
 
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".
   - Profile (decided 2026-10-23): coaches type `Birthday` and `Grad year`. `Age group` and `School year` are array formulas in their header cells (see `apps-script/Profile.gs`, which has matching JS). Age group = age on **Jan 1** of the current year: under 15 U15, 15 U16, 16 U17, 17+ U19 (17 on Jan 1 is not U17). School year rolls over **July 1**; Class of G is 12th in the school year ending June G; 7th-12th (Pyle MS included), "Graduated" after. For coach reference only for now.
@@ -67,6 +67,23 @@ GMS math (implemented in `apps-script/Gms.gs`, tested against the planning examp
 4. Stars: 1 star P <= 5:30 (3v/Fr8), 2 stars P <= 5:15 (2v8), 3 stars P <= 5:00 (1v8).
 5. Next star shown as time only, e.g. "next star: 2.2s faster on your 2k (7:42.8, ~0.6s/500m)". 20' gap as split/meters.
 Stars are public; GMS % is visible to each athlete. Novices use the same standards.
+
+## Team GMS view
+
+Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (decided 2026-10-22). Logic in `apps-script/TeamGms.gs`; coach tab via menu "Team GMS report".
+- Only 2k and 20' count. Each rower counts once with her best GMS % in the window; tests without a weight on or before them are left out of averages.
+- Rank bands are team-wide by raw erg (best 2k-equivalent time, no weight), not boat placement.
+- Years compare school year to date (same number of days after Aug 1), not by test week. Past full years shown on the coach tab for reference.
+- Past-year squads come from Squad history ("Save squads for this school year" each season); missing rows fall back to Roster.
+- Team site gets `teamGmsForSite`: averages only, no names, ranks or weights. A group with fewer than `team_gms.min_group` (3) rowers shows no average.
+
+## Regatta view (coach-only)
+
+Compares erg standards with racing, e.g. the Stotesbury V8 year to year (decided 2026-10-22). Logic in `apps-script/Regatta.gs`; menu "Regatta report".
+- Races tab, one row per race: Date, Regatta, Championship (checkbox), Event, Boat (8+ / 4+), Round, Time, Place, 1st/2nd/3rd times, Seat 1 (bow) to Seat 8 (stroke), Cox. Times typed as m:ss and parsed when read. 4+ uses Seats 1-4.
+- Each rower's best 2k and best 20' in the school year up to race day, shown separately as raw averages and GMS %. Cox never counts.
+- Racing is compared by % off the winner (negative = winning margin over 2nd) and % off 3rd, not GMS predicted time: that only holds on flat water with no wind.
+- Never sent to the team site.
 
 ## Schedule and classification (girls, winter)
 
