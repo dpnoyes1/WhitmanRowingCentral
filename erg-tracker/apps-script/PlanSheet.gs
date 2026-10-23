@@ -166,7 +166,7 @@ function weekPlanForSite(inputs, weekStart) {
     weekStart: dayKey_(plan.weekStart),
     sessions: plan.sessions.map(function (sn) {
       return {
-        day: sn.day, session: sn.session, squad: sn.squad, workout: sn.name || sn.workoutId, notes: sn.notes,
+        day: sn.day, session: sn.session, squad: sn.squad, workoutId: sn.workoutId, workout: sn.name || sn.workoutId, notes: sn.notes,
         pieces: sn.pieces,
         athletes: sn.athletes.map(function (a) {
           return { athlete: a.athlete, targets: a.targets.map(function (t) { return { piece: t.label, target: t.text }; }) };

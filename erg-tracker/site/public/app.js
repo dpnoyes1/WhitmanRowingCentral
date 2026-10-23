@@ -351,13 +351,54 @@ function gmsCard(gms, coach = false) {
 
 const NO_TARGET = "No target yet: do a 2k or 20' to get one.";
 
-/** One session: workout name, then each piece with her target (when she has one). */
-function sessionBlock(s, withTargets) {
+const MARK = { in: ['✓', 'in range'], below: ['↓', 'under target'], above: ['↑', 'over target'] };
+
+/** Logged splits for one piece, each marked against her target range. */
+function splitsCell(list) {
+  if (!list || !list.length) return '<span class="muted">–</span>';
+  return list.map((x) => {
+    const m = MARK[x.status];
+    return `<span class="sp ${x.status || ''}"${m ? ` title="${m[1]}"` : ''}>${x.splitS === null ? '✓' : fmtTime(x.splitS)}${m ? ` <span aria-label="${m[1]}">${m[0]}</span>` : ''}</span>`;
+  }).join(' ');
+}
+
+/** Pills for one logged result: status, machine, make-up, and the range verdict. */
+function resultPills(r) {
+  const verdict = r.hit === true ? '<span class="pill good">All in range</span>' : r.hit === false ? '<span class="pill warn">Some off target</span>' : '';
+  return `<span class="pill">${r.test ? 'Test done' : esc(r.status || 'Logged')}</span>${r.type === 'Make-up' ? ` <span class="pill">Make-up ${fmtDate(r.date)}</span>` : ''}${r.activity && !/rowerg/i.test(r.activity) ? ` <span class="pill">${esc(r.activity)}</span>` : ''} ${verdict}`;
+}
+
+/**
+ * One session: workout name, then each piece with her target (when she has
+ * one) and, once she's logged it, her splits against it. Coaches viewing the
+ * whole team get everyone's results in a fold-out.
+ */
+function sessionBlock(s, withTargets, today = '') {
+  const r = s.result;
+  const status = r ? `<div class="result-line">${resultPills(r)}${r.matches ? '' : ` <span class="muted small">${esc(r.reason)}</span>`}</div>`
+    : s.missed ? '<div class="result-line"><span class="pill">Not logged</span></div>' : '';
   return `<div class="session"><div class="session-head"><b>${esc(s.workout)}</b>
       ${/^(varsity|novice)$/i.test(s.squad) ? `<span class="pill">${esc(s.squad)}</span>` : ''}${s.session !== 'Practice' ? ` <span class="pill">${esc(s.session)}</span>` : ''}</div>
-    ${s.notes ? `<p class="muted small">${esc(s.notes)}</p>` : ''}
-    <table class="pieces">${s.pieces.map((p) => `<tr><td>${esc(p.label)}${p.notes ? `<div class="muted small">${esc(p.notes)}</div>` : ''}</td>
-      ${withTargets ? `<td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>` : ''}</tr>`).join('')}</table></div>`;
+    ${s.notes ? `<p class="muted small">${esc(s.notes)}</p>` : ''}${status}
+    <table class="pieces">${r ? '<tr><th></th>' + (withTargets ? '<th class="r">Target</th>' : '') + '<th class="r">Logged</th></tr>' : ''}
+      ${s.pieces.map((p, i) => `<tr><td>${esc(p.label)}${p.notes ? `<div class="muted small">${esc(p.notes)}</div>` : ''}</td>
+      ${withTargets ? `<td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>` : ''}
+      ${r ? `<td class="r splits">${splitsCell(r.pieces[i])}</td>` : ''}</tr>`).join('')}
+      ${r && r.extra.length ? `<tr><td class="muted">Extra</td>${withTargets ? '<td></td>' : ''}<td class="r splits">${splitsCell(r.extra)}</td></tr>` : ''}</table>
+    ${s.results ? teamResults(s, today) : ''}</div>`;
+}
+
+/** Coaches: everyone in the session's squad, logged or not, with splits against their targets. */
+function teamResults(s, today) {
+  const logged = s.results.filter((x) => x.result);
+  const inRange = logged.filter((x) => x.result.hit === true).length;
+  const ahead = today && s.day > today;
+  return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length ? ` · ${inRange} all in range` : ''}</summary>
+    <div class="table-wrap"><table><tr><th>Name</th><th>Status</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr>
+    ${s.results.map((x) => `<tr><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
+      <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
+      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i]) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`).join('')}
+    </table></div></details>`;
 }
 
 /** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
@@ -374,28 +415,39 @@ function todayCard(sessions, id = null) {
     ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small"><a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a></p></div>`;
 }
 
-/** Week ahead. Athletes get their own targets; coaches can open any athlete's week at #/week/ID. */
-async function showWeek(id = null) {
-  const v = await api(id ? '/api/week/' + encodeURIComponent(id) : '/api/week');
+/**
+ * Week ahead. Athletes get their own targets and their own results vs goal;
+ * coaches see everyone's results, can open any athlete's week (#/week/ID)
+ * and can look back a week (#/week/prev, #/week/ID/prev).
+ */
+async function showWeek(id = null, prev = false) {
+  const coach = isCoach();
+  const q = coach && prev ? '?week=prev' : '';
+  const v = await api((id ? '/api/week/' + encodeURIComponent(id) : '/api/week') + q);
   setNav('week');
   const range = `${fmtDate(v.weekStart, { month: 'short', day: 'numeric' })} to ${fmtDate(v.weekEnd, { month: 'short', day: 'numeric' })}`;
   const any = v.days.some((d) => d.sessions.length);
-  // Coaches pick any athlete to see her targets.
-  const team = SESSION && SESSION.kind === 'team' ? (await api('/api/team')).athletes : null;
-  const picker = team ? `<div><select id="pick" aria-label="Show targets for">
-      <option value="">Whole team (no targets)</option>
+  const hash = (who, back) => '#/week' + (who ? '/' + encodeURIComponent(who) : '') + (back ? '/prev' : '');
+  // Coaches pick any athlete to see her targets, and switch between last week and this one.
+  const team = coach ? (await api('/api/team')).athletes : null;
+  const tools = team ? `<div class="week-tools"><div class="seg" role="group">
+        <a href="${hash(id, true)}" aria-current="${prev ? 'page' : 'false'}">Last week</a>
+        <a href="${hash(id, false)}" aria-current="${prev ? 'false' : 'page'}">This week</a></div>
+      <select id="pick" aria-label="Show targets for">
+      <option value="">Whole team</option>
       ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Week ahead</h1>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>${prev ? 'Last week' : 'Week ahead'}</h1>
       <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
-      ${picker}</div>
+      ${tools}</div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
     ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
         <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
-        ${d.sessions.length ? d.sessions.map((s) => sessionBlock(s, !!v.athlete)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
+        ${d.sessions.length ? d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
       : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
-    <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.</p>${footer(v.meta)}`;
+    <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
+      Logged splits: ✓ in range, ↓ under target, ↑ over target. Other machines than the RowErg show no split.</p>${footer(v.meta)}`;
   const pick = document.getElementById('pick');
-  if (pick) pick.onchange = () => { location.hash = pick.value ? '#/week/' + encodeURIComponent(pick.value) : '#/week'; };
+  if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
   wireFooter();
 }
 
@@ -518,7 +570,11 @@ async function route() {
     if (!SESSION) SESSION = await api('/api/session');
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
-    if (page === 'week') return await showWeek(arg ? decodeURIComponent(arg) : null);
+    if (page === 'week') {
+      const rest = h.split('/').slice(1).filter(Boolean);
+      const who = rest.find((x) => x !== 'prev');
+      return await showWeek(who ? decodeURIComponent(who) : null, rest.includes('prev'));
+    }
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'oyo') return await showOyo();

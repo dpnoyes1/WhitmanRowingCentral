@@ -75,12 +75,13 @@ main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
 @media (min-width: 800px) { .two { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); } }
 
 .seg { display: inline-flex; border: 1px solid var(--border); border-radius: 9px; overflow: hidden; background: var(--surface); }
-.seg button {
+.seg button, .seg a {
+  display: inline-flex; align-items: center; text-decoration: none;
   font: inherit; font-size: .9rem; border: 0; background: none; color: var(--text-2);
   padding: 6px 12px; cursor: pointer; min-height: 36px;
 }
-.seg button + button { border-left: 1px solid var(--border); }
-.seg button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); }
+.seg button + button, .seg a + a { border-left: 1px solid var(--border); }
+.seg button[aria-pressed="true"], .seg a[aria-current="page"] { background: var(--accent); color: var(--accent-ink); }
 
 .btn {
   font: inherit; border: 0; border-radius: 9px; padding: 10px 16px; cursor: pointer;
@@ -141,6 +142,7 @@ td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
 .pill { font-size: .75rem; padding: 2px 8px; border-radius: 99px; background: var(--track); color: var(--text-2); white-space: nowrap; }
 .pill.good { color: var(--good); }
 .pill.bad { color: var(--bad); }
+.pill.warn { color: var(--warn); }
 .pick { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); }
 .foot { margin-top: 24px; color: var(--muted); font-size: .8rem; }
 
@@ -166,6 +168,18 @@ td.wrap { white-space: normal; min-width: 220px; }
 .session + .session { margin-top: 14px; padding-top: 12px; border-top: 1px solid var(--border); }
 .session-head { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
 table.pieces { margin-top: 6px; }
+table.pieces th { font-size: .75rem; font-weight: 600; color: var(--text-2); }
+.result-line { margin-top: 6px; display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.splits { white-space: normal; }
+.sp { display: inline-block; white-space: nowrap; font-variant-numeric: tabular-nums; margin-left: 4px; }
+.sp.in { color: var(--good); }
+.sp.below { color: var(--bad); }
+.sp.above { color: var(--warn); }
+.week-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.week-tools select { width: auto; min-width: 200px; }
+details.team-results { margin-top: 10px; }
+details.team-results summary { cursor: pointer; color: var(--link); font-size: .9rem; min-height: 32px; display: flex; align-items: center; }
+details.team-results td { vertical-align: top; }
 table.pieces td { white-space: normal; }
 table.pieces td.target { font-weight: 600; white-space: nowrap; }
 .card.day.past { opacity: .6; }

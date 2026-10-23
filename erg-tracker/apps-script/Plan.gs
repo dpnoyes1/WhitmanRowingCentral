@@ -217,7 +217,7 @@ function buildWeekPlan(opts) {
       date: r.Date, day: dayKey_(r.Date), squad: r.Squad || 'All', session: r.Session || 'Practice',
       workoutId: String(r['Workout ID']).trim(), name: pieces.length ? pieces[0].name : '',
       notes: r.Notes || '', published: isActive_(r.Published),
-      pieces: pieces.map(function (p) { return { label: pieceLabel(p), notes: p.notes }; }),
+      pieces: pieces.map(function (p) { return { label: pieceLabel(p), notes: p.notes, reps: p.reps }; }),
       athletes: athletes
     };
   });

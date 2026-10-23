@@ -10,7 +10,7 @@
  */
 
 var FEED_KEY_PROP = 'SITE_FEED_KEY';
-var FEED_VERSION = 2;
+var FEED_VERSION = 3;
 
 function doPost(e) {
   var body = {};
@@ -55,6 +55,7 @@ function feedInputs_() {
   return {
     roster: readObjects_(TABS.ROSTER),
     entries: readObjects_(TABS.ENTRIES),
+    intervals: readObjects_(TABS.INTERVALS),
     benchmarks: readObjects_(TABS.BENCHMARKS),
     weights: readObjects_(TABS.WEIGHTS),
     practices: readObjects_(TABS.PRACTICES),
@@ -249,9 +250,11 @@ function siteFeed(inputs, asOf) {
     roster: inputs.roster.filter(function (r) { return r.Name && isActive_(r.Active) && !/cox/i.test(String(r.Role)); })
   };
   var monday = feedMonday_(asOf);
-  var weeks = [0, 7].map(function (offset) {
+  // Last week (coaches look back), this week and next. Each session carries what was logged against it.
+  var weeks = [-7, 0, 7].map(function (offset) {
     var start = new Date(monday.getFullYear(), monday.getMonth(), monday.getDate() + offset);
     var w = weekPlanForSite(planInputs, start);
+    feedWeekResults_(w.sessions, inputs, start);
     return { weekStart: w.weekStart, sessions: w.sessions };   // coachFlags stay in the Sheet
   });
 
@@ -275,6 +278,53 @@ function siteFeed(inputs, asOf) {
     weeks: weeks,
     logins: logins
   };
+}
+
+/**
+ * Adds results to each site session: every logged entry whose planned session
+ * (plannedFor; make-ups use the missed date) falls in the week, checked against
+ * the plan with checkAgainstPlan. The site shows each athlete only her own;
+ * coaches see everyone's (David, 2026-10-23). Raw splits only, no weight.
+ */
+function feedWeekResults_(sessions, inputs, start) {
+  var end = new Date(start.getFullYear(), start.getMonth(), start.getDate() + 7);
+  var s = inputs.settings || {};
+  var squadOf = {};
+  inputs.roster.forEach(function (r) { squadOf[r['Athlete ID']] = r.Squad; });
+  var ivByEntry = {};
+  (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
+  sessions.forEach(function (sn) { sn.results = []; });
+  inputs.entries.forEach(function (e) {
+    if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || String(e.Status) === 'Out') return;
+    var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
+    if (!planned || planned.Date < start || planned.Date >= end) return;
+    var sn = sessions.filter(function (x) {
+      return x.day === dayKey_(planned.Date) && x.session === (planned.Session || 'Practice') && x.workoutId === String(planned['Workout ID']).trim();
+    })[0];
+    if (!sn) return;   // not published
+    var bases = {};
+    Object.keys(PLAN_BASES).forEach(function (b) {
+      var best = seasonBestWatts(inputs.benchmarks, e['Athlete ID'], b, planned.Date, s.school_year_start);
+      if (best) bases[b] = best.watts;
+    });
+    var ivs = (ivByEntry[e['Entry ID']] || []).slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
+    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s);
+    // Targets are RowErg splits; another machine's meters don't compare, so no split or range for it.
+    // A benchmark test is scored as a test, not against a range: split shown, no in/out mark.
+    var activity = String(e.Activity || '');
+    var rowErg = activity === '' || /rowerg/i.test(activity);
+    var test = String(e['Benchmark ID'] || '') !== '';
+    sn.results.push({
+      athleteId: String(e['Athlete ID']), entryId: String(e['Entry ID']), date: feedDay_(e.Date),
+      type: String(e['Session type'] || ''), status: String(e.Status || ''), activity: activity, test: test,
+      matches: c.matches, reason: c.reason, hit: rowErg && !test ? c.hit : null, flag: planFlag(e, c),
+      intervals: c.intervals.map(function (r, i) {
+        var ws = feedNum_(ivs[i]['Work s']), wm = feedNum_(ivs[i]['Work m']);
+        return rowErg ? { n: r.n, splitS: ws && wm ? Math.round((ws * 5000) / wm) / 10 : null, status: test ? '' : r.status }
+          : { n: r.n, splitS: null, status: '' };
+      })
+    });
+  });
 }
 
 /** Test keys as stored in Benchmarks ('100m', '500m', '2000m', '20min', '30r20'). */

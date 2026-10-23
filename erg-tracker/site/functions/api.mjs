@@ -32,10 +32,16 @@ export async function handle(req, envFn, deps = {}) {
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
-  if (path === '/api/week') return json({ ...weekView(data, today, who.kind === 'athlete' ? who.id : null), meta });
+  // Results vs goal: an athlete sees only her own; coaches see everyone's and can look back a week.
+  const coach = who.kind === 'team';
+  const offset = coach && new URL(req.url).searchParams.get('week') === 'prev' ? -1 : 0;
+  if (path === '/api/week') {
+    const view = coach ? weekView(data, today, null, { offset, results: 'all' }) : weekView(data, today, who.id, { results: 'own' });
+    return json({ ...view, meta });
+  }
   const w = path.match(/^\/api\/week\/([A-Za-z0-9-]+)$/);
   if (w) {
-    const view = weekView(data, today, w[1]);
+    const view = weekView(data, today, w[1], { offset, results: coach || (who.kind === 'athlete' && who.id === w[1]) ? 'own' : 'none' });
     return view ? json({ ...view, meta }) : json({ error: 'No athlete with that ID.' }, 404);
   }
   const m = path.match(/^\/api\/athlete\/([A-Za-z0-9-]+)$/);
@@ -44,8 +50,8 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const coach = who.kind === 'team';
-    return json({ ...view, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), own, coach, meta });
+    const { todayPlan, ...rest } = view;
+    return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [], own, coach, meta });
   }
   return json({ error: 'Not found' }, 404);
 }
