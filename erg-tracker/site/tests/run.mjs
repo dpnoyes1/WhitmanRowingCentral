@@ -6,6 +6,7 @@ import { teamView, athleteView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
+import login from '../functions/login.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed } = require('../scripts/dummy-feed.js');
@@ -138,6 +139,25 @@ test('api: 401 without a session, team and athlete with one', async () => {
   res = await handle(new Request('https://x/api/athlete/nope', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 404);
   clearFeedCache();
+});
+
+test('login: wrong password 401, right one sets the cookie, logout clears it', async () => {
+  const vals = { TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' };
+  globalThis.Netlify = { env: { get: (k) => vals[k] } };
+  const post = (path, body) => new Request('https://x' + path, { method: 'POST', body: JSON.stringify(body) });
+  let res = await login(post('/api/login', { password: 'nope' }));
+  assert.strictEqual(res.status, 401);
+  assert.strictEqual(res.headers.get('set-cookie'), null);
+  res = await login(post('/api/login', { password: 'fake-team-pw' }));
+  assert.strictEqual(res.status, 200);
+  const token = res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  assert.ok(A.tokenValid(A.sessionSecret((k) => vals[k]), token));
+  res = await login(post('/api/logout', {}));
+  assert.ok(/Max-Age=0/.test(res.headers.get('set-cookie')));
+  delete vals.FEED_KEY;
+  res = await login(post('/api/login', { password: 'fake-team-pw' }));
+  assert.strictEqual(res.status, 500);
+  delete globalThis.Netlify;
 });
 
 for (const [name, fn] of tests) {
