@@ -37,6 +37,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 - Training minutes (headline) = warmup + work + rest + cooldown. Work minutes = main set only.
 - Total meters include rest meters. Rest never counts toward performance scoring.
+- Lifting (David, 2026-10-23): no meters and no OYO minutes (multiplier 0, and `meterTotal` in `site/lib/stats.mjs` counts 0 meters). The Form's Work meters allows 0 so a lifting session logs with 0. Warmup is not static day to day, so the Form no longer prefills it (only drag factor 105 is prefilled); `refreshFormQuestions_` updates the live Form in place when Set up Sheet and Form is run.
 - Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
 - Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
 - Load trend (David, 2026-10-23): weekly weighted minutes per athlete. Coaches see a flag when a week is more than Settings `load.jump_pct` (15) above the average of the 3 weeks before; in her first weeks the average uses the weeks since her first session (her first week is never flagged). `loadTrend` in `site/lib/stats.mjs`. The old `spike_threshold_pct` row is unused.

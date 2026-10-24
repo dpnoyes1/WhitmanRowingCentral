@@ -89,13 +89,13 @@ Clear it before adding real athletes.
 
 ### 5. Share
 
-- Share the link saved in **Settings > form.share_url** with athletes. Use that link, not the Form's plain link: it prefills warmup 15:00 and drag factor 105.
+- Share the link saved in **Settings > form.share_url** with athletes. Use that link, not the Form's plain link: it prefills drag factor 105. Warmup is typed each day because it changes.
 - Share the Sheet itself only with coaches.
 
 ### 6. Test it
 
 Submit one Practice with two intervals and one 2000m test through the share link, then check:
-- Entries has one row, with Warmup s = 900 if you left 15:00.
+- Entries has one row, with Warmup s = whatever warmup you typed (15:00 = 900).
 - Intervals has two rows.
 - Benchmarks has the 2k with Time s in seconds (7:42.8 -> 462.8), and Entries has a second row for that test session with the same Benchmark ID.
 

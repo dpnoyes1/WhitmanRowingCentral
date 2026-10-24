@@ -5,7 +5,7 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek
+  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -98,7 +98,7 @@ function sessionRow(e, settings) {
   return {
     date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
     makeupFor: e.makeupFor || '', minutes: round(rawMinutes(e)), weighted: round(weightedMinutes(e, settings)),
-    meters: e.workM || e.restM ? round((e.workM || 0) + (e.restM || 0)) : null, rpe: e.rpe, test: !!e.benchmarkId
+    meters: meterTotal(e) ? round(meterTotal(e)) : null, rpe: e.rpe, test: !!e.benchmarkId
   };
 }
 
@@ -119,7 +119,7 @@ export function athleteView(feed, id, today) {
   mine.forEach((e) => {
     if (e.date < yearStart || e.date > today) return;
     seasonMin += weightedMinutes(e, feed.settings);
-    seasonMeters += (e.workM || 0) + (e.restM || 0);
+    seasonMeters += meterTotal(e);
   });
 
   const weeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));

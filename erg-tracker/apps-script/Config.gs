@@ -126,7 +126,6 @@ var SETTINGS_DEFAULTS = [
   ['timezone', 'America/New_York', 'Spreadsheet and script time zone'],
   ['school_year_start', '08-01', 'MM-DD. Leaderboards "School Year" start'],
   ['coaches', 'Coach David, Coach Forrest, Coach Greta', 'Comma separated. Shown in "Entered by"'],
-  ['default_warmup', '15:00', 'Prefilled in the form link'],
   ['default_drag_factor', '105', 'Prefilled; other values flagged for coaches'],
   ['makeup_window_days', '7', 'Make-ups must be within this many days'],
   ['site.test_password', '', 'MM/DD/YYYY. While set, every athlete signs in to the team site with this date instead of her birthday'],
