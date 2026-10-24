@@ -31,6 +31,7 @@ function processResponse_(response) {
         parseDate: parseFormDate_
       });
       writeResult_(result);
+      SpreadsheetApp.flush();
       return 'ok';
     } catch (err) {
       logChange_({
