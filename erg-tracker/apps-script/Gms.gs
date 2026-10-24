@@ -105,5 +105,5 @@ function gmsNextStar(test, result, weightLbs, opts) {
 
 /** Custom Sheet function for coach exploration: =GMS_PERCENT("2000m", 462.8, 150). */
 function GMS_PERCENT(test, result, weightLbs) {
-  return gmsPercent(test, result, weightLbs);
+  return gmsPercent(test, result, weightLbs, gmsOptionsFromSettings(getSettings()));
 }
