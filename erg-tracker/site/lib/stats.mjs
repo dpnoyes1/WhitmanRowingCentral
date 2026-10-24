@@ -57,6 +57,11 @@ export function weightedMinutes(e, settings) {
   return raw * (m === undefined ? 1 : m);
 }
 
+/** Lifting is not distance (David, 2026-10-23): its meters never count toward the season total. Its minutes weigh 0, so it never counts toward OYO either. */
+export function meterTotal(e) {
+  return /^lifting$/i.test(e.activity) ? 0 : (e.workM || 0) + (e.restM || 0);
+}
+
 /** 'practice' for practices and make-ups (make-ups count as practice), 'oyo' for OYO. */
 export function bucket(e) {
   return e.type === 'OYO' ? 'oyo' : 'practice';

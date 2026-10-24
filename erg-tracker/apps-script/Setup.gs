@@ -45,11 +45,12 @@ function setup() {
   if (!form) form = createAndLinkForm_(settings);
 
   refreshFormDropdowns();
+  refreshFormQuestions_(form);
   installTriggers_(form);
   installOpsTriggers_();
   setSetting_('form.share_url', prefilledUrl_(form, getSettings()));
 
-  SpreadsheetApp.getUi().alert('Setup done.\n\nShare this link with athletes (it prefills warmup and drag factor):\n' +
+  SpreadsheetApp.getUi().alert('Setup done.\n\nShare this link with athletes (it prefills the drag factor):\n' +
     getSettings()['form.share_url'] + '\n\nIt is also saved on the Settings tab.');
 }
 

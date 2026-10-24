@@ -11,8 +11,9 @@
  *   Session -> Interval 1 -> "Another?" Yes -> Interval 2 ... Interval 10
  *                                       No  -> Finish -> submit
  *
- * Google Forms can't prefill defaults, so warmup 15:00 and drag 105 live in
- * the prefilled share link written to Settings > form.share_url.
+ * Google Forms can't prefill defaults, so drag 105 lives in the prefilled
+ * share link written to Settings > form.share_url. Warmup is not prefilled:
+ * it changes from day to day (David, 2026-10-23).
  */
 
 function buildForm_(settings) {
@@ -71,7 +72,7 @@ function buildForm_(settings) {
   var pbSession = form.addPageBreakItem().setTitle('Session');
   form.addListItem().setTitle(Q.ACTIVITY).setRequired(true)
     .setChoiceValues(ACTIVITIES.map(function (a) { return a[0]; }));
-  addTime(Q.WARMUP, true, 'Prefilled at 15:00. Change it if yours was different.');
+  addTime(Q.WARMUP, true, WARMUP_HELP);
   form.addTextItem().setTitle(Q.MAIN_SET).setRequired(true)
     .setHelpText('Describe the workout. Then enter each piece below.');
   form.addMultipleChoiceItem().setTitle(Q.ZONE).setRequired(true)
@@ -87,7 +88,7 @@ function buildForm_(settings) {
       .setHelpText(n === 1 ? 'A single steady piece counts as one interval.' : '');
     pbIntervals.push(pb);
     addTime(t.WORK_TIME, true);
-    addNumber(t.WORK_M, true, 1, 100000, 'Meters for this piece');
+    addNumber(t.WORK_M, true, 0, 100000, WORK_M_HELP);
     addNumber(t.RATE, false, 10, 60);
     addTime(t.REST_TIME, false, 'Rest after this piece, m:ss.0');
     addNumber(t.REST_M, false, 0, 10000, 'Meters you rowed during the rest');
@@ -111,7 +112,7 @@ function buildForm_(settings) {
   form.addMultipleChoiceItem().setTitle(Q.B_WHERE).setRequired(true)
     .setHelpText('Tests also count as a training session.')
     .setChoiceValues([TEST_WHERE.PRACTICE, TEST_WHERE.OYO]);
-  addTime(Q.B_WARMUP, true, 'Prefilled at 15:00. Change it if yours was different.');
+  addTime(Q.B_WARMUP, true, WARMUP_HELP);
   addTime(Q.B_COOLDOWN, false);
   form.addScaleItem().setTitle(Q.B_RPE).setRequired(true).setBounds(1, 10)
     .setLabels('Very easy', 'Max effort');
@@ -203,14 +204,34 @@ function fillMissingAthleteIds_() {
   if (changed) range.setValues(values);
 }
 
-/** Share link with warmup and drag factor prefilled. */
+var WARMUP_HELP = 'Time spent warming up before the main set, m:ss. It is different from day to day.';
+var WORK_M_HELP = 'Meters for this piece. Enter 0 for lifting.';
+
+/**
+ * Brings the questions of the live form up to date in place (the link stays the
+ * same): warmup help text and Work meters allowing 0 for lifting.
+ */
+function refreshFormQuestions_(form) {
+  var zeroOk = FormApp.createTextValidation().setHelpText(WORK_M_HELP)
+    .requireNumberBetween(0, 100000).build();
+  var workTitles = {};
+  for (var n = 1; n <= MAX_INTERVALS; n++) workTitles[qInterval(n).WORK_M] = true;
+  form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
+    var title = item.getTitle();
+    if (title === Q.WARMUP || title === Q.B_WARMUP) {
+      item.asTextItem().setHelpText(WARMUP_HELP);
+    } else if (workTitles[title]) {
+      item.asTextItem().setHelpText(WORK_M_HELP).setValidation(zeroOk);
+    }
+  });
+}
+
+/** Share link with the drag factor prefilled (warmup is different every day). */
 function prefilledUrl_(form, settings) {
   var response = form.createResponse();
   form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
     var title = item.getTitle();
-    if (title === Q.WARMUP || title === Q.B_WARMUP) {
-      response.withItemResponse(item.asTextItem().createResponse(settings.default_warmup));
-    } else if (title === Q.DRAG) {
+    if (title === Q.DRAG) {
       response.withItemResponse(item.asTextItem().createResponse(settings.default_drag_factor));
     }
   });
