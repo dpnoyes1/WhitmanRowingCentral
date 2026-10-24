@@ -240,6 +240,13 @@ function backupFolder_() {
   return folder;
 }
 
+/** Run once from the editor: forces Google's consent screen for every permission the manifest lists. */
+function authorizeAll() {
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);
+  var code = UrlFetchApp.fetch('https://whitmanrowingcentral.netlify.app/', { muteHttpExceptions: true }).getResponseCode();
+  Logger.log('Authorized. Site answered ' + code);
+}
+
 // ---- Triggers ----
 
 /** Hourly health check and Sunday-night backup. Safe to re-run. */
@@ -253,6 +260,7 @@ function installOpsTriggers_() {
 
 /** Menu: turn on (or repair) alerts and backups, and show what the site check sees now. */
 function turnOnAlertsAndBackups() {
+  ScriptApp.requireAllScopes(ScriptApp.AuthMode.FULL);   // prompts for any permission not yet granted
   installOpsTriggers_();
   var problems = checkSiteHealth() || [];
   var hook = PropertiesService.getScriptProperties().getProperty(SLACK_WEBHOOK_PROP);
