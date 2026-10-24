@@ -117,6 +117,17 @@ function checkSiteHealth() {
   return problems;
 }
 
+/**
+ * Run once from the editor to grant (or diagnose) the web-request permission.
+ * Unlike the site check it does not catch errors, so a missing scope shows up
+ * as a consent screen or a real error in Executions.
+ */
+function authorizeFetch() {
+  var site = String(getSettings()['site.url'] || 'https://whitmanrowingcentral.netlify.app').replace(/\/+$/, '');
+  var code = UrlFetchApp.fetch(site + '/', { muteHttpExceptions: true }).getResponseCode();
+  Logger.log('Site answered ' + code);
+}
+
 function fetchStatus_(url) {
   try { return UrlFetchApp.fetch(url, { muteHttpExceptions: true, followRedirects: true }).getResponseCode(); }
   catch (err) { return 'no answer'; }
