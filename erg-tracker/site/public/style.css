@@ -137,6 +137,8 @@ table { border-collapse: collapse; width: 100%; font-size: .92rem; }
 th, td { text-align: left; padding: 7px 8px; border-bottom: 1px solid var(--border); white-space: nowrap; }
 th { color: var(--text-2); font-weight: 600; font-size: .82rem; }
 td.r, th.r { text-align: right; font-variant-numeric: tabular-nums; }
+tr.session-row { cursor: pointer; }
+td.detail { white-space: normal; color: var(--text-2); }
 .dots { display: flex; gap: 6px; flex-wrap: wrap; }
 .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: .7rem; border: 2px solid var(--border); color: var(--text-2); }
 .dot.done { background: var(--good); border-color: var(--good); color: #fff; }
