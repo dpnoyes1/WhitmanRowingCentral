@@ -341,8 +341,9 @@ async function showAthlete(id) {
   setNav(mine && mine.id === id ? 'me' : 'athletes');
   const oyoMax = Math.max(a.oyoElite * 1.15, w.oyoMin);
   const oyoText = { elite: 'Elite reached', required: 'Required met', short: `${fmtMin(Math.max(0, a.oyoRequired - w.oyoMin))} to Required` }[w.oyoStatus];
-  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2><ul>
-      ${v.openMakeups.map((m) => `<li>Missed ${fmtDay(m.date)}: make it up by <b>${fmtDay(m.makeUpBy)}</b></li>`).join('')}</ul>
+  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2>
+      ${v.openMakeups.map((m) => `<p><b>Missed ${fmtDay(m.date)}</b>: make it up by <b>${fmtDay(m.makeUpBy)}</b></p>
+        ${m.sessions.length ? m.sessions.map((s) => sessionBlock(s, true)).join('') : '<p class="muted small">No workout was published for this day.</p>'}`).join('')}
       <p class="muted small">Log it on the form as "Make-up for a missed practice" with the date you missed.</p></div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
