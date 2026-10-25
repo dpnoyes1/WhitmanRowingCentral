@@ -31,12 +31,13 @@ test('dates', () => {
 
 test('weighted minutes: activity multiplier, modified practice, out', () => {
   const st = feed.settings;
-  const base = { warmupS: 600, workS: 1800, restS: 0, cooldownS: 600, status: 'Full', type: 'OYO' };
+  // 1800 s of work over 7000 m is a 2:08/500m split, faster than 3:00, so warm-up and cool-down count (erg only).
+  const base = { warmupS: 600, workS: 1800, workM: 7000, restS: 0, cooldownS: 600, status: 'Full', type: 'OYO', activity: 'Erg (RowErg)' };
   assert.strictEqual(S.rawMinutes(base), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 60);
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 36);   // no warm-up or cool-down for non-erg: 30 x 1.2
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Lifting' }, st), 0);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg' }, st), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike' }, st), 30);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg', workM: 14000 }, st), 50);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 18);
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Out' }, st), 0);
   // Lifting (David, 2026-10-23): no OYO minutes, no meters.
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
@@ -44,6 +45,21 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   assert.strictEqual(S.meterTotal(lift), 0);
   assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 45);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
+});
+
+test('warm-up and cool-down: erg only, split must be faster than 3:00/500m, rest never counts', () => {
+  const erg = { warmupS: 600, workS: 1800, restS: 900, cooldownS: 300, status: 'Full', activity: 'Erg (RowErg)' };
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 5100 }), 45);    // 2:56/500m: faster, so 1800 + 600 + 300 s; rest out
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 5000 }), 30);    // exactly 3:00/500m is not faster: work only
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 4800 }), 30);    // slower
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 0 }), 30);       // no meters, so no split to check
+  assert.strictEqual(S.rawMinutes({ ...erg, activity: 'SkiErg', workM: 5100 }), 30);  // not rowing or BikeErg
+  assert.strictEqual(S.rawMinutes({ ...erg, activity: 'Run', workM: 5100 }), 30);
+  // Counted warm-up and cool-down go to Aerobic, whatever the session's zone.
+  const z = S.zoneMinutes([{ ...erg, workM: 5100, zone: 'Threshold', date: '2026-10-20' }], '2026-10-19', '2026-10-25');
+  assert.strictEqual(z.Threshold, 30);
+  assert.strictEqual(z.Aerobic, 15);
+  assert.deepStrictEqual(Object.keys(z), ['Aerobic', 'Threshold', 'Anaerobic']);
 });
 
 test('practice record: make-ups fill misses, today never counts as missed', () => {
@@ -448,12 +464,12 @@ test('load trend: trailing average of up to 3 earlier weeks, flag above the jump
 });
 
 test('steady splits, trend, projected 2k and month consistency', () => {
-  const row = (d, s, m, act = 'Erg (RowErg)', zone = 'UT2') => ({ date: d, status: 'Full', activity: act, zone, workS: s, workM: m });
+  const row = (d, s, m, act = 'Erg (RowErg)', zone = 'Aerobic') => ({ date: d, status: 'Full', activity: act, zone, workS: s, workM: m });
   const es = [row('2026-09-07', 1200, 4800), row('2026-09-14', 1200, 4800), row('2026-09-21', 1200, 4900),
-    row('2026-09-28', 1200, 5000), row('2026-09-28', 1200, 10000, 'BikeErg'), row('2026-09-28', 600, 3000, 'Erg (RowErg)', 'AN')];
+    row('2026-09-28', 1200, 5000), row('2026-09-28', 1200, 10000, 'BikeErg'), row('2026-09-28', 600, 3000, 'Erg (RowErg)', 'Anaerobic')];
   const w = S.steadySplits(es, ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05']);
   assert.strictEqual(w[0].splitS, 125);
-  assert.strictEqual(w[3].splitS, 120);              // BikeErg at half meters: 2400 s over 10000 m; AN left out
+  assert.strictEqual(w[3].splitS, 120);              // BikeErg at half meters: 2400 s over 10000 m; Anaerobic left out
   assert.strictEqual(w[4].splitS, null);
   const t = S.splitTrend(w);
   assert.strictEqual(t.weeksEach, 2);

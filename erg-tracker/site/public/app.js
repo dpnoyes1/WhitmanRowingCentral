@@ -175,9 +175,9 @@ function weeklyChart(rows, caption, load = null) {
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(caption)}">${grid}${bars}</svg>${table}</div>`;
 }
 
-/** One 100% bar of minutes by zone, easy (UT2) to hard (AN). */
+/** One 100% bar of minutes by zone, easy (Aerobic) to hard (Anaerobic). */
 function zoneBar(z) {
-  const zones = ['UT2', 'UT1', 'AT', 'AN'];
+  const zones = ['Aerobic', 'Threshold', 'Anaerobic'];
   const total = zones.reduce((s, k) => s + (z[k] || 0), 0);
   if (!total) return '<p class="muted">No sessions logged yet.</p>';
   const seg = zones.map((k, i) => {
@@ -425,7 +425,7 @@ function progressCard(ins, coach) {
   const p = ins.projected2k;
   const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> <span class="muted">from ${who} 20' on ${fmtDate(p.from.date)} (${fmtNum(p.from.meters)} m)${p.last2k ? `; last real 2k ${fmtTime(p.last2k.timeS)} on ${fmtDate(p.last2k.date)}` : ''}. An estimate only: ${who} next 2k test is the real answer.</span></p>` : '';
   return `<div class="card"><h2>Progress</h2>
-    <h3>Steady-state split (UT2 and UT1 on the erg)</h3>${trend}
+    <h3>Steady-state split (Aerobic on the erg)</h3>${trend}
     ${lineChart(ins.steady.map((w) => ({ weekStart: w.weekStart, value: w.splitS })), { caption: 'Steady-state split by week, faster is higher', fmt: fmtTime, invert: true, pad: 1, tipLabel: 'Average split' })}
     <p class="muted small">Higher on the chart is faster. BikeErg counts at half its meters, like the rest of the site. Rate and drag aren't taken into account, so read it as a rough trend.</p>
     <h3>Tests this school year</h3>${proj}<div class="two">${table('2000m')}${table('20min')}</div></div>`;
@@ -691,7 +691,7 @@ async function showInsights() {
         <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
         <td class="r">${r.month.streak}</td></tr>`).join('')}
     </table></div>
-    <p class="muted small">Steady split: her latest weeks of UT2/UT1 erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
+    <p class="muted small">Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }

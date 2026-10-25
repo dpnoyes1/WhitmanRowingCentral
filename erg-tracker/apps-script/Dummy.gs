@@ -47,17 +47,17 @@ var DUMMY_ATHLETES = [
 
 // Workout library: [id, name, pieces]. Piece: [reps, type, work, rest, startEvery, zone, rate].
 var DUMMY_WORKOUTS = [
-  ['W01', "Steady 3 x 20'", [[3, 'Time', '20:00', '3:00', '', 'UT2', '18-20']]],
-  ['W02', "Novice steady 3 x 12'", [[3, 'Time', '12:00', '3:00', '', 'UT2', '20']]],
-  ['W03', "4 x 10' UT1", [[4, 'Time', '10:00', '2:00', '', 'UT1', '22']]],
-  ['W04', 'Variable intervals', [[1, 'Distance', '2000', '8:00', '', 'AN', ''], [1, 'Distance', '1500', '6:00', '', 'AN', ''],
-    [1, 'Distance', '1000', '4:00', '', 'AN', ''], [1, 'Distance', '500', '2:00', '', 'AN', ''], [1, 'Distance', '250', '', '', 'AN', '']]],
-  ['W05', '8 x 500m start every 3:30', [[8, 'Distance', '500', '', '3:30', 'AN', '']]],
-  ['W06', '6 x 1000m r3:00', [[6, 'Distance', '1000', '3:00', '', 'AT', '26']]],
-  ['W07', '2 x 5000m r5:00', [[2, 'Distance', '5000', '5:00', '', 'UT1', '22']]],
-  ['W08', "20' test", [[1, 'Time', '20:00', '', '', 'AT', '']]],
-  ['W09', '2k test', [[1, 'Distance', '2000', '', '', 'AN', '']]],
-  ['W10', "Novice 4 x 6' r2:00", [[4, 'Time', '6:00', '2:00', '', 'UT1', '22']]]
+  ['W01', "Steady 3 x 20'", [[3, 'Time', '20:00', '3:00', '', 'Aerobic', '18-20']]],
+  ['W02', "Novice steady 3 x 12'", [[3, 'Time', '12:00', '3:00', '', 'Aerobic', '20']]],
+  ['W03', "4 x 10' Aerobic", [[4, 'Time', '10:00', '2:00', '', 'Aerobic', '22']]],
+  ['W04', 'Variable intervals', [[1, 'Distance', '2000', '8:00', '', 'Anaerobic', ''], [1, 'Distance', '1500', '6:00', '', 'Anaerobic', ''],
+    [1, 'Distance', '1000', '4:00', '', 'Anaerobic', ''], [1, 'Distance', '500', '2:00', '', 'Anaerobic', ''], [1, 'Distance', '250', '', '', 'Anaerobic', '']]],
+  ['W05', '8 x 500m start every 3:30', [[8, 'Distance', '500', '', '3:30', 'Anaerobic', '']]],
+  ['W06', '6 x 1000m r3:00', [[6, 'Distance', '1000', '3:00', '', 'Threshold', '26']]],
+  ['W07', '2 x 5000m r5:00', [[2, 'Distance', '5000', '5:00', '', 'Aerobic', '22']]],
+  ['W08', "20' test", [[1, 'Time', '20:00', '', '', 'Threshold', '']]],
+  ['W09', '2k test', [[1, 'Distance', '2000', '', '', 'Anaerobic', '']]],
+  ['W10', "Novice 4 x 6' r2:00", [[4, 'Time', '6:00', '2:00', '', 'Aerobic', '22']]]
 ];
 
 // Weekday plan: [varsity, novice] Workout IDs, Mon..Fri for each week.
@@ -110,7 +110,7 @@ function dummyIntervals_(rng, pieces, baseWatts, settings, effort, bike) {
       var workS = p.workType === 'Time' ? p.workS : roundTenths_(p.workM / 500 * split);
       var workM = p.workType === 'Time' ? Math.round(p.workS / split * 500) : p.workM;
       var restS = p.startEveryS ? roundTenths_(Math.max(p.startEveryS - workS, 30)) : p.restS || '';
-      var rateMid = { UT2: 19, UT1: 21, AT: 25, AN: 30 }[p.zone] || 20;
+      var rateMid = { Aerobic: 20, Threshold: 25, Anaerobic: 30 }[p.zone] || 20;
       out.push({
         'Work s': workS,
         'Work m': bike ? Math.round(workM * 2.1) : workM,
@@ -253,10 +253,10 @@ function buildDummyData(opts) {
     return new Date(day.getFullYear(), day.getMonth(), day.getDate(), late ? rng.int(7, 21) : rng.int(19, 22), rng.int(0, 59));
   };
   var enteredBy = function (a) { return rng.chance(0.92) ? a.name : rng.pick(coaches); };
-  var rpe = function (zone) { return { UT2: rng.int(3, 5), UT1: rng.int(5, 6), AT: rng.int(7, 8), AN: rng.int(8, 9) }[zone] || 5; };
+  var rpe = function (zone) { return { Aerobic: rng.int(3, 6), Threshold: rng.int(7, 8), Anaerobic: rng.int(8, 9) }[zone] || 5; };
   var hr = function (a, zone) {
     if (!a.hr) return '';
-    var lo = { UT2: 142, UT1: 154, AT: 168, AN: 180 }[zone] || 140;
+    var lo = { Aerobic: 148, Threshold: 168, Anaerobic: 180 }[zone] || 140;
     return lo + rng.int(0, 10);
   };
 
@@ -310,7 +310,7 @@ function buildDummyData(opts) {
     var entry = addEntry({
       'Submitted at': at, 'Date': date, 'Athlete ID': a.id, 'Athlete': a.name, 'Entered by': by,
       'Session type': 'Practice', 'Status': 'Full', 'Activity': 'Erg (RowErg)', 'Warmup s': rng.pick([900, 1200]),
-      'Cooldown s': 600, 'Main set': (timed ? '2000m' : '20min') + ' test', 'Zone': timed ? 'AN' : 'AT',
+      'Cooldown s': 600, 'Main set': (timed ? '2000m' : '20min') + ' test', 'Zone': timed ? 'Anaerobic' : 'Threshold',
       'RPE': rng.int(9, 10), 'Avg HR': a.hr ? rng.int(186, 198) : '', 'Drag factor': a.drag, 'Benchmark ID': benchId
     }, [{ 'Work s': timed ? timeS : 1200, 'Work m': timed ? 2000 : meters, 'Avg rate': rate, 'Rest s': '', 'Rest m': '' }]);
     data.benchmarks.push({
@@ -368,7 +368,7 @@ function buildDummyData(opts) {
       var newRower = a.special === 'noTests' && testDays[dayKey_(p.date)];
       var modified = ramp || rng.chance(0.04);
       var ps = newRower ? workoutPieces([{ 'Workout ID': 'x', 'Piece #': 1, 'Reps': 2, 'Work type': 'Time', 'Work': '10:00',
-        'Rest': '2:00', 'Zone': 'UT2' }], 'x') : ramp && /W0[89]/.test(wid) ? pieces.W02 : pieces[wid.replace(DUMMY.WORKOUT_PREFIX, '')];
+        'Rest': '2:00', 'Zone': 'Aerobic' }], 'x') : ramp && /W0[89]/.test(wid) ? pieces.W02 : pieces[wid.replace(DUMMY.WORKOUT_PREFIX, '')];
       var bike = modified && !newRower;
       var ivs = dummyIntervals_(rng, ps, watts2k(a, p.date), settings, a.effort, bike);
       addEntry(Object.assign(base, {
@@ -419,7 +419,7 @@ function buildDummyData(opts) {
             'Avg rate': /Erg \(RowErg\)|SkiErg/.test(act) ? rng.int(18, 22) : '',
             'Rest s': arr.length > 1 && i === 0 ? 120 : '', 'Rest m': '' };
         });
-        var zone = act === 'Lifting' ? 'AN' : act === 'Run' && rng.chance(0.3) ? 'UT1' : 'UT2';
+        var zone = act === 'Lifting' ? 'Anaerobic' : 'Aerobic';
         var label = act === 'Erg (RowErg)' ? 'erg' : act.toLowerCase();
         addEntry({ 'Date': date, 'Athlete ID': a.id, 'Athlete': a.name, 'Session type': 'OYO',
           'Submitted at': submittedAt(date, rng.chance(0.15)), 'Entered by': a.name, 'Activity': act,
