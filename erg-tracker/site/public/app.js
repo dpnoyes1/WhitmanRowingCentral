@@ -630,7 +630,7 @@ async function showBoards() {
       <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.</p></div></div>
       <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['freshman', 'Fr/Nov (7th-9th)'], ['varsity', 'Varsity (10th-12th)']])}</div>
+        ${seg('group', [['all', 'All'], ['varsity', 'Varsity (10th-12th)'], ['freshman', 'Fr/Nov (7th-9th)']])}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
         <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
