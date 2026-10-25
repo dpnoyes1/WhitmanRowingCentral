@@ -70,7 +70,7 @@ Targets use season-best watts (school year from `school_year_start`), falling ba
 Before entering real athletes, run **Erg Tracker > Load dummy data**. It adds 30 made-up athletes (12 novices in 7th-9th, 18 varsity in 10th-12th) with:
 - practices from Oct 5 to Oct 23, 2026, including Out days, Modified days, and make-ups
 - OYO sessions; some athletes miss Required and some reach Elite
-- a published plan, including the week of Oct 26 so **Preview week ahead** has something to show
+- a published plan, including the week of Oct 26 (Mon-Fri practices, Saturday Oct 31 is 60' OYO) so **Preview week ahead** has something to show
 - weights
 - three rounds of 2k and 20' tests (late August, September and October)
 
