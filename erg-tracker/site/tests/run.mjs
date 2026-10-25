@@ -2,7 +2,7 @@
 import assert from 'node:assert';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -54,6 +54,37 @@ test('practice record: make-ups fill misses, today never counts as missed', () =
   assert.ok(r && r.done && r.how === 'Make-up', JSON.stringify(r));
   feed.athletes.forEach((x) => S.practiceRecord(x, feed, TODAY).forEach((p) => assert.ok(p.done || p.date < TODAY)));
   assert.ok(rec.every((p) => p.date <= TODAY));
+});
+
+test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up', () => {
+  // Hand-made: a 2k at 7:00 (105.0 split) beats a 20' of 5000 m (111.5 split: 120 - 8.5).
+  const small = {
+    settings: { schoolYearStart: '08-01' },
+    athletes: [
+      { id: 'A1', name: 'Fake One', role: 'Rower', active: true, squad: 'Varsity', grade: '9th' },
+      { id: 'A2', name: 'Fake Two', role: 'Rower', active: true, squad: 'Novice', grade: '11th' }
+    ],
+    benchmarks: [
+      { athleteId: 'A1', test: '2000m', date: '2026-09-01', valid: true, timeS: 420, meters: 2000 },
+      { athleteId: 'A2', test: '20min', date: '2026-09-01', valid: true, timeS: null, meters: 5000 }
+    ]
+  };
+  const s = teamSplitsView(small, TODAY);
+  const g = Object.fromEntries(s.groups.map((x) => [x.key, x]));
+  assert.strictEqual(g.all.avgSplit, 108.3, 'mean of 105.0 and 111.5');
+  assert.strictEqual(g.top8.n, 2, 'both ranked');
+  assert.strictEqual(g.second8.n, 0, 'nobody ranked 9th to 16th');
+  assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
+  assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
+  assert.strictEqual(g.freshman.avgSplit, 105);
+
+  const v = teamSplitsView(feed, TODAY);
+  const d = Object.fromEntries(v.groups.map((x) => [x.key, x]));
+  assert.ok(d.top8.n <= 8 && d.second8.n <= 8, 'bands hold at most 8 each');
+  assert.strictEqual(d.top16.n, d.top8.n + d.second8.n, 'top 16 = top 8 + second 8');
+  assert.ok(d.all.n >= d.top16.n && d.all.n <= 30, 'all counts every rower with a result');
+  assert.ok(v.groups.every((x) => x.avgSplit === null || (x.avgSplit > 90 && x.avgSplit < 200)), 'splits in a sane range');
+  assert.ok(!/A9\d\d|Name/.test(JSON.stringify(v)), 'group averages carry no names or IDs');
 });
 
 test('team view: three groups, averages only', () => {
@@ -219,7 +250,12 @@ test('api: 401 without a session, team and athlete with one', async () => {
   const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
   res = await handle(new Request('https://x/api/team', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 200);
-  assert.strictEqual((await res.json()).athletes.length, 30);
+  const coachTeam = await res.json();
+  assert.strictEqual(coachTeam.athletes.length, 30);
+  assert.ok(coachTeam.splits && coachTeam.splits.groups.length === 6, 'coaches get the split averages');
+  const athleteCookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  res = await handle(new Request('https://x/api/team', { headers: { cookie: athleteCookie } }), env, deps);
+  assert.strictEqual((await res.json()).splits, undefined, 'athletes never get the split averages');
   res = await handle(new Request('https://x/api/athlete/A901', { headers: { cookie } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, 'A901');
   for (const p of ['/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/week/A901']) {

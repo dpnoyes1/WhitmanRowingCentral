@@ -1,7 +1,7 @@
 import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -27,7 +27,8 @@ export async function handle(req, envFn, deps = {}) {
     if (who.kind === 'athlete' && !a) return json({ error: 'signin' }, 401);   // dropped from the Roster
     return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
   }
-  if (path === '/api/team') return json({ ...teamView(data, today), meta });
+  // Coach split averages on the Team page: coaches only (David, 2026-10-25).
+  if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today) } : {}), meta });
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
