@@ -46,6 +46,23 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
 });
 
+test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaffected', () => {
+  const st = feed.settings;
+  const piece = (activity, rawMin) => ({ warmupS: 0, workS: rawMin * 60, restS: 0, cooldownS: 0, status: 'Full', type: 'OYO', activity });
+  assert.strictEqual(S.weightedMinutes(piece('Run', 9), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Run', 10), st), 12);          // 10 x 1.2
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 19), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 12);         // 20 x 0.6
+  assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 14), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
+  assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
+  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
+  assert.strictEqual(S.weightedMinutes(piece('Walk', 14), st), 0);
+  assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
+  const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
+  assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);
+});
+
 test('practice record: make-ups fill misses, today never counts as missed', () => {
   const madeUp = feed.entries.find((e) => e.type === 'Make-up');
   const a = feed.athletes.find((x) => x.id === madeUp.athleteId);

@@ -46,6 +46,18 @@ export function rawMinutes(e) {
 }
 
 /**
+ * Shortest OYO piece that counts, in raw minutes (David, 2026-10-25): a run
+ * 10, a bike (road or stationary) 20, any other cardio 15. Shorter pieces
+ * still show in the log but weigh 0. Practices are not affected.
+ */
+export const OYO_MIN_MINUTES = { Run: 10, Bike: 20 };
+export const OYO_MIN_DEFAULT = 15;
+
+export function oyoMinimum(activity) {
+  return OYO_MIN_MINUTES[activity] ?? OYO_MIN_DEFAULT;
+}
+
+/**
  * Weighted minutes: training minutes x activity multiplier. A Modified
  * practice gets no extra discount (David, 2026-10-23): doing less work
  * already shows as fewer minutes.
@@ -53,6 +65,7 @@ export function rawMinutes(e) {
 export function weightedMinutes(e, settings) {
   const raw = rawMinutes(e);
   if (!raw) return 0;
+  if (e.type === 'OYO' && raw < oyoMinimum(e.activity)) return 0;
   const m = settings.multipliers[e.activity];
   return raw * (m === undefined ? 1 : m);
 }
