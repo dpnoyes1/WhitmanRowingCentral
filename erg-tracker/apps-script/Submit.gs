@@ -163,7 +163,9 @@ function parseSubmission(answers, ctx) {
     'Avg HR': num(Q.HR),
     'Drag factor': num(Q.DRAG),
     'Intervals': intervals.length,
-    'Coach note': a(Q.NOTE)
+    'Coach note': a(Q.NOTE),
+    'Warmup m': num(Q.WARMUP_M),
+    'Cooldown m': num(Q.COOLDOWN_M)
   });
   return { entry: entry, intervals: intervals };
 }

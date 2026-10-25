@@ -42,8 +42,23 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
   assert.strictEqual(S.weekMinutes([lift], st, '2026-10-19').A1.oyo, 0);
   assert.strictEqual(S.meterTotal(lift), 0);
-  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 45);
+  // Rest never counts (David, 2026-10-25): rest time and rest meters are left out.
+  assert.strictEqual(S.rawMinutes({ ...base, restS: 120 }), 50);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 40);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)', warmupM: 500, cooldownM: 200 }), 740);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
+});
+
+test('zone minutes: main set takes the zone, warmup and cooldown count as UT1', () => {
+  const day = { date: '2026-10-19', status: 'Full', warmupS: 600, workS: 1200, restS: 300, cooldownS: 300 };
+  const z = S.zoneMinutes([{ ...day, zone: 'AT' }], '2026-10-01', '2026-10-31');
+  assert.strictEqual(z.AT, 20);
+  assert.strictEqual(z.UT1, 15);
+  const blank = S.zoneMinutes([{ ...day, zone: '' }], '2026-10-01', '2026-10-31');
+  assert.strictEqual(blank.UT1, 15);
+  assert.strictEqual(blank.AT, 0);
+  const out = S.zoneMinutes([{ ...day, zone: 'AT', status: 'Out' }], '2026-10-01', '2026-10-31');
+  assert.strictEqual(out.UT1, 0);
 });
 
 test('practice record: make-ups fill misses, today never counts as missed', () => {

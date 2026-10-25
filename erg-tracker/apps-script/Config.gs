@@ -30,7 +30,8 @@ HEADERS[TABS.ENTRIES] = [
   'Session type', 'Make-up for date', 'Status', 'Activity',
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
-  'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID',
+  'Warmup m', 'Cooldown m'
 ];
 HEADERS[TABS.INTERVALS] = [
   'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'
@@ -96,7 +97,6 @@ var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, 
 
 var ACTIVITIES = [
   ['Erg (RowErg)', 1.0],
-  ['SkiErg', 1.0],
   ['BikeErg', 1.0],
   ['Bike', 0.6],
   ['Run', 1.2],
@@ -197,9 +197,11 @@ var Q = {
   MAKEUP_FOR: 'Date of the practice you missed',
   ACTIVITY: 'Activity',
   WARMUP: 'Warmup time',
+  WARMUP_M: 'Warmup meters (optional)',
   MAIN_SET: 'Main set (e.g. 3x10\' r2\')',
   ZONE: 'Main set zone',
   COOLDOWN: 'Cooldown time (optional)',
+  COOLDOWN_M: 'Cooldown meters (optional)',
   RPE: 'Session RPE (how hard was the whole session?)',
   HR: 'Average heart rate (optional)',
   DRAG: 'Drag factor',

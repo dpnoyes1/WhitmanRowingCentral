@@ -97,7 +97,7 @@ test('parse practice with intervals', () => {
     [i1.WORK_TIME]: '10:00.0', [i1.WORK_M]: '2650', [i1.RATE]: '22', [i1.REST_TIME]: '2:00', [i1.REST_M]: '300', [i1.ANOTHER]: 'Yes',
     [i2.WORK_TIME]: '10:00.0', [i2.WORK_M]: '2660', [i2.REST_TIME]: '2:00', [i2.ANOTHER]: 'Yes',
     [i3.WORK_TIME]: '10:00.0', [i3.WORK_M]: '2675', [i3.ANOTHER]: 'No, that was the last one',
-    [Q.COOLDOWN]: '5:00', [Q.RPE]: '6', [Q.DRAG]: '105'
+    [Q.COOLDOWN]: '5:00', [Q.RPE]: '6', [Q.DRAG]: '105', [Q.WARMUP_M]: '2000', [Q.COOLDOWN_M]: ''
   };
   const r = g.parseSubmission(ans, ctxFor());
   assert.strictEqual(r.entry['Session type'], 'Practice');
@@ -108,12 +108,15 @@ test('parse practice with intervals', () => {
   assert.strictEqual(r.entry['Cooldown s'], 300);
   assert.strictEqual(r.entry['Work m'], 7985);
   assert.strictEqual(r.entry['Rest m'], 300);
+  assert.strictEqual(r.entry['Warmup m'], 2000);
+  assert.strictEqual(r.entry['Cooldown m'], '');
   assert.strictEqual(r.entry['Intervals'], 3);
   assert.strictEqual(r.entry['Athlete ID'], 'A001');
   assert.strictEqual(r.intervals.length, 3);
   assert.strictEqual(r.intervals[2]['Rest s'], '');
   const headers = g.HEADERS[g.TABS.ENTRIES];
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
+  assert.strictEqual(headers.slice(-2).join(), 'Warmup m,Cooldown m');
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
 });
 

@@ -39,10 +39,13 @@ export function schoolYearStart(day, mmdd = '08-01') {
 
 // ---- minutes ----------------------------------------------------------------
 
-/** Training minutes on the machine: warmup + work + rest + cooldown. */
+/**
+ * Training minutes: warmup + work + cooldown. Rest between pieces never counts
+ * (David, 2026-10-25). Past sessions recalculate because this runs at display.
+ */
 export function rawMinutes(e) {
   if (e.status === 'Out') return 0;
-  return ((e.warmupS || 0) + (e.workS || 0) + (e.restS || 0) + (e.cooldownS || 0)) / 60;
+  return ((e.warmupS || 0) + (e.workS || 0) + (e.cooldownS || 0)) / 60;
 }
 
 /**
@@ -57,9 +60,14 @@ export function weightedMinutes(e, settings) {
   return raw * (m === undefined ? 1 : m);
 }
 
-/** Lifting is not distance (David, 2026-10-23): its meters never count toward the season total. Its minutes weigh 0, so it never counts toward OYO either. */
+/**
+ * Total meters: work plus optional warmup and cooldown meters. Rest meters never
+ * count (David, 2026-10-25). Lifting is not distance (David, 2026-10-23): its
+ * meters never count toward the season total. Its minutes weigh 0, so it never
+ * counts toward OYO either.
+ */
 export function meterTotal(e) {
-  return /^lifting$/i.test(e.activity) ? 0 : (e.workM || 0) + (e.restM || 0);
+  return /^lifting$/i.test(e.activity) ? 0 : (e.workM || 0) + (e.warmupM || 0) + (e.cooldownM || 0);
 }
 
 /** 'practice' for practices and make-ups (make-ups count as practice), 'oyo' for OYO. */
@@ -175,12 +183,17 @@ export function oyoWeekStreak(athlete, feed, today) {
   return n;
 }
 
-/** Minutes by zone (raw training minutes) for entries in [from, to]. */
+/**
+ * Minutes by zone (raw training minutes) for entries in [from, to]. The main
+ * set takes the session's zone. Warmup and cooldown count as UT1 until the
+ * UT1/UT2 merge (David, 2026-10-25).
+ */
 export function zoneMinutes(entries, from, to) {
   const z = Object.fromEntries(ZONES.map((k) => [k, 0]));
   entries.forEach((e) => {
-    if (e.date < from || e.date > to || !z.hasOwnProperty(e.zone)) return;
-    z[e.zone] += rawMinutes(e);
+    if (e.date < from || e.date > to || e.status === 'Out') return;
+    if (z.hasOwnProperty(e.zone)) z[e.zone] += (e.workS || 0) / 60;
+    z.UT1 += ((e.warmupS || 0) + (e.cooldownS || 0)) / 60;
   });
   return z;
 }
