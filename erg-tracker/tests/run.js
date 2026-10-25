@@ -147,6 +147,10 @@ test('parse benchmarks', () => {
   assert.strictEqual(twenty.benchmark.Test, '20min');
   assert.strictEqual(twenty.benchmark.Meters, 5000);
   assert.strictEqual(twenty.benchmark['Time s'], '');
+  const withDrag = g.parseSubmission({ ...base, [Q.TEST]: '2000m', [Q.T_TIME]: '7:42.8', [Q.T_DRAG]: '105' }, ctxFor());
+  assert.strictEqual(withDrag.benchmark['Drag factor'], 105);
+  assert.strictEqual(withDrag.benchmark['Drag check'], '', 'a test with drag has no flag');
+  assert.strictEqual(twok.benchmark['Drag check'], 'FLAG: no drag factor', 'a benchmark with no drag is flagged');
   Object.keys(twok.benchmark).forEach(k => assert.ok(g.HEADERS[g.TABS.BENCHMARKS].includes(k), 'bench column ' + k));
   // A test also counts as a session, linked both ways
   assert.strictEqual(twok.entry['Session type'], 'Practice');

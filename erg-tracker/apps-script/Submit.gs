@@ -7,6 +7,8 @@
  * Node and reused for Slack entries in phase 2.
  */
 
+var DRAG_FLAG = 'FLAG: no drag factor';
+
 /** Installable trigger target (form submit). */
 function onFormSubmit(e) {
   if (processResponse_(e.response) === 'error') alertSubmitError_();
@@ -31,6 +33,12 @@ function processResponse_(response) {
         parseDate: parseFormDate_
       });
       writeResult_(result);
+      if (result.benchmark && result.benchmark['Drag check']) {
+        logChange_({
+          Who: 'form', Tab: TABS.BENCHMARKS, 'Row ID': result.benchmark['Benchmark ID'],
+          Note: result.benchmark['Drag check'] + ' (' + result.benchmark.Test + ', ' + result.benchmark.Athlete + ')'
+        });
+      }
       SpreadsheetApp.flush();
       return 'ok';
     } catch (err) {
@@ -208,14 +216,17 @@ function parseBenchmark_(a, num, base, ctx) {
   var splitsText = a(timed ? Q.T_SPLITS : Q.D_SPLITS);
   var splits = splitsText === '' ? '' : splitsText.split(/[,\s]+/).filter(String)
     .map(parseTime).join(',');
+  var drag = num(timed ? Q.T_DRAG : Q.D_DRAG);
   return Object.assign({}, base, {
     'Benchmark ID': ctx.newId('B'),
     'Test': spec.key || label,
     'Time s': timed ? parseTime(a(Q.T_TIME)) : '',
     'Meters': timed ? '' : num(Q.D_METERS),
     'Avg rate': num(timed ? Q.T_RATE : Q.D_RATE),
-    'Drag factor': num(timed ? Q.T_DRAG : Q.D_DRAG),
+    'Drag factor': drag,
     'Splits s': splits,
-    'Coach note': a(timed ? Q.T_NOTE : Q.D_NOTE)
+    'Coach note': a(timed ? Q.T_NOTE : Q.D_NOTE),
+    // Coach-only flag. The form requires drag on tests, so this catches anything that gets past it.
+    'Drag check': drag === '' ? DRAG_FLAG : ''
   });
 }

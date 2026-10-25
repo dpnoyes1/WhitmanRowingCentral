@@ -28,7 +28,7 @@ Work s / Rest s / Work m / Rest m are sums of the Intervals rows, stored for con
 Entry ID, Interval #, Work s, Work m, Avg rate, Rest s, Rest m.
 
 ## Benchmarks
-Benchmark ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Test (100m / 500m / 2000m / 20min / 30r20), Time s (timed tests), Meters (distance tests), Avg rate, Drag factor, Splits s (comma separated seconds), Coach note, Source, Review status, Response ID, Entry ID (the matching session in Entries).
+Benchmark ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Test (100m / 500m / 2000m / 20min / 30r20), Time s (timed tests), Meters (distance tests), Avg rate, Drag factor, Splits s (comma separated seconds), Coach note, Source, Review status, Response ID, Entry ID (the matching session in Entries), Drag check (coach flag: "FLAG: no drag factor" when a test has no drag factor).
 
 30r20 validity (avg rate <= 20) and GMS are computed at display, not stored.
 
