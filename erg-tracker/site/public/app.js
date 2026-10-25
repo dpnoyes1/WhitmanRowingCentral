@@ -619,29 +619,29 @@ async function showWeek(id = null, prev = false) {
 async function showBoards() {
   const v = await api('/api/leaderboards');
   setNav('boards');
-  const state = { test: store.get('wrc.board') || '2000m', window: store.get('wrc.window') || 'season', squad: store.get(SQUAD_KEY) || 'all' };
+  const state = { test: store.get('wrc.board') || '2000m', window: store.get('wrc.window') || 'season', group: store.get('wrc.boardGroup') || 'all' };
   const mine = me();
   const render = () => {
     const t = v.tests.find((x) => x.test === state.test) || v.tests[0];
-    const rows = t[state.window].filter((r) => state.squad === 'all' || r.squad.toLowerCase() === state.squad);
+    const rows = state.group === 'all' ? t[state.window] : t[state.group][state.window];
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Leaderboards</h1>
       <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.</p></div></div>
       <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
-        ${seg('squad', [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}</div>
+        ${seg('group', [['all', 'All'], ['freshman', 'Fr/Nov (7th-9th)'], ['varsity', 'Varsity (10th-12th)']])}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
         <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
-          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.active ? '' : ' <span class="pill">alum</span>'}
-            <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.squad !== 'all' ? ` <span class="muted">#${r.rank} overall</span>` : ''}</div></td>
-          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r">${r.avgRate || '–'}</td><td class="date">${fmtDate(r.date)}</td></tr>`).join('')}
+          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
+            <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
+          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
       </table></div>` : '<p class="muted">No results yet.</p>'}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
         state[b.dataset.k] = b.dataset.v;
-        store.set({ test: 'wrc.board', window: 'wrc.window', squad: SQUAD_KEY }[b.dataset.k], b.dataset.v);
+        store.set({ test: 'wrc.board', window: 'wrc.window', group: 'wrc.boardGroup' }[b.dataset.k], b.dataset.v);
         render();
       };
     });

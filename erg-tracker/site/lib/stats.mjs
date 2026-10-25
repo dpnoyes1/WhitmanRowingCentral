@@ -37,6 +37,26 @@ export function schoolYearStart(day, mmdd = '08-01') {
   return start > day ? `${y - 1}-${mmdd}` : start;
 }
 
+/** School year containing `day` as "2025-26". */
+export function schoolYearLabel(day, mmdd = '08-01') {
+  const y = Number(schoolYearStart(day, mmdd).slice(0, 4));
+  return `${y}-${String(y + 1).slice(2)}`;
+}
+
+/** Grade (7-12) the class of `gradYear` was in on `day`; null when blank or outside 7th-12th. */
+export function gradeAt(gradYear, day, mmdd = '08-01') {
+  if (!gradYear) return null;
+  const endYear = Number(schoolYearStart(day, mmdd).slice(0, 4)) + 1;
+  const grade = 12 - (Number(gradYear) - endYear);
+  return grade >= 7 && grade <= 12 ? grade : null;
+}
+
+/** Board group for a piece done on `day` (David, 2026-10-25): Freshman 7th-9th, Varsity 10th-12th. */
+export function boardGroup(gradYear, day, mmdd = '08-01') {
+  const g = gradeAt(gradYear, day, mmdd);
+  return g === null ? null : g <= 9 ? 'freshman' : 'varsity';
+}
+
 // ---- minutes ----------------------------------------------------------------
 
 /** Training minutes on the machine: warmup + work + rest + cooldown. */

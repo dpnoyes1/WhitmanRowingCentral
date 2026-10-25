@@ -171,6 +171,7 @@ function siteFeed(inputs, asOf) {
       squad: String(r.Squad || '').trim(),
       role: /cox/i.test(String(r.Role)) ? 'Coxswain' : 'Rower',
       grade: schoolYear(r['Grad year'], asOf),
+      gradYear: feedNum_(r['Grad year']),
       active: isActive_(r.Active),
       oyoGroup: group,
       oyoRequired: feedNum_(r['OYO required min']) !== null ? feedNum_(r['OYO required min']) : oyoDefaults[group].required,
@@ -228,6 +229,7 @@ function siteFeed(inputs, asOf) {
     var out = {
       id: String(b['Benchmark ID']), date: feedDay_(b.Date), athleteId: b['Athlete ID'], test: b.Test,
       timeS: feedNum_(b['Time s']), meters: feedNum_(b.Meters), avgRate: rate,
+      dateApprox: /import/i.test(String(b.Source || '')),   // imported history: the date is a placeholder inside the school year
       valid: !(b.Test === '30r20' && rate !== null && rate > rateCap),
       gmsPct: null, stars: null, nextStar: null
     };

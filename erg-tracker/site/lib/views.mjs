@@ -5,7 +5,7 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal
+  resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -243,32 +243,45 @@ const STAR_TESTS = ['2000m', '20min'];
 
 /**
  * One board per test: best valid raw result per athlete, ranked, for this
- * school year and all time. All time keeps inactive and graduated athletes.
- * Raw erg scores only; no GMS on boards. The page filters by squad and shows
- * both ranks ("#1 Jane Smith (#4 overall)").
+ * school year and all time, for All pieces and for Freshman (7th-9th grade when
+ * the piece was done) and Varsity (10th-12th) separately, so a freshman record
+ * stays frozen after she moves up (David, 2026-10-25). Grade comes from Grad
+ * year and the piece's date. All time keeps inactive and graduated athletes.
+ * Raw erg scores only; no GMS on boards.
  */
 export function leaderboardsView(feed, today) {
-  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const st = feed.settings.schoolYearStart;
+  const yearStart = schoolYearStart(today, st);
   const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
   const starCache = {};
   const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
-  const board = (test, from) => {
+  // group: null = all pieces; 'freshman' / 'varsity' = pieces done in those grades.
+  const board = (test, from, group) => {
     const best = {};
     feed.benchmarks.forEach((b) => {
       const a = byId[b.athleteId];
       if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
+      if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
       if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
     });
     return Object.values(best)
       .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
       .map((b, i) => {
         const a = byId[b.athleteId];
-        return { rank: i + 1, ...athleteSummary(a), active: a.active, stars: stars(a.id), ...testRow(b) };
+        return {
+          rank: i + 1, ...athleteSummary(a), active: a.active, alum: a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
+          dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
+        };
       });
   };
+  const all = '0000-00-00';
   return {
     today, yearStart,
-    tests: TESTS.map((t) => ({ test: t, season: board(t, yearStart), allTime: board(t, '0000-00-00') }))
+    tests: TESTS.map((t) => ({
+      test: t, season: board(t, yearStart, null), allTime: board(t, all, null),
+      freshman: { season: board(t, yearStart, 'freshman'), allTime: board(t, all, 'freshman') },
+      varsity: { season: board(t, yearStart, 'varsity'), allTime: board(t, all, 'varsity') }
+    }))
   };
 }
 

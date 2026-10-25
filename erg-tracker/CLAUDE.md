@@ -116,7 +116,7 @@ Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ con
 
 ## Leaderboards
 
-One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes.
+One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Fr/Nov / Varsity. Fr/Nov (shown as "Fr/Nov", David 2026-10-25) = 7th-9th grade and Varsity = 10th-12th **when the piece was done**, from Grad year and the piece's date, so a freshman record stays frozen after she moves up and her later pieces count on Varsity (David, 2026-10-25; replaces the Varsity/Novice squad toggle, no squad history involved). One best per athlete per board; All is her single best. Rows with no Grad year show under All only. Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes; the "alum" tag means Grad year before this school year (not Active = No). Rows with Source containing "import" (Record Board import, 2026-10-25) show the school year instead of the placeholder date. Needs feed version with `gradYear` on athletes and `dateApprox` on benchmarks.
 
 ## Team site (decided 2026-10-23)
 
