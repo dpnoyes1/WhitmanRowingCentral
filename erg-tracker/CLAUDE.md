@@ -50,6 +50,10 @@ Weekly weighted minutes. Standard group Required 60 / Elite 120. Performance gro
 
 Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practices or scheduled workouts, so everything is OYO. Settings `oyo.break.dates` holds the range(s) and `oyo.break.required` / `oyo.break.elite` the goals for everyone in a break week (blank = her usual goal). A Mon-Sun week with 4+ break days is a break week (`isBreakWeek` / `oyoGoals` in `site/lib/stats.mjs`). Real dates go in Settings only.
 
+## School year (David, 2026-10-25)
+
+One rollover date for everything: **July 1** (Settings `school_year_start` = `07-01`; code defaults match). Season bests, stars, boards, team GMS years, the My workouts year filter and the new-school-year rollover all use it. The live Sheet's Settings cell must be changed to `07-01` once by David; existing data needs no change.
+
 ## Benchmarks, GMS and stars
 
 | Test | Score | Better | GMS % | Stars |
@@ -77,7 +81,7 @@ An athlete's season stars on the site are the average of her best 2k and best 20
 Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (decided 2026-10-22). Logic in `apps-script/TeamGms.gs`; coach tab via menu "Team GMS report".
 - Only 2k and 20' count. Each rower counts once with her best GMS % in the window; tests without a weight on or before them are left out of averages.
 - Rank bands are team-wide by raw erg (best 2k-equivalent time, no weight), not boat placement.
-- Years compare school year to date (same number of days after Aug 1), not by test week. Past full years shown on the coach tab for reference.
+- Years compare school year to date (same number of days after Jul 1), not by test week. Past full years shown on the coach tab for reference.
 - Past-year squads come from Squad history ("Save squads for this school year" each season); missing rows fall back to Roster.
 - Team site gets `teamGmsForSite`: averages only, no names, ranks or weights. A group with fewer than `team_gms.min_group` (3) rowers shows no average.
 
@@ -116,7 +120,7 @@ Statuses Full / Modified / Out. No excused vs unexcused: any miss counts. 5+ con
 
 ## Leaderboards
 
-One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes.
+One per benchmark; toggles School Year (starts Jul 1) / All Time and All / Varsity / Novice. Squad view shows both ranks ("#1 Jane Smith (#4 overall)"). Raw erg scores only; columns are result, split, stroke rate and date, and each name carries her season stars (David, 2026-10-23). All Time keeps graduated athletes.
 
 ## Team site (decided 2026-10-23)
 
@@ -128,6 +132,7 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Varsi
 - GMS % goes only to the signed-in athlete for her own page and to coaches (team session), enforced by `/api/athlete/:id`; teammates get stars only. Coaches also see each athlete's Today card and can open any athlete's week at `#/week/ID`. Stars next to names are public; the Stars ranking tab and `/api/stars` are coaches only (David, 2026-10-23). The team view shows GMS averages only (`teamGmsForSite`).
 - Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
 - Week ahead (layer 3, David 2026-10-23): **Week** tab shows only the coming week, Monday to Saturday (this week through Saturday, next week from Sunday), her squad's sessions and only her own targets. Her own page has a **Today** card with today's targets. No 2k or 20' yet: she sees "No target yet: do a 2k or 20' to get one." and coaches see the FLAG row in the Sheet's plan report (coach view and Slack later). Results vs goal (David, 2026-10-23): once logged, each session shows her splits per piece against her target (✓ in range, ↓ under, ↑ over; same rule as the Sheet's Plan check), and past sessions she didn't log say "Not logged". An athlete sees only her own results. Coaches see everyone in the session's squad (logged or not) in a fold-out under each workout, can open any athlete's week, and can look back one week (`#/week/prev`, `?week=prev`). The feed's `weeks` covers last, this and next week; each session carries `results` from `feedWeekResults_` in `Feed.gs`. Benchmark tests are scored, not ranged. BikeErg (David, 2026-10-23): same monitor, double the distance, so its meters count as half (`rowEquivalentIntervals` in `Plan.gs`; 2:00/1000m bike = 2:00/500m row = 202.5 W); its split shows with a * and is ranged against the RowErg target, and it never counts as a benchmark. Other machines show no split or range.
+- My workouts (David, 2026-10-25): on her own page (and coaches' view of her), her logged workouts filtered by zone tag (UT2, UT1, AT, AN) and by This school year / All. Each opens to its totals and, for this school year only, each interval's split against the target that stood on the planned date (`/api/workout/:id`, `feedLogged_` in `Feed.gs`). Teammates get no list and no splits.
 - Insights (David, 2026-10-23): her own page and coaches only (teammates get none; `/api/athlete/:id` sets `insights` to null): RPE by week, steady-state (UT2/UT1 RowErg, BikeErg at half meters) split by week with a faster/slower trend, 2k and 20' this school year with the change from the last one, an estimated 2k from a 20' newer than her last 2k (8.5 s rule), and this month's practices logged (make-ups count) with her streak. The load flag and trailing average are coaches only. Coaches get an **Insights** tab (`/api/insights`) with every rower, flagged first. No public consistency ranking.
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
 - Deploy previews require a Netlify login. Production needs a site sign-in.

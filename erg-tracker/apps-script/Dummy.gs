@@ -338,7 +338,7 @@ function buildDummyData(opts) {
   });
 
   // Practices, make-ups and OYO.
-  var yearStart = settings.school_year_start || '08-01';
+  var yearStart = settings.school_year_start || '07-01';
   var watts2k = function (a, date) {
     var best = seasonBestWatts(data.benchmarks, a.id, '2k', date, yearStart);
     return best ? best.watts : wattsFromSplit(a.start2k / 4);

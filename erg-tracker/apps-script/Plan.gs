@@ -27,9 +27,9 @@ function benchmarkWatts(test, timeS, meters) {
   return null;
 }
 
-/** Start of the school year containing `date`. mmdd like "08-01". */
+/** Start of the school year containing `date`. mmdd like "07-01". */
 function schoolYearStart(date, mmdd) {
-  var p = String(mmdd || '08-01').split('-').map(Number);
+  var p = String(mmdd || '07-01').split('-').map(Number);
   var start = new Date(date.getFullYear(), p[0] - 1, p[1]);
   if (start > date) start = new Date(date.getFullYear() - 1, p[0] - 1, p[1]);
   return start;

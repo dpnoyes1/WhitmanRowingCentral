@@ -124,7 +124,7 @@ var MAX_INTERVALS = 10;
 /** [key, default value, note]. Values are stored as text; read with getSettings(). */
 var SETTINGS_DEFAULTS = [
   ['timezone', 'America/New_York', 'Spreadsheet and script time zone'],
-  ['school_year_start', '08-01', 'MM-DD. Leaderboards "School Year" start'],
+  ['school_year_start', '07-01', 'MM-DD. Leaderboards "School Year" start'],
   ['coaches', 'Coach David, Coach Forrest, Coach Greta', 'Comma separated. Shown in "Entered by"'],
   ['default_drag_factor', '105', 'Prefilled; other values flagged for coaches'],
   ['makeup_window_days', '7', 'Make-ups must be within this many days'],

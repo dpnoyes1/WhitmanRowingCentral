@@ -277,7 +277,7 @@ function siteFeed(inputs, asOf) {
     today: feedDay_(asOf),
     settings: {
       timezone: s.timezone || 'America/New_York',
-      schoolYearStart: s.school_year_start || '08-01',
+      schoolYearStart: s.school_year_start || '07-01',
       multipliers: multipliers,
       oyoDefaults: oyoDefaults,
       rateCap30r20: rateCap,
@@ -295,6 +295,7 @@ function siteFeed(inputs, asOf) {
     benchmarks: benchmarks,
     teamGms: teamGms,
     weeks: weeks,
+    logged: feedLogged_(inputs, teamGmsYearStart_(asOf, s.school_year_start), s),
     logins: logins
   };
 }
@@ -347,6 +348,60 @@ function feedWeekResults_(sessions, inputs, start) {
       })
     });
   });
+}
+
+/**
+ * Splits and targets for every logged workout since yearStart (the current
+ * school year; David, 2026-10-25). A piece's target is the one that stood on
+ * the planned date (season best then). Older workouts are left out: their
+ * totals stay in `entries`. Athletes see only their own (api.mjs).
+ */
+function feedLogged_(inputs, yearStart, s) {
+  var squadOf = {};
+  inputs.roster.forEach(function (r) { squadOf[r['Athlete ID']] = r.Squad; });
+  var ivByEntry = {};
+  (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
+  var out = [];
+  inputs.entries.forEach(function (e) {
+    if (!isDate_(e.Date) || e.Date < yearStart || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || String(e.Status) === 'Out') return;
+    var activity = String(e.Activity || '');
+    var rowErg = activity === '' || /rowerg|bikeerg/i.test(activity);
+    var test = String(e['Benchmark ID'] || '') !== '';
+    var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
+      .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
+    var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
+    var pieces = planned ? workoutPieces(inputs.workouts, planned['Workout ID']) : [];
+    var bases = {};
+    if (planned) {
+      Object.keys(PLAN_BASES).forEach(function (b) {
+        var best = seasonBestWatts(inputs.benchmarks, e['Athlete ID'], b, planned.Date, s.school_year_start);
+        if (best) bases[b] = best.watts;
+      });
+    }
+    var c = planned ? checkAgainstPlan(ivs, pieces, bases, s) : null;
+    var owner = [];   // piece index for each planned interval, in order
+    pieces.forEach(function (p, pi) { for (var k = 0; k < p.reps; k++) owner.push(pi); });
+    out.push({
+      id: String(e['Entry ID']), athleteId: e['Athlete ID'], date: feedDay_(e.Date),
+      workout: pieces.length ? pieces[0].name : '', rowErg: rowErg, test: test,
+      matches: c ? c.matches : null, reason: c ? c.reason : '', hit: c && rowErg && !test ? c.hit : null,
+      pieces: pieces.map(function (p) {
+        var pct = pieceTargetPct(p, s);
+        var t = pct ? pieceTarget(p, bases[pct.base], s) : null;
+        return { label: pieceLabel(p), target: rowErg && !test && t ? formatTarget(t) : null };
+      }),
+      intervals: ivs.map(function (iv, i) {
+        var ws = feedNum_(iv['Work s']), wm = feedNum_(iv['Work m']);
+        var row = c && rowErg && !test ? c.intervals[i] : null;
+        return {
+          n: i + 1, piece: i < owner.length ? owner[i] : null, workS: ws, workM: wm,
+          splitS: rowErg && ws && wm ? Math.round((ws * 5000) / wm) / 10 : null,
+          status: row ? row.status : ''
+        };
+      })
+    });
+  });
+  return out;
 }
 
 /** Test keys as stored in Benchmarks ('100m', '500m', '2000m', '20min', '30r20'). */

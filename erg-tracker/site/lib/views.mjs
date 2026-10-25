@@ -96,7 +96,7 @@ function roundZones(z) {
 
 function sessionRow(e, settings) {
   return {
-    date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
+    id: e.id, date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
     makeupFor: e.makeupFor || '', minutes: round(rawMinutes(e)), weighted: round(weightedMinutes(e, settings)),
     meters: meterTotal(e) ? round(meterTotal(e)) : null, rpe: e.rpe, test: !!e.benchmarkId
   };
@@ -160,7 +160,27 @@ export function athleteView(feed, id, today) {
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
+      .map((e) => sessionRow(e, feed.settings)),
+    // Every workout she has logged, for "My workouts" (api.mjs sends it to her and coaches only).
+    workouts: mine.filter((e) => e.date <= today && e.status !== 'Out')
+      .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .map((e) => sessionRow(e, feed.settings))
+  };
+}
+
+/**
+ * One logged workout for "My workouts" click-in. Totals always; splits against
+ * targets only for the current school year (feed.logged). null for an unknown ID.
+ */
+export function workoutView(feed, id, today) {
+  const e = feed.entries.find((x) => x.id === id);
+  if (!e) return null;
+  const a = feed.athletes.find((x) => x.id === e.athleteId);
+  return {
+    today,
+    athlete: a ? athleteSummary(a) : null,
+    workout: sessionRow(e, feed.settings),
+    detail: (feed.logged || []).find((x) => x.id === id) || null
   };
 }
 

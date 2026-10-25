@@ -203,7 +203,7 @@ test('team GMS: best 2k/20\' per rower, team-wide raw rank bands, year to date',
   benchmarks.push({ Date: new Date(2026, 9, 30), 'Athlete ID': 'T017', Test: '2000m', 'Time s': 390 });
   // A 20' that beats T001's 2k: 2k split = 600000/6200 - 8.5
   benchmarks.push({ Date: new Date(2026, 9, 1), 'Athlete ID': 'T001', Test: '20min', 'Time s': '', Meters: 6200 });
-  // Last year: same window (Aug 1 + 82 days) vs a later full-year result. T002 was Novice then.
+  // Last year: same window (Jul 1 + 82 days) vs a later full-year result. T002 was Novice then.
   benchmarks.push({ Date: new Date(2025, 8, 20), 'Athlete ID': 'T002', Test: '2000m', 'Time s': 450 });
   benchmarks.push({ Date: new Date(2026, 1, 20), 'Athlete ID': 'T002', Test: '2000m', 'Time s': 420 });
   benchmarks.push({ Date: new Date(2025, 8, 20), 'Athlete ID': 'T003', Test: '2000m', 'Time s': 440 });
@@ -364,15 +364,15 @@ test('watts and split conversions', () => {
 });
 
 test('season best: this school year, else last, never rejected or future', () => {
-  assert.strictEqual(g.schoolYearStart(D(2026, 10, 22), '08-01').getTime(), D(2026, 8, 1).getTime());
-  assert.strictEqual(g.schoolYearStart(D(2027, 3, 1), '08-01').getTime(), D(2026, 8, 1).getTime());
-  const b2k = g.seasonBestWatts(BENCH, 'A901', '2k', D(2026, 11, 2), '08-01');
+  assert.strictEqual(g.schoolYearStart(D(2026, 10, 22), '07-01').getTime(), D(2026, 7, 1).getTime());
+  assert.strictEqual(g.schoolYearStart(D(2027, 3, 1), '07-01').getTime(), D(2026, 7, 1).getTime());
+  const b2k = g.seasonBestWatts(BENCH, 'A901', '2k', D(2026, 11, 2), '07-01');
   near(b2k.watts, 202.546, 0.001, '2k best ignores rejected 7:50');
   assert.strictEqual(b2k.season, 'current');
-  const b20 = g.seasonBestWatts(BENCH, 'A901', "20'", D(2026, 11, 2), '08-01');
+  const b20 = g.seasonBestWatts(BENCH, 'A901', "20'", D(2026, 11, 2), '07-01');
   assert.strictEqual(b20.season, 'previous');
   near(b20.watts, g.benchmarkWatts('20min', '', 4800), 1e-9, '20min falls back one season only');
-  assert.strictEqual(g.seasonBestWatts(BENCH, 'A902', '2k', D(2026, 11, 2), '08-01'), null);
+  assert.strictEqual(g.seasonBestWatts(BENCH, 'A902', '2k', D(2026, 11, 2), '07-01'), null);
 });
 
 test('workout pieces: variable intervals, start-every, undefined rest', () => {
@@ -825,11 +825,11 @@ test('ops: backups keep the newest, never archives', () => {
 });
 
 test('ops: new school year closes the right year and retires graduates', () => {
-  const y = (d) => { const r = g.rolloverYear(new Date(d + 'T12:00:00'), '08-01'); return [r.label, r.gradYear]; };
+  const y = (d) => { const r = g.rolloverYear(new Date(d + 'T12:00:00'), '07-01'); return [r.label, r.gradYear]; };
   assert.deepStrictEqual(y('2027-06-10'), ['2026-27', 2027]);
   assert.deepStrictEqual(y('2027-07-31'), ['2026-27', 2027]);
-  assert.deepStrictEqual(y('2027-08-15'), ['2026-27', 2027], 'just after Aug 1: the year that ended');
-  assert.deepStrictEqual(y('2027-10-31'), ['2026-27', 2027]);
+  assert.deepStrictEqual(y('2027-08-15'), ['2026-27', 2027], 'just after Jul 1: the year that ended');
+  assert.deepStrictEqual(y('2027-10-31'), ['2027-28', 2028]);
   assert.deepStrictEqual(y('2027-11-02'), ['2027-28', 2028]);
   const roster = [
     { Name: 'Fake Senior', Active: 'Yes', 'Grad year': 2027 },
