@@ -113,6 +113,51 @@ test('leaderboards: ranked best valid result per athlete, raw scores only', () =
   b2k.season.forEach((r) => { const s = stars.find((x) => x.id === r.id); if (s) assert.strictEqual(r.stars, s.stars); });
 });
 
+test('grade at the time: Freshman 7th-9th, Varsity 10th-12th', () => {
+  assert.strictEqual(S.gradeAt(2029, '2025-10-01'), 9);
+  assert.strictEqual(S.gradeAt(2029, '2026-08-01'), 10);
+  assert.strictEqual(S.gradeAt(2029, '2026-07-31'), 9);
+  assert.strictEqual(S.gradeAt(2029, '2022-10-01'), null);
+  assert.strictEqual(S.gradeAt(2025, '2026-10-01'), null);
+  assert.strictEqual(S.gradeAt('', '2026-10-01'), null);
+  assert.strictEqual(S.boardGroup(2029, '2025-10-01'), 'freshman');
+  assert.strictEqual(S.boardGroup(2029, '2026-10-01'), 'varsity');
+  assert.strictEqual(S.boardGroup(2030, '2024-10-01'), 'freshman');
+  assert.strictEqual(S.schoolYearLabel('2025-10-01'), '2025-26');
+});
+
+test('leaderboards: a freshman record stays frozen after she moves up', () => {
+  const f = {
+    settings: feed.settings,
+    athletes: [
+      { id: 'X1', name: 'Frosh Star', squad: '', grade: '10th', gradYear: 2029, active: false, role: 'Rower' },
+      { id: 'X2', name: 'Old Timer', squad: '', grade: 'Graduated', gradYear: 2024, active: false, role: 'Rower' },
+      { id: 'X3', name: 'No Year', squad: '', grade: '', gradYear: null, active: true, role: 'Rower' }
+    ],
+    benchmarks: [
+      { id: 'b1', athleteId: 'X1', test: '2000m', date: '2025-10-01', timeS: 468.4, valid: true, dateApprox: true },
+      { id: 'b2', athleteId: 'X1', test: '2000m', date: '2026-09-15', timeS: 455, valid: true },
+      { id: 'b3', athleteId: 'X2', test: '2000m', date: '2023-10-01', timeS: 480, valid: true, dateApprox: true },
+      { id: 'b4', athleteId: 'X3', test: '2000m', date: '2026-09-20', timeS: 500, valid: true }
+    ]
+  };
+  const t = leaderboardsView(f, TODAY).tests.find((x) => x.test === '2000m');
+  assert.deepStrictEqual(t.allTime.map((r) => r.id), ['X1', 'X2', 'X3']);
+  assert.strictEqual(t.allTime[0].timeS, 455);
+  assert.strictEqual(t.freshman.allTime.find((r) => r.id === 'X1').timeS, 468.4);
+  assert.strictEqual(t.varsity.allTime.find((r) => r.id === 'X1').timeS, 455);
+  assert.deepStrictEqual(t.freshman.allTime.map((r) => r.id), ['X1']);
+  assert.deepStrictEqual(t.varsity.allTime.map((r) => r.id), ['X1', 'X2']);   // X2 was a senior in 2023-24; X3 has no grad year, so All only
+  assert.deepStrictEqual(t.freshman.season, []);
+  assert.strictEqual(t.varsity.season[0].id, 'X1');
+  const row = t.freshman.allTime[0];
+  assert.strictEqual(row.dateApprox, true);
+  assert.strictEqual(row.schoolYear, '2025-26');
+  assert.strictEqual(t.allTime.find((r) => r.id === 'X2').alum, true);
+  assert.strictEqual(t.allTime.find((r) => r.id === 'X3').alum, false);
+  assert.strictEqual(t.allTime.find((r) => r.id === 'X1').alum, false);
+});
+
 test('stars board: stars public, GMS % never; team averages only', () => {
   const v = starsView(feed, TODAY);
   assert.strictEqual(v.rowers.length, 30);
