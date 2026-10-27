@@ -111,14 +111,14 @@ var ACTIVITIES = [
 // Every test also becomes an Entries session. meters/seconds fill the fixed side
 // of the piece; zone is the default tag for that session (assumption, edit freely).
 var BENCHMARK_TESTS = {
-  '100m': { score: 'time', meters: 100, zone: 'AN' },
-  '500m': { score: 'time', meters: 500, zone: 'AN' },
-  '2000m': { score: 'time', meters: 2000, zone: 'AN' },
-  "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'AT' },
-  '30r20': { score: 'meters', seconds: 1800, zone: 'UT1' }
+  '100m': { score: 'time', meters: 100, zone: 'Anaerobic' },
+  '500m': { score: 'time', meters: 500, zone: 'Anaerobic' },
+  '2000m': { score: 'time', meters: 2000, zone: 'Anaerobic' },
+  "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'Threshold' },
+  '30r20': { score: 'meters', seconds: 1800, zone: 'Aerobic' }
 };
 
-var ZONES = ['UT2', 'UT1', 'AT', 'AN'];
+var ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 var MAX_INTERVALS = 10;
 
 /** [key, default value, note]. Values are stored as text; read with getSettings(). */
@@ -167,14 +167,12 @@ var SETTINGS_DEFAULTS = [
   ['season.winter_start', '', 'YYYY-MM-DD. Used by "Generate practice schedule"'],
   ['season.winter_end', '', 'YYYY-MM-DD'],
   ['target.default_base', '2k', "Base when a workout piece leaves Base blank: 2k or 20'"],
-  ['target.UT2.2000m', '55-65', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
-  ['target.UT1.2000m', '65-75', 'PLACEHOLDER'],
-  ['target.AT.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
-  ['target.AN.2000m', '95', 'PLACEHOLDER'],
-  ['target.UT2.20min', '65-75', "PLACEHOLDER: % of season-best 20' watts"],
-  ['target.UT1.20min', '75-85', 'PLACEHOLDER'],
-  ['target.AT.20min', '95', 'PLACEHOLDER'],
-  ['target.AN.20min', '110', 'PLACEHOLDER'],
+  ['target.Aerobic.2000m', '60-70', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
+  ['target.Threshold.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
+  ['target.Anaerobic.2000m', '95', 'PLACEHOLDER'],
+  ['target.Aerobic.20min', '70-80', "PLACEHOLDER: % of season-best 20' watts"],
+  ['target.Threshold.20min', '95', 'PLACEHOLDER'],
+  ['target.Anaerobic.20min', '110', 'PLACEHOLDER'],
   ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
   ['form.id', '', 'Written by setup()'],
   ['form.edit_url', '', 'Written by setup()'],

@@ -93,7 +93,7 @@ test('parse practice with intervals', () => {
   const ans = {
     [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Coach Greta', [Q.DATE]: '2026-01-12',
     [Q.LOG_TYPE]: g.LOG_TYPES.PRACTICE, [Q.STATUS]: g.STATUSES.FULL,
-    [Q.ACTIVITY]: 'Erg (RowErg)', [Q.WARMUP]: '15:00', [Q.MAIN_SET]: "3x10' r2'", [Q.ZONE]: 'UT1',
+    [Q.ACTIVITY]: 'Erg (RowErg)', [Q.WARMUP]: '15:00', [Q.MAIN_SET]: "3x10' r2'", [Q.ZONE]: 'Aerobic',
     [i1.WORK_TIME]: '10:00.0', [i1.WORK_M]: '2650', [i1.RATE]: '22', [i1.REST_TIME]: '2:00', [i1.REST_M]: '300', [i1.ANOTHER]: 'Yes',
     [i2.WORK_TIME]: '10:00.0', [i2.WORK_M]: '2660', [i2.REST_TIME]: '2:00', [i2.ANOTHER]: 'Yes',
     [i3.WORK_TIME]: '10:00.0', [i3.WORK_M]: '2675', [i3.ANOTHER]: 'No, that was the last one',
@@ -123,7 +123,7 @@ test('parse practice out, make-up, OYO', () => {
   const out = g.parseSubmission({ ...base, [Q.LOG_TYPE]: g.LOG_TYPES.PRACTICE, [Q.STATUS]: g.STATUSES.OUT, [Q.OUT_NOTE]: 'sick' }, ctxFor());
   assert.strictEqual(out.entry.Status, 'Out');
   assert.strictEqual(out.intervals.length, 0);
-  const session = { [Q.ACTIVITY]: 'Run', [Q.WARMUP]: '5:00', [Q.MAIN_SET]: 'easy run', [Q.ZONE]: 'UT2',
+  const session = { [Q.ACTIVITY]: 'Run', [Q.WARMUP]: '5:00', [Q.MAIN_SET]: 'easy run', [Q.ZONE]: 'Aerobic',
     [g.qInterval(1).WORK_TIME]: '30:00', [g.qInterval(1).WORK_M]: '5000', [Q.RPE]: '4' };
   const mk = g.parseSubmission({ ...base, ...session, [Q.LOG_TYPE]: g.LOG_TYPES.MAKEUP, [Q.MAKEUP_FOR]: '2026-01-12' }, ctxFor());
   assert.strictEqual(mk.entry['Session type'], 'Make-up');
@@ -166,7 +166,7 @@ test('parse benchmarks', () => {
   assert.strictEqual(twok.intervals[0]['Avg rate'], 30);
   assert.strictEqual(twenty.entry['Work s'], 1200);
   assert.strictEqual(twenty.entry['Work m'], 5000);
-  assert.strictEqual(twenty.entry['Zone'], 'AT');
+  assert.strictEqual(twenty.entry['Zone'], 'Threshold');
   const oyoTest = g.parseSubmission({ ...base, [Q.B_WHERE]: g.TEST_WHERE.OYO, [Q.B_COOLDOWN]: '5:00', [Q.TEST]: '30r20', [Q.D_METERS]: '7200', [Q.D_RATE]: '20' }, ctxFor());
   assert.strictEqual(oyoTest.entry['Session type'], 'OYO');
   assert.strictEqual(oyoTest.entry['Work s'], 1800);
@@ -336,15 +336,15 @@ test('no weight anywhere in the form', () => {
 const planSettings = () => { const s = {}; g.SETTINGS_DEFAULTS.forEach(([k, v]) => { s[k] = v; }); return s; };
 const D = (y, m, d) => new Date(y, m - 1, d);
 const WORKOUTS = [
-  { 'Workout ID': 'W1', Name: 'Steady 3x20', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '2:00', Zone: 'UT1', Base: '', 'Target low %': '', 'Target high %': '' },
-  { 'Workout ID': 'P1', Name: 'Pyramid', 'Piece #': 1, Reps: 1, 'Work type': 'Distance', Work: '2000m', Rest: '8:00', Zone: 'AT', Base: '2k', 'Target low %': 85 },
-  { 'Workout ID': 'P1', 'Piece #': 3, Reps: 1, 'Work type': 'Distance', Work: '1000', Rest: '4:00', Zone: 'AT', 'Target low %': 92 },
-  { 'Workout ID': 'P1', 'Piece #': 2, Reps: 1, 'Work type': 'Distance', Work: '1500', Rest: '6:00', Zone: 'AT', 'Target low %': 88 },
-  { 'Workout ID': 'P1', 'Piece #': 4, Reps: 1, 'Work type': 'Distance', Work: '500', Rest: '2:00', Zone: 'AN', 'Target low %': 98 },
-  { 'Workout ID': 'P1', 'Piece #': 5, Reps: 1, 'Work type': 'Distance', Work: '250', Rest: '', Zone: 'AN', 'Target low %': 105 },
-  { 'Workout ID': 'S8', Name: '8x500 on the clock', 'Piece #': 1, Reps: 8, 'Work type': 'Distance', Work: '500', Rest: '', 'Start every': '3:30', Zone: 'AN', Base: '2k' },
-  { 'Workout ID': 'U8', 'Piece #': 1, Reps: 8, 'Work type': 'Distance', Work: '500', Rest: 'Undefined', Zone: 'AN' },
-  { 'Workout ID': 'X1', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '45:00', Activity: 'Run', Zone: 'UT2' }
+  { 'Workout ID': 'W1', Name: 'Steady 3x20', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '2:00', Zone: 'Aerobic', Base: '', 'Target low %': '', 'Target high %': '' },
+  { 'Workout ID': 'P1', Name: 'Pyramid', 'Piece #': 1, Reps: 1, 'Work type': 'Distance', Work: '2000m', Rest: '8:00', Zone: 'Threshold', Base: '2k', 'Target low %': 85 },
+  { 'Workout ID': 'P1', 'Piece #': 3, Reps: 1, 'Work type': 'Distance', Work: '1000', Rest: '4:00', Zone: 'Threshold', 'Target low %': 92 },
+  { 'Workout ID': 'P1', 'Piece #': 2, Reps: 1, 'Work type': 'Distance', Work: '1500', Rest: '6:00', Zone: 'Threshold', 'Target low %': 88 },
+  { 'Workout ID': 'P1', 'Piece #': 4, Reps: 1, 'Work type': 'Distance', Work: '500', Rest: '2:00', Zone: 'Anaerobic', 'Target low %': 98 },
+  { 'Workout ID': 'P1', 'Piece #': 5, Reps: 1, 'Work type': 'Distance', Work: '250', Rest: '', Zone: 'Anaerobic', 'Target low %': 105 },
+  { 'Workout ID': 'S8', Name: '8x500 on the clock', 'Piece #': 1, Reps: 8, 'Work type': 'Distance', Work: '500', Rest: '', 'Start every': '3:30', Zone: 'Anaerobic', Base: '2k' },
+  { 'Workout ID': 'U8', 'Piece #': 1, Reps: 8, 'Work type': 'Distance', Work: '500', Rest: 'Undefined', Zone: 'Anaerobic' },
+  { 'Workout ID': 'X1', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '45:00', Activity: 'Run', Zone: 'Aerobic' }
 ];
 // Fake athletes: Test Rower One has tests, Test Rower Two has none.
 const ROSTER = [
@@ -383,32 +383,32 @@ test('workout pieces: variable intervals, start-every, undefined rest', () => {
   const p = g.workoutPieces(WORKOUTS, 'P1');
   assert.strictEqual(p.map(x => x.workM).join(), '2000,1500,1000,500,250');
   assert.strictEqual(p.map(x => x.restS).join(), '480,360,240,120,0');
-  assert.strictEqual(g.pieceLabel(p[0]), '2000m r8:00 AT');
-  assert.strictEqual(g.pieceLabel(g.workoutPieces(WORKOUTS, 'W1')[0]), '3 x 20:00 r2:00 UT1');
+  assert.strictEqual(g.pieceLabel(p[0]), '2000m r8:00 Threshold');
+  assert.strictEqual(g.pieceLabel(g.workoutPieces(WORKOUTS, 'W1')[0]), '3 x 20:00 r2:00 Aerobic');
   const s8 = g.workoutPieces(WORKOUTS, 'S8')[0];
-  assert.strictEqual(g.pieceLabel(s8), '8 x 500m start every 3:30 AN');
+  assert.strictEqual(g.pieceLabel(s8), '8 x 500m start every 3:30 Anaerobic');
   assert.ok(s8.restUndefined);
-  assert.strictEqual(g.pieceLabel(g.workoutPieces(WORKOUTS, 'U8')[0]), '8 x 500m r undefined AN');
+  assert.strictEqual(g.pieceLabel(g.workoutPieces(WORKOUTS, 'U8')[0]), '8 x 500m r undefined Anaerobic');
   assert.throws(() => g.workoutPieces([{ 'Workout ID': 'B', 'Piece #': 1, 'Work type': 'Laps', Work: '3' }], 'B'), /Time or Distance/);
   assert.throws(() => g.workoutPieces([{ 'Workout ID': 'B', 'Piece #': 1, 'Work type': 'Distance', Work: 'far' }], 'B'), /Work is missing/);
 });
 
-test('targets: steady state range, AT/AN single, overrides, erg only', () => {
+test('targets: steady state range, Threshold/Anaerobic single, overrides, erg only', () => {
   const s = planSettings();
   const ut1 = g.workoutPieces(WORKOUTS, 'W1')[0];
-  assert.deepStrictEqual({ ...g.pieceTargetPct(ut1, s) }, { base: '2k', low: 65, high: 75 });
+  assert.deepStrictEqual({ ...g.pieceTargetPct(ut1, s) }, { base: '2k', low: 60, high: 70 });
   const t = g.pieceTarget(ut1, 202.546, s);
   assert.strictEqual(t.range, true);
-  assert.strictEqual(t.lowW, 132);
-  assert.strictEqual(t.highW, 152);
+  assert.strictEqual(t.lowW, 122);   // 60% of 202.5 W
+  assert.strictEqual(t.highW, 142);  // 70% of 202.5 W
   assert.ok(t.slowSplit > t.fastSplit);
-  assert.strictEqual(g.formatTarget(t), g.formatTime(t.slowSplit) + ' to ' + g.formatTime(t.fastSplit) + ' /500m (132-152 W)');
+  assert.strictEqual(g.formatTarget(t), g.formatTime(t.slowSplit) + ' to ' + g.formatTime(t.fastSplit) + ' /500m (122-142 W)');
   const at = g.pieceTarget(g.workoutPieces(WORKOUTS, 'P1')[0], 202.546, s);
   assert.strictEqual(at.range, false);
   assert.strictEqual(at.highW, 172);
   assert.strictEqual(g.formatTarget(at), g.formatTime(at.fastSplit) + ' /500m (172 W)');
   assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'X1')[0], s), null, 'no erg target on a run');
-  // AN default from Settings when the piece leaves % blank
+  // Anaerobic default from Settings when the piece leaves % blank
   assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'U8')[0], s).low, 95);
 });
 
@@ -446,9 +446,9 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   assert.strictEqual(g.plannedFor({ 'Session type': 'OYO', Date: D(2026, 11, 5) }, 'Novice', SCHEDULE)['Workout ID'], 'S8');
   const pieces = g.workoutPieces(WORKOUTS, 'W1');
   const iv = (n, s2, m) => ({ 'Interval #': n, 'Work s': s2, 'Work m': m });
-  // Target 132-152 W is about 2:18.5 to 2:12.0. 2:13 and 2:16 are in, 2:20 is below
+  // Target 122-142 W is about 2:22.1 to 2:15.1. 2:16 and 2:19 are in, 2:25 is below
   const metersAt = split => Math.round(1200 * 500 / split);
-  let c = g.checkAgainstPlan([iv(1, 1200, metersAt(133)), iv(2, 1200, metersAt(136)), iv(3, 1200, metersAt(140))], pieces, { '2k': 202.546 }, s);
+  let c = g.checkAgainstPlan([iv(1, 1200, metersAt(136)), iv(2, 1200, metersAt(139)), iv(3, 1200, metersAt(145))], pieces, { '2k': 202.546 }, s);
   assert.strictEqual(c.matches, true);
   assert.strictEqual(c.intervals.map(x => x.status).join(), 'in,in,below');
   assert.strictEqual(c.hit, false);

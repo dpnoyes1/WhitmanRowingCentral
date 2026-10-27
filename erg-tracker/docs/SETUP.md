@@ -54,11 +54,11 @@ You now have every tab, the Form, a raw responses backup tab, and four triggers:
 ### 4. Plan a week
 
 1. **Workouts tab** is the library. One row per piece, so a workout is one or more rows sharing a Workout ID (e.g. `PYR`).
-   - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone UT1.
+   - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone Aerobic.
    - Variable intervals (2000/1500/1000/500/250): one row per piece, Piece # 1 to 5, each with its own Work, Rest and target.
    - Common start (8 x 500m, everyone goes together): Reps 8, Distance 500, Start every 3:30, Rest blank. For coach-called starts, Rest = Undefined.
    - Activity defaults to Erg (RowErg). Only RowErg pieces get watts targets.
-   - Target: pick Base (2k or 20') and Target low % / high %. Leave % blank to use the zone default from Settings (`target.<zone>.2000m` / `.20min`). A range (UT2, UT1) shows a range; one number (AT, AN) shows a single target.
+   - Target: pick Base (2k or 20') and Target low % / high %. Leave % blank to use the zone default from Settings (`target.<zone>.2000m` / `.20min`). A range (Aerobic) shows a range; one number (Threshold, Anaerobic) shows a single target.
 2. **Schedule tab:** one row per session: Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID. Tick **Published** when athletes should see it. To plan from last week, use **Erg Tracker > Copy last week (as drafts)**: it copies the previous week's rows 7 days forward, unpublished, and refuses if the week already has rows. Edit, then tick Published.
 3. **Erg Tracker > Preview week ahead** writes a *Week ahead (preview)* tab with every athlete's targets, drafts included. FLAG rows at the top list athletes with no 2k or 20' this season or last; they get no target.
 4. **Erg Tracker > Check week against plan** writes a *Plan check* tab: each logged practice, OYO and make-up checked against its planned workout (did the plan, hit target, watts per interval). Make-ups are checked against the missed day's workout.

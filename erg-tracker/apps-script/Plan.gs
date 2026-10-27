@@ -7,7 +7,7 @@
  */
 
 var PLAN_BASES = { '2k': '2000m', "20'": '20min' };
-var PLAN_RANGE_ZONES = ['UT2', 'UT1'];   // steady state shows a range; AT/AN a single number
+var PLAN_RANGE_ZONES = ['Aerobic'];   // steady state shows a range; Threshold/Anaerobic a single number
 
 /** Concept2 pace/watts: watts = 2.80 / (sec per meter)^3. */
 function wattsFromSplit(split500) {
@@ -98,7 +98,7 @@ function workoutPieces(workoutRows, workoutId) {
     });
 }
 
-/** "3 x 20:00 r2:00 UT1" style label for one piece row. */
+/** "3 x 20:00 r2:00 Aerobic" style label for one piece row. */
 function pieceLabel(p) {
   var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : p.workM + 'm';
   var rest = p.startEveryS ? ' start every ' + formatTime(p.startEveryS).replace(/\.0$/, '')
