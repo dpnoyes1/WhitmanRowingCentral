@@ -285,7 +285,7 @@ export function leaderboardsView(feed, today) {
     feed.benchmarks.forEach((b) => {
       const a = byId[b.athleteId];
       if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
-      if (isAlum(a) && (from !== all || group)) return;   // Alum: All Time, All filter only
+      if (isAlum(a) && from !== all) return;   // Alum: All Time boards only (All, Varsity, Fr/Nov)
       if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
       if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
     });

@@ -229,7 +229,7 @@ test('leaderboards: a freshman record stays frozen after she moves up', () => {
   assert.strictEqual(t.allTime.find((r) => r.id === 'X1').alum, false);
 });
 
-test('leaderboards: Alum squad shows only on All Time, All filter', () => {
+test('leaderboards: Alum squad shows only on the All Time boards', () => {
   const f = {
     settings: feed.settings,
     athletes: [
@@ -248,9 +248,9 @@ test('leaderboards: Alum squad shows only on All Time, All filter', () => {
   assert.deepStrictEqual(t.allTime.map((r) => r.id), ['Y1', 'Y3', 'Y2']);
   assert.strictEqual(t.allTime[0].alum, true);
   assert.deepStrictEqual(t.season.map((r) => r.id), ['Y2']);
-  assert.deepStrictEqual(t.varsity.allTime.map((r) => r.id), ['Y2']);
+  assert.deepStrictEqual(t.varsity.allTime.map((r) => r.id), ['Y1', 'Y3', 'Y2']);   // by grade when the piece was done
   assert.deepStrictEqual(t.varsity.season.map((r) => r.id), ['Y2']);
-  assert.deepStrictEqual(t.freshman.allTime, []);
+  assert.deepStrictEqual(t.freshman.season, []);
   assert.deepStrictEqual(activeRowers(f).map((a) => a.id), ['Y2'], 'Alum is on no team view');
 });
 

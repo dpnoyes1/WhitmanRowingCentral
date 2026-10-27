@@ -82,7 +82,7 @@ Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (dec
 - Only 2k and 20' count. Each rower counts once with her best GMS % in the window; tests without a weight on or before them are left out of averages.
 - Rank bands are team-wide by raw erg (best 2k-equivalent time, no weight), not boat placement.
 - Years compare school year to date (same number of days after Jul 1), not by test week. Past full years shown on the coach tab for reference.
-- Alum (David, 2026-10-27): an explicit Roster Squad value (Varsity / Novice / Alum), set by hand, replacing the old blank-squad habit. Alum results show only on the All Time boards, All filter. Alumni are excluded from weekly plans, coach cards, split averages, team GMS and the season, Fr/Nov and Varsity boards. `isAlum` in `site/lib/views.mjs`, `isAlumSquad_` in `apps-script/Plan.gs`. Needs Set up Sheet and Form to add Alum to the Roster dropdown.
+- Alum (David, 2026-10-27): an explicit Roster Squad value (Varsity / Novice / Alum), set by hand, replacing the old blank-squad habit. Alum results show only on the All Time boards (All, Fr/Nov and Varsity filters, by grade when the piece was done; David, 2026-10-27). Alumni are excluded from weekly plans, coach cards, split averages, team GMS and the season, Fr/Nov and Varsity boards. `isAlum` in `site/lib/views.mjs`, `isAlumSquad_` in `apps-script/Plan.gs`. Needs Set up Sheet and Form to add Alum to the Roster dropdown.
 - Past-year squads come from Squad history ("Save squads for this school year" each season); missing rows fall back to Roster.
 - Team site gets `teamGmsForSite`: averages only, no names, ranks or weights. A group with fewer than `team_gms.min_group` (3) rowers shows no average.
 
