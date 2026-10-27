@@ -60,6 +60,13 @@ nav[hidden], nav a[hidden] { display: none; }
 .login .error:empty { display: none; }
 nav a { padding: 6px 10px; border-radius: 8px; font-size: .95rem; }
 nav a.on, nav a:hover { background: rgba(255, 255, 255, .35); }
+.theme-toggle {
+  display: inline-flex; align-items: center; justify-content: center;
+  width: 36px; height: 36px; padding: 0; border: 0; border-radius: 8px;
+  background: transparent; color: inherit; cursor: pointer;
+}
+.theme-toggle:hover { background: rgba(255, 255, 255, .35); }
+.theme-toggle svg { width: 20px; height: 20px; }
 
 main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
