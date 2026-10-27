@@ -115,6 +115,7 @@ function teamGmsAthletes(opts, start, end) {
     if (!teamGmsIsDate_(b.Date) || b.Date < start || b.Date > end) return;
     var r = roster[b['Athlete ID']];
     if (!r || /cox/i.test(String(r.Role))) return;
+    if (isAlumSquad_(history[label + '|' + b['Athlete ID']] || r.Squad)) return;   // Alum is only on the All Time boards
     var result = teamGmsResult_(b);
     if (!result) return;
     var t2k = gmsEquivalent2k(b.Test, result, o);

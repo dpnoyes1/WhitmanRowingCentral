@@ -12,8 +12,11 @@ const WEEKS_SHOWN = 8;
 const ZONE_WEEKS = 4;
 const round = (x, p = 0) => (x === null || x === undefined ? null : Math.round(x * 10 ** p) / 10 ** p);
 
+/** Alum is an explicit squad; alumni show only on the All Time boards (David, 2026-10-27). */
+export const isAlum = (a) => /^alum$/i.test(a.squad || '');
+
 export function activeRowers(feed) {
-  return feed.athletes.filter((a) => a.active && a.role === 'Rower');
+  return feed.athletes.filter((a) => a.active && a.role === 'Rower' && !isAlum(a));
 }
 
 function pct(done, of) {
@@ -276,11 +279,13 @@ export function leaderboardsView(feed, today) {
   const starCache = {};
   const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
   // group: null = all pieces; 'freshman' / 'varsity' = pieces done in those grades.
+  const all = '0000-00-00';
   const board = (test, from, group) => {
     const best = {};
     feed.benchmarks.forEach((b) => {
       const a = byId[b.athleteId];
       if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
+      if (isAlum(a) && (from !== all || group)) return;   // Alum: All Time, All filter only
       if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
       if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
     });
@@ -289,12 +294,11 @@ export function leaderboardsView(feed, today) {
       .map((b, i) => {
         const a = byId[b.athleteId];
         return {
-          rank: i + 1, ...athleteSummary(a), active: a.active, alum: a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
+          rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
           dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
         };
       });
   };
-  const all = '0000-00-00';
   return {
     today, yearStart,
     tests: TESTS.map((t) => ({

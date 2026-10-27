@@ -831,6 +831,22 @@ test('ops: backups keep the newest, never archives', () => {
   assert.strictEqual(g.backupsToTrash(names, 0).length, 2, 'always keep at least one');
 });
 
+test('alum squad: no plan targets, not in team GMS', () => {
+  assert.strictEqual(g.squadMatches_('All', 'Alum'), false);
+  assert.strictEqual(g.squadMatches_('Varsity', 'Alum'), false);
+  assert.strictEqual(g.squadMatches_('All', 'Varsity'), true);
+  const settings = {}; g.SETTINGS_DEFAULTS.forEach(([k, v]) => { settings[k] = v; });
+  const roster = [
+    { 'Athlete ID': 'T001', Name: 'Test Rower', Squad: 'Varsity', Role: 'Rower' },
+    { 'Athlete ID': 'T002', Name: 'Test Alum', Squad: 'Alum', Role: 'Rower' }
+  ];
+  const weights = ['T001', 'T002'].map((id) => ({ Date: new Date(2025, 7, 1), 'Athlete ID': id, 'Weight lb': 270 }));
+  const benchmarks = ['T001', 'T002'].map((id) => ({ Date: new Date(2026, 8, 15), 'Athlete ID': id, Test: '2000m', 'Time s': 420 }));
+  const years = g.teamGmsByYear({ benchmarks, weights, roster, squadHistory: [], settings, asOf: new Date(2026, 9, 22) });
+  assert.deepStrictEqual(Array.from(years[0].athletes.map((a) => a.athleteId)), ['T001']);
+  assert.strictEqual(years[0].groups.team.tested, 1);
+});
+
 test('ops: new school year closes the right year and retires graduates', () => {
   const y = (d) => { const r = g.rolloverYear(new Date(d + 'T12:00:00'), '07-01'); return [r.label, r.gradYear]; };
   assert.deepStrictEqual(y('2027-06-10'), ['2026-27', 2027]);

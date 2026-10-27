@@ -171,7 +171,13 @@ function dayKey_(d) {
   return d.getFullYear() + '-' + ('0' + (d.getMonth() + 1)).slice(-2) + '-' + ('0' + d.getDate()).slice(-2);
 }
 
+/** Alum is an explicit squad: only the All Time boards show alumni. */
+function isAlumSquad_(squad) {
+  return /^alum$/i.test(String(squad || '').trim());
+}
+
 function squadMatches_(planSquad, athleteSquad) {
+  if (isAlumSquad_(athleteSquad)) return false;   // Alum: no weekly plan (David, 2026-10-27)
   var s = String(planSquad || 'All').trim();
   return s === '' || s === 'All' || s === String(athleteSquad).trim();
 }

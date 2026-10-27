@@ -8,7 +8,7 @@ Source of truth is `HEADERS` in `apps-script/Config.gs`. Times are seconds (`…
 | Athlete ID | A001… auto-assigned, never reused |
 | Name | Must be unique; this is what the Form shows |
 | Slack member ID | For phase 2 group DMs |
-| Squad | Varsity / Novice |
+| Squad | Varsity / Novice / Alum. Alum (explicit, set by hand) appears only on the All Time boards: no plan, averages, team GMS, cards or season boards |
 | Role | Rower / Coxswain (coxswains only in "Entered by") |
 | OYO group | Standard / Performance |
 | OYO required min, OYO elite min | Per-athlete override; blank = group default from Settings |

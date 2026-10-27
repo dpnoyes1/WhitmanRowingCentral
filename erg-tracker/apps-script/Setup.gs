@@ -152,7 +152,7 @@ function addRosterValidation_(sheet) {
     sheet.getRange(2, h.indexOf(col) + 1, rows, 1).setDataValidation(
       SpreadsheetApp.newDataValidation().requireValueInList(values, true).setAllowInvalid(false).build());
   };
-  list('Squad', ['Varsity', 'Novice']);
+  list('Squad', ['Varsity', 'Novice', 'Alum']);
   list('Role', ['Rower', 'Coxswain']);
   list('OYO group', ['Standard', 'Performance']);
   list('Active', ['Yes', 'No']);
