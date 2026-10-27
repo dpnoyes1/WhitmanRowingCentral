@@ -893,7 +893,7 @@ test('refreshFormQuestions_ resets the Activity choices from ACTIVITIES', () => 
   };
   g.refreshFormQuestions_({ getItems: (t) => (t === 'LIST' ? [otherList, listItem] : []) });
   delete ctx.FormApp;
-  assert.deepStrictEqual(Array.from(choices), g.ACTIVITIES.map((a) => a[0]));
+  assert.deepStrictEqual(Array.from(choices), Array.from(g.ACTIVITIES, (a) => a[0]));
   assert.ok(!choices.includes('Hike') && !choices.includes('Walk'));
 });
 
