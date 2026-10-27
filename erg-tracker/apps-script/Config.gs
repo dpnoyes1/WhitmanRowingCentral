@@ -103,8 +103,6 @@ var ACTIVITIES = [
   ['Stair stepper', 0.9],
   ['Swim', 0.8],
   ['Elliptical', 0.7],
-  ['Hike', 0.3],
-  ['Walk', 0.1],
   ['Lifting', 0]
 ];
 
@@ -137,10 +135,8 @@ var SETTINGS_DEFAULTS = [
   ['return_to_training_days', '5', 'Consecutive days out that trigger a ramp-back week'],
   ['autoaccept_hours', '48', 'Phase 2: unchanged auto-labels accepted after this'],
   ['load.jump_pct', '15', "Coaches see a flag when a week's weighted minutes are more than this % above the average of the 3 weeks before (fewer in her first weeks)"],
-  ['oyo.standard.required', '60', 'Weekly weighted OYO minutes'],
-  ['oyo.standard.elite', '120', ''],
-  ['oyo.performance.required', '90', 'PLACEHOLDER default; per-athlete override on Roster'],
-  ['oyo.performance.elite', '180', 'PLACEHOLDER default; per-athlete override on Roster'],
+  ['oyo.standard.required', '60', 'Weekly weighted OYO minutes Required, the same for every athlete'],
+  ['oyo.standard.elite', '120', 'Weekly weighted OYO minutes Elite, the same for every athlete'],
   ['oyo.break.dates', '', 'Breaks with no practice, e.g. 12/23/2026-01/03/2027; more than one separated by ;. A week with 4 or more break days uses the break goals'],
   ['oyo.break.required', '', 'Weekly OYO Required in break weeks, for everyone. Blank = the normal goal'],
   ['oyo.break.elite', '', 'Weekly OYO Elite in break weeks, for everyone. Blank = the normal goal'],

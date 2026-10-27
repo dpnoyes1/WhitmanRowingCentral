@@ -79,7 +79,6 @@ test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaf
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
   assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
   assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
-  assert.strictEqual(S.weightedMinutes(piece('Walk', 14), st), 0);
   assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
   const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
   assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);

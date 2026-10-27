@@ -136,8 +136,6 @@ var DUMMY_OYO_ACTIVITIES = {
   'Swim': function (rng, min) { return Math.round(min * rng.range(28, 40)); },
   'Elliptical': function () { return ''; },
   'Stair stepper': function () { return ''; },
-  'Hike': function (rng, min) { return Math.round(min * rng.range(55, 75)); },
-  'Walk': function (rng, min) { return Math.round(min * rng.range(80, 100)); },
   'Lifting': function () { return ''; }
 };
 
@@ -232,23 +230,16 @@ function buildDummyData(opts) {
       hr: rng.chance(0.4),
       oyo: oyo,
       favorites: [rng.pick(['Run', 'Erg (RowErg)', 'Bike']), rng.pick(['Run', 'Swim', 'Elliptical', 'SkiErg', 'BikeErg']),
-        rng.pick(['Walk', 'Hike', 'Stair stepper', 'Erg (RowErg)', 'Lifting'])],
+        rng.pick(['Stair stepper', 'Erg (RowErg)', 'Lifting'])],
       joined: special === 'noTests' ? dummyDate_([2026, 9, 12]) : special === 'lateJoiner' ? dummyDate_([2026, 8, 1]) : null
     };
   });
-  // Top varsity use the Performance OYO group; one has a personal override.
-  var perf = athletes.filter(function (a) { return !a.novice; })
-    .sort(function (x, y) { return x.start2k - y.start2k; }).slice(0, 5);
-  perf.forEach(function (a) { a.oyoGroup = 'Performance'; });
-  perf[4].oyoOverride = [100, 200];
 
   athletes.forEach(function (a) {
     var notes = { lateJoiner: 'joined in September', noTests: 'joined Oct 12, not tested yet',
       injured: 'concussion Oct 12, cleared Oct 20', lowAttendance: 'often misses practice' }[a.special];
     data.roster.push({
       'Athlete ID': a.id, 'Name': a.name, 'Slack member ID': '', 'Squad': a.squad, 'Role': 'Rower',
-      'OYO group': a.oyoGroup || 'Standard',
-      'OYO required min': a.oyoOverride ? a.oyoOverride[0] : '', 'OYO elite min': a.oyoOverride ? a.oyoOverride[1] : '',
       'Active': 'Yes', 'Notes': DUMMY.MARK + (notes ? ': ' + notes : ''),
       'Birthday': a.birthday, 'Grad year': a.gradYear
     });
@@ -401,8 +392,7 @@ function buildDummyData(opts) {
       }, dummyIntervals_(rng, ps, watts2k(a, p.date), settings, a.effort, false));
     });
     // OYO: weekly weighted minutes per habit. The last week is only partly done (it is Friday).
-    var group = a.oyoGroup === 'Performance' ? [90, 180] : [60, 120];
-    if (a.oyoOverride) group = a.oyoOverride;
+    var group = [60, 120];
     for (var w = 0; w < 3; w++) {
       var mon = addDays_(planStart, 7 * w);
       if (a.joined && mon < addDays_(a.joined, -6)) continue;
@@ -417,7 +407,7 @@ function buildDummyData(opts) {
         var date = addDays_(mon, (dow + 6) % 7);
         if (date > practiceEnd) continue;
         var act = rng.chance(0.75) ? rng.pick(a.favorites) : rng.pick(Object.keys(DUMMY_OYO_ACTIVITIES));
-        var minutes = act === 'Walk' || act === 'Hike' ? rng.int(30, 75) : rng.int(20, 55);
+        var minutes = rng.int(20, 55);
         var two = act === 'Erg (RowErg)' && rng.chance(0.4);
         var each = two ? Math.round(minutes / 2) : minutes;
         var ivs = (two ? [1, 2] : [1]).map(function (n, i, arr) {
@@ -429,9 +419,9 @@ function buildDummyData(opts) {
         var label = act === 'Erg (RowErg)' ? 'erg' : act.toLowerCase();
         addEntry({ 'Date': date, 'Athlete ID': a.id, 'Athlete': a.name, 'Session type': 'OYO',
           'Submitted at': submittedAt(date, rng.chance(0.15)), 'Entered by': a.name, 'Activity': act,
-          'Warmup s': /Walk|Hike|Lifting/.test(act) ? 0 : 300, 'Cooldown s': 0,
+          'Warmup s': act === 'Lifting' ? 0 : 300, 'Cooldown s': 0,
           'Main set': (two ? '2 x ' + each + "'" + " r2'" : minutes + "'") + ' ' + label, 'Zone': zone,
-          'RPE': act === 'Walk' ? rng.int(2, 3) : rpe(zone), 'Avg HR': hr(a, zone),
+          'RPE': rpe(zone), 'Avg HR': hr(a, zone),
           'Drag factor': /Erg \(RowErg\)/.test(act) ? a.drag : ''
         }, ivs);
         done += minutes * (mult[act] || 0);

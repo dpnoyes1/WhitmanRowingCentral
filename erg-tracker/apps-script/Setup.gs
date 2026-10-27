@@ -154,7 +154,6 @@ function addRosterValidation_(sheet) {
   };
   list('Squad', ['Varsity', 'Novice', 'Alum']);
   list('Role', ['Rower', 'Coxswain']);
-  list('OYO group', ['Standard', 'Performance']);
   list('Active', ['Yes', 'No']);
   sheet.getRange(2, h.indexOf('Birthday') + 1, rows, 1).setDataValidation(
     SpreadsheetApp.newDataValidation().requireDate().setAllowInvalid(false)

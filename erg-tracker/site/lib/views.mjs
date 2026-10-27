@@ -133,7 +133,7 @@ export function athleteView(feed, id, today) {
 
   return {
     today, weekStart: monday, yearStart,
-    athlete: { ...athleteSummary(a), active: a.active, oyoGroup: a.oyoGroup, oyoRequired: goals.oyoRequired, oyoElite: goals.oyoElite, breakWeek: goals.breakWeek },
+    athlete: { ...athleteSummary(a), active: a.active, oyoRequired: goals.oyoRequired, oyoElite: goals.oyoElite, breakWeek: goals.breakWeek },
     week: {
       practicesDone: week.filter((r) => r.done).length, practicesExpected: week.length,
       practiceMin: round(thisWeek.practice), oyoMin: round(thisWeek.oyo), oyoStatus: oyoStatus(thisWeek.oyo, goals)
@@ -412,7 +412,7 @@ export function oyoView(feed, today) {
     const now = (thisWeek[a.id] || { oyo: 0 }).oyo, before = (lastWeek[a.id] || { oyo: 0 }).oyo;
     const g = oyoGoals(a, monday, feed.settings), lg = oyoGoals(a, lastMonday, feed.settings);
     return {
-      ...athleteSummary(a), oyoGroup: a.oyoGroup, required: g.oyoRequired, elite: g.oyoElite,
+      ...athleteSummary(a), required: g.oyoRequired, elite: g.oyoElite,
       minutes: round(now), status: oyoStatus(now, g),
       lastWeek: { minutes: round(before), status: oyoStatus(before, lg), required: lg.oyoRequired, elite: lg.oyoElite },
       streak: oyoWeekStreak(a, feed, today)

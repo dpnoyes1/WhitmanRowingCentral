@@ -156,15 +156,14 @@ function siteFeed(inputs, asOf) {
 
   var multipliers = {};
   ACTIVITIES.forEach(function (a) { multipliers[a[0]] = num('multiplier.' + a[0], a[1]); });
-  var oyoDefaults = {
-    Standard: { required: num('oyo.standard.required', 60), elite: num('oyo.standard.elite', 120) },
-    Performance: { required: num('oyo.performance.required', 90), elite: num('oyo.performance.elite', 180) }
-  };
+  // One OYO Required and Elite for every athlete (David, 2026-10-27). The old
+  // Roster columns OYO group / required / elite are no longer read.
+  var oyoRequired = num('oyo.standard.required', 60);
+  var oyoElite = num('oyo.standard.elite', 120);
 
   var athletes = inputs.roster.filter(function (r) {
     return String(r.Name || '').trim() !== '' && String(r['Athlete ID'] || '').trim() !== '';
   }).map(function (r) {
-    var group = /perf/i.test(String(r['OYO group'])) ? 'Performance' : 'Standard';
     return {
       id: String(r['Athlete ID']).trim(),
       name: String(r.Name).trim(),
@@ -173,9 +172,8 @@ function siteFeed(inputs, asOf) {
       grade: schoolYear(r['Grad year'], asOf),
       gradYear: feedNum_(r['Grad year']),
       active: isActive_(r.Active),
-      oyoGroup: group,
-      oyoRequired: feedNum_(r['OYO required min']) !== null ? feedNum_(r['OYO required min']) : oyoDefaults[group].required,
-      oyoElite: feedNum_(r['OYO elite min']) !== null ? feedNum_(r['OYO elite min']) : oyoDefaults[group].elite
+      oyoRequired: oyoRequired,
+      oyoElite: oyoElite
     };
   });
   var known = {};
@@ -282,7 +280,8 @@ function siteFeed(inputs, asOf) {
       timezone: s.timezone || 'America/New_York',
       schoolYearStart: s.school_year_start || '07-01',
       multipliers: multipliers,
-      oyoDefaults: oyoDefaults,
+      oyoRequired: oyoRequired,
+      oyoElite: oyoElite,
       rateCap30r20: rateCap,
       makeupWindowDays: num('makeup_window_days', 7),
       loadJumpPct: num('load.jump_pct', 15),

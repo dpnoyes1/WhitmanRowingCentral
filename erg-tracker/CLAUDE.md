@@ -38,7 +38,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 - Training minutes (headline) = work + warm-up and cool-down. Rest is never training minutes (David, 2026-10-25). Warm-up and cool-down count only on the erg (RowErg or BikeErg), only when the average split (work time / work meters, BikeErg meters at half) is faster than 3:00/500m, and then as Aerobic minutes. Slower splits and non-erg sessions get no warm-up or cool-down minutes. Constant: `WARMCOOL_MAX_SPLIT_S` in `site/lib/stats.mjs`.
 - Total meters = work meters + optional warmup and cooldown meters (`Warmup m`, `Cooldown m` in Entries). Rest meters never count (David, 2026-10-25). Rest never counts toward performance scoring.
 - Lifting (David, 2026-10-23): no meters and no OYO minutes (multiplier 0, and `meterTotal` in `site/lib/stats.mjs` counts 0 meters). The Form's Work meters allows 0 so a lifting session logs with 0. Warmup is not static day to day, so the Form no longer prefills it (only drag factor 105 is prefilled); `refreshFormQuestions_` updates the live Form in place when Set up Sheet and Form is run.
-- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings. SkiErg is removed from the Form and Settings (David, 2026-10-25). Old SkiErg rows keep their data and still count at 1.0, because an activity with no Settings row weighs 1.0.
+- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Lifting 0. Editable in Settings. Hike and Walk are removed from the Form and Settings (David, 2026-10-27); old rows with them would now weigh 1.0, like SkiErg. SkiErg is removed from the Form and Settings (David, 2026-10-25). Old SkiErg rows keep their data and still count at 1.0, because an activity with no Settings row weighs 1.0.
 - Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
 - Load trend (David, 2026-10-23): weekly weighted minutes per athlete. Coaches see a flag when a week is more than Settings `load.jump_pct` (15) above the average of the 3 weeks before; in her first weeks the average uses the weeks since her first session (her first week is never flagged). `loadTrend` in `site/lib/stats.mjs`. The old `spike_threshold_pct` row is unused.
 - Effort: no new Form question (no soreness; wellness stays out of scope). The site charts weekly average Session RPE, weighted by training minutes.
@@ -46,7 +46,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 ## OYO goals
 
-Weekly weighted minutes. Standard group Required 60 / Elite 120. Performance group per-athlete (placeholder 90/180; Roster overrides). Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
+Weekly weighted minutes. Required 60 / Elite 120 for every athlete (Settings `oyo.standard.*`). No separate Elite or Performance group and no per-athlete override (David, 2026-10-27); the Roster columns OYO group / OYO required min / OYO elite min stay in the sheet for the header contract but are not read. Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
 
 Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practices or scheduled workouts, so everything is OYO. Settings `oyo.break.dates` holds the range(s) and `oyo.break.required` / `oyo.break.elite` the goals for everyone in a break week (blank = her usual goal). A Mon-Sun week with 4+ break days is a break week (`isBreakWeek` / `oyoGoals` in `site/lib/stats.mjs`). Real dates go in Settings only.
 
@@ -156,7 +156,6 @@ Logic in `apps-script/Ops.gs`, guide in `docs/SETUP.md` Parts C and D.
 
 ## Open questions
 
-- Performance default targets (placeholder 90/180).
 - Rewards for milestones and Elite. Team shoutouts in Slack.
 
 ## Out of scope by decision
