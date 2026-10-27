@@ -660,7 +660,7 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
   // Her workout list: this school year's workouts with splits, every zone tag she logged.
   let body = await (await get('/api/athlete/A901', her)).json();
   assert.ok(body.workouts.length > 0 && body.workouts.every((w) => w.id && w.status !== 'Out'));
-  assert.ok(body.workouts.some((w) => w.zone === 'AT'), 'zone tags come through');
+  assert.ok(body.workouts.some((w) => w.zone === 'Threshold'), 'zone tags come through');
   assert.strictEqual((await (await get('/api/athlete/A902', her)).json()).workouts.length, 0, 'teammates get no list');
   // Her own workout: totals plus splits for the current school year.
   const mine = body.workouts.find((w) => w.date >= body.yearStart && feed.logged.some((l) => l.id === w.id));

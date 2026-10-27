@@ -401,7 +401,7 @@ async function showAthlete(id) {
 
 // ---- my workouts: filter by zone and school year, click in for splits -----
 
-const WORKOUT_ZONES = ['UT2', 'UT1', 'AT', 'AN'];
+const WORKOUT_ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 const workoutFilter = { year: 'current', zone: '' };   // remembered while the page is open
 
 function workoutsCard(rows, yearStart) {
@@ -417,7 +417,7 @@ function workoutsCard(rows, yearStart) {
     <p class="muted small">Open a workout to see its splits against your targets. Splits are kept for this school year; older workouts show totals only.</p></div>`;
 }
 
-/** Rows for the current filter. Zone filter is on the Zone tag (UT2, UT1, AT, AN). */
+/** Rows for the current filter. Zone filter is on the Zone tag (Aerobic, Threshold, Anaerobic). */
 function workoutList(rows, yearStart) {
   const shown = rows.filter((r) => (workoutFilter.year === 'all' || r.date >= yearStart) && (!workoutFilter.zone || r.zone === workoutFilter.zone));
   if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
