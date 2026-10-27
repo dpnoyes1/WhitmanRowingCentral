@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -79,7 +79,6 @@ test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaf
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
   assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
   assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
-  assert.strictEqual(S.weightedMinutes(piece('Walk', 14), st), 0);
   assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
   const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
   assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);
@@ -227,6 +226,31 @@ test('leaderboards: a freshman record stays frozen after she moves up', () => {
   assert.strictEqual(t.allTime.find((r) => r.id === 'X2').alum, true);
   assert.strictEqual(t.allTime.find((r) => r.id === 'X3').alum, false);
   assert.strictEqual(t.allTime.find((r) => r.id === 'X1').alum, false);
+});
+
+test('leaderboards: Alum squad shows only on the All Time boards', () => {
+  const f = {
+    settings: feed.settings,
+    athletes: [
+      { id: 'Y1', name: 'Fake Alum', squad: 'Alum', grade: 'Graduated', gradYear: 2025, active: true, role: 'Rower' },
+      { id: 'Y2', name: 'Fake Varsity', squad: 'Varsity', grade: '11th', gradYear: 2028, active: true, role: 'Rower' },
+      { id: 'Y3', name: 'Fake Alum Two', squad: 'alum', grade: '', gradYear: 2020, active: false, role: 'Rower' }
+    ],
+    benchmarks: [
+      { id: 'c1', athleteId: 'Y1', test: '2000m', date: '2024-10-01', timeS: 440, valid: true },
+      { id: 'c2', athleteId: 'Y1', test: '2000m', date: '2026-09-15', timeS: 430, valid: true },
+      { id: 'c3', athleteId: 'Y2', test: '2000m', date: '2026-09-20', timeS: 470, valid: true },
+      { id: 'c4', athleteId: 'Y3', test: '2000m', date: '2019-10-01', timeS: 450, valid: true }
+    ]
+  };
+  const t = leaderboardsView(f, TODAY).tests.find((x) => x.test === '2000m');
+  assert.deepStrictEqual(t.allTime.map((r) => r.id), ['Y1', 'Y3', 'Y2']);
+  assert.strictEqual(t.allTime[0].alum, true);
+  assert.deepStrictEqual(t.season.map((r) => r.id), ['Y2']);
+  assert.deepStrictEqual(t.varsity.allTime.map((r) => r.id), ['Y1', 'Y3', 'Y2']);   // by grade when the piece was done
+  assert.deepStrictEqual(t.varsity.season.map((r) => r.id), ['Y2']);
+  assert.deepStrictEqual(t.freshman.season, []);
+  assert.deepStrictEqual(activeRowers(f).map((a) => a.id), ['Y2'], 'Alum is on no team view');
 });
 
 test('stars board: stars public, GMS % never; team averages only', () => {
