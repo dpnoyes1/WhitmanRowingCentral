@@ -510,7 +510,19 @@ function loadDummyData() {
     'Try Preview week ahead (Oct 26) and Check week against plan (Oct 5, 12 or 19).');
 }
 
-/** Menu: removes every dummy row from every tab, keeping everything else. */
+/** Sheet row numbers (2 = first data row) of the rows isDummyRow_ marks as dummy in a tab's objects. */
+function dummyRowNumbers_(tabName, objs) {
+  var rows = [];
+  objs.forEach(function (r, i) { if (isDummyRow_(tabName, r)) rows.push(i + 2); });
+  return rows;
+}
+
+/**
+ * Menu: removes every dummy row from every tab, keeping everything else. Deletes
+ * only the marked rows, bottom up, so no other row is ever rewritten (a clear and
+ * rewrite of the whole tab removed unmarked Roster, Workouts and Benchmarks rows
+ * on 2026-10-27).
+ */
 function clearDummyData() {
   var ui = SpreadsheetApp.getUi();
   var ok = ui.alert('Clear dummy data?', 'Removes every row marked as dummy data from every tab. Other rows stay.',
@@ -518,17 +530,15 @@ function clearDummyData() {
   if (ok !== ui.Button.OK) return;
   var removed = 0;
   DUMMY_TABS.forEach(function (name) {
+    var rows = dummyRowNumbers_(name, readObjects_(name));
     var sheet = tab_(name);
-    var width = writableWidth_(name);
-    var last = lastDataRow_(sheet, width);
-    if (last < 2) return;
-    var keep = [];
-    readObjects_(name).slice(0, last - 1).forEach(function (r) {
-      if (isDummyRow_(name, r)) { removed += 1; return; }
-      keep.push(HEADERS[name].slice(0, width).map(function (h) { return r[h]; }));
-    });
-    sheet.getRange(2, 1, last - 1, width).clearContent();
-    if (keep.length) sheet.getRange(2, 1, keep.length, width).setValues(keep);
+    for (var i = rows.length - 1; i >= 0; i--) {
+      var end = rows[i];
+      var start = end;
+      while (i > 0 && rows[i - 1] === start - 1) { i -= 1; start = rows[i]; }
+      sheet.deleteRows(start, end - start + 1);
+    }
+    removed += rows.length;
   });
   SpreadsheetApp.flush();
   refreshFormDropdowns();
