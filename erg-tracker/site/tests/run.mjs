@@ -658,6 +658,10 @@ test('balance: watts ratios, recency weighting, rule comparison (coaches only)',
   const bv = balanceView(feed, TODAY);
   assert.strictEqual(bv.rowers.length, 30);
   assert.ok(bv.rowers.some((x) => x.endurance && x.endurance.rules.paul.ratioPct > 100));
+  const withSprint = { ...feed, benchmarks: [...feed.benchmarks, { athleteId: 'A922', test: '100m', date: '2026-10-21', timeS: 19, valid: true }] };
+  const sp = balanceView(withSprint, TODAY).rowers.find((x) => x.id === 'A922').sprint;
+  assert.strictEqual(sp.daysApart, 1);
+  assert.ok(sp.ratioPct > 150 && sp.rules.tracker.ratioPct > sp.rules.paul.ratioPct);   // 0.786 rule is steeper than Paul's Law
   assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
 });
 
