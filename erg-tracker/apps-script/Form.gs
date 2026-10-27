@@ -212,7 +212,8 @@ var DRAG_TEST_HELP = 'Required for tests. Prefilled at ';
 
 /**
  * Brings the questions of the live form up to date in place (the link stays the
- * same): warmup help text and Work meters allowing 0 for lifting.
+ * same): warmup help text, Work meters allowing 0 for lifting, and the Activity
+ * choices from ACTIVITIES (so removing an activity reaches the live form).
  */
 function refreshFormQuestions_(form) {
   var zeroOk = FormApp.createTextValidation().setHelpText(WORK_M_HELP)
@@ -224,6 +225,11 @@ function refreshFormQuestions_(form) {
     'Drag factor on the test (optional)': Q.T_DRAG,
     'Drag factor during the test (optional)': Q.D_DRAG
   };
+  form.getItems(FormApp.ItemType.LIST).forEach(function (item) {
+    if (item.getTitle() === Q.ACTIVITY) {
+      item.asListItem().setChoiceValues(ACTIVITIES.map(function (a) { return a[0]; }));
+    }
+  });
   form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
     var title = item.getTitle();
     if (title === Q.WARMUP || title === Q.B_WARMUP) {
