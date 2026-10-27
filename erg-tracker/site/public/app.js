@@ -278,6 +278,7 @@ async function showTeam() {
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
+      ${t.splits ? splitsCard(t.splits) : ''}
       <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
         ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
@@ -290,6 +291,15 @@ async function showTeam() {
     wireFooter();
   };
   render();
+}
+
+/** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
+function splitsCard(s) {
+  return `<div class="card"><h2>Average season-best split</h2>
+    <p class="muted small">Each rower's best 2k or 20' this school year as a split per 500m (20' at 2k pace, minus 8.5 s). Ranked fastest first, team-wide.</p>
+    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">Average split</th></tr>
+    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td><td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
+    </table></div></div>`;
 }
 
 /**

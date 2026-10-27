@@ -285,6 +285,67 @@ export function leaderboardsView(feed, today) {
   };
 }
 
+// ---- coach split averages (David, 2026-10-25) --------------------------------
+
+const SPLIT_GROUPS = [
+  { key: 'top8', label: 'Top 8' },
+  { key: 'second8', label: 'Second 8' },
+  { key: 'top16', label: 'Top 16' },
+  { key: 'varsity', label: 'Varsity' },
+  { key: 'freshman', label: 'Freshman' },
+  { key: 'all', label: 'All' }
+];
+
+/**
+ * A result as seconds per 500m. 2k: time / 4. 20': its 2k-equivalent split
+ * (20' split minus 8.5 s, as in GMS and twoKFrom20), so both tests compare.
+ */
+function splitOf(b) {
+  const v = resultValue(b);
+  if (!v) return null;
+  if (b.test === '2000m') return v / 4;
+  if (b.test === '20min') return (1200 * 500) / v - 8.5;
+  return null;
+}
+
+/**
+ * Coaches only. Each rower's season-best split (2k or 20'), ranked fastest
+ * first (team-wide, all rowers), then the average split of each group. Every
+ * average is shown, however few rowers it has. Freshman = the 9th-grade
+ * class, as the feed works it out from Grad year.
+ */
+export function teamSplitsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const rowers = activeRowers(feed);
+  const best = {};
+  feed.benchmarks.forEach((b) => {
+    if (!STAR_TESTS.includes(b.test) || !b.valid || b.date < yearStart || b.date > today) return;
+    const s = splitOf(b);
+    if (s === null || !(s > 0)) return;
+    if (!(b.athleteId in best) || s < best[b.athleteId]) best[b.athleteId] = s;
+  });
+  const rank = {};
+  rowers.filter((a) => a.id in best)
+    .sort((x, y) => best[x.id] - best[y.id])
+    .forEach((a, i) => { rank[a.id] = i + 1; });
+
+  const inGroup = {
+    top8: (a) => rank[a.id] <= 8,
+    second8: (a) => rank[a.id] >= 9 && rank[a.id] <= 16,
+    top16: (a) => rank[a.id] <= 16,
+    varsity: (a) => /^varsity$/i.test(a.squad),
+    freshman: (a) => a.grade === '9th',
+    all: () => true
+  };
+  const groups = SPLIT_GROUPS.map(({ key, label }) => {
+    const members = rowers.filter(inGroup[key]);
+    const splits = members.filter((a) => a.id in best).map((a) => best[a.id]);
+    const avg = splits.length ? splits.reduce((x, y) => x + y, 0) / splits.length : null;
+    return { key, label, avgSplit: round(avg, 1), n: splits.length, rowers: members.length };
+  });
+  return { today, yearStart, groups };
+}
+
 /** Best result by GMS % this season for one athlete and test, or null. */
 function bestGms(feed, id, test, yearStart, today) {
   let best = null;
