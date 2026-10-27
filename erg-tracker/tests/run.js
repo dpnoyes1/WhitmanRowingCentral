@@ -883,4 +883,18 @@ test('site feed: break ranges from Settings', () => {
   assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: null });
 });
 
+test('refreshFormQuestions_ resets the Activity choices from ACTIVITIES', () => {
+  let choices = ['Erg (RowErg)', 'Hike', 'Walk'];
+  const listItem = { getTitle: () => g.Q.ACTIVITY, asListItem() { return this; }, setChoiceValues(v) { choices = v; return this; } };
+  const otherList = { getTitle: () => g.Q.ATHLETE, asListItem() { throw new Error('must not touch other lists'); } };
+  ctx.FormApp = {
+    ItemType: { LIST: 'LIST', TEXT: 'TEXT' },
+    createTextValidation: () => ({ setHelpText() { return this; }, requireNumberBetween() { return this; }, build() { return {}; } })
+  };
+  g.refreshFormQuestions_({ getItems: (t) => (t === 'LIST' ? [otherList, listItem] : []) });
+  delete ctx.FormApp;
+  assert.deepStrictEqual(Array.from(choices), Array.from(g.ACTIVITIES, (a) => a[0]));
+  assert.ok(!choices.includes('Hike') && !choices.includes('Walk'));
+});
+
 console.log(`${passed} tests passed`);
