@@ -152,6 +152,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
     assert.ok(v.season.practicesDone <= v.season.practicesExpected);
     assert.ok(v.streaks.practices <= v.season.practicesExpected);
     v.openMakeups.forEach((m) => assert.ok(S.daysBetween(m.date, TODAY) <= 7));
+    v.openMakeups.forEach((m) => assert.ok(m.sessions.every((s) => s.pieces.length && s.workout), a.name));
     v.bests.forEach((b) => {
       const all = v.tests.filter((t) => t.test === b.test && t.valid).map((t) => t.result);
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);

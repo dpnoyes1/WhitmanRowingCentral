@@ -142,7 +142,7 @@ export function athleteView(feed, id, today) {
       makeupsDone: season.filter((r) => r.how === 'Make-up').length
     },
     streaks: { practices: practiceStreak(record), oyoWeeks: oyoWeekStreak(a, feed, today) },
-    openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays),
+    openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays).map((m) => ({ ...m, sessions: dayPlan(feed, m.date, a) })),
     recentPractices: record.slice(-10).reverse(),
     weekly: weeks.map((w) => {
       const t = weekMinutes(mine, feed.settings, w)[id] || { practice: 0, oyo: 0 };
@@ -475,21 +475,13 @@ export function weekView(feed, today, id = null, opts = {}) {
   const results = opts.results || 'none';
   const monday = addDays(comingMonday(today), 7 * (opts.offset || 0));
   const plan = (feed.weeks || []).find((w) => w.weekStart === monday) || { sessions: [] };
-  const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
   const rowers = activeRowers(feed).sort((x, y) => x.name.localeCompare(y.name));
   let pieces = 0, targeted = 0;
   const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
     day,
     sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquad(s, a.squad))).map((s) => {
-      const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
-      const out = {
-        session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
-        pieces: s.pieces.map((p, i) => {
-          const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
-          if (a) { pieces++; if (t && t.target) targeted++; }
-          return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
-        })
-      };
+      const out = planSession(s, a);
+      if (a) { pieces += out.pieces.length; targeted += out.pieces.filter((p) => p.target).length; }
       const of = (athleteId) => {
         const r = (s.results || []).filter((x) => x.athleteId === athleteId).pop();
         return r ? resultView(r, s.pieces) : null;
@@ -516,4 +508,24 @@ export function weekView(feed, today, id = null, opts = {}) {
     // No 2k or 20' to base targets on: she sees a note; coaches see it as a FLAG row in the Sheet's plan report.
     noTargets: !!a && pieces > 0 && targeted === 0
   };
+}
+
+const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
+
+/** One published session as the athlete sees it: her target per piece (null without an athlete). */
+function planSession(s, a) {
+  const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
+  return {
+    session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
+    pieces: s.pieces.map((p, i) => {
+      const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
+      return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
+    })
+  };
+}
+
+/** The workouts published for one past day, in her squad, with her targets. Make-ups use the missed day's plan. */
+export function dayPlan(feed, day, a) {
+  const plan = (feed.weeks || []).find((w) => w.weekStart === weekStart(day)) || { sessions: [] };
+  return plan.sessions.filter((s) => s.day === day && inSquad(s, a.squad)).map((s) => planSession(s, a));
 }

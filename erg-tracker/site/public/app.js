@@ -351,8 +351,9 @@ async function showAthlete(id) {
   setNav(mine && mine.id === id ? 'me' : 'athletes');
   const oyoMax = Math.max(a.oyoElite * 1.15, w.oyoMin);
   const oyoText = { elite: 'Elite reached', required: 'Required met', short: `${fmtMin(Math.max(0, a.oyoRequired - w.oyoMin))} to Required` }[w.oyoStatus];
-  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2><ul>
-      ${v.openMakeups.map((m) => `<li>Missed ${fmtDay(m.date)}: make it up by <b>${fmtDay(m.makeUpBy)}</b></li>`).join('')}</ul>
+  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2>
+      ${v.openMakeups.map((m) => `<p><b>Missed ${fmtDay(m.date)}</b>: make it up by <b>${fmtDay(m.makeUpBy)}</b></p>
+        ${m.sessions.length ? m.sessions.map((s) => sessionBlock(s, true)).join('') : '<p class="muted small">No workout was published for this day.</p>'}`).join('')}
       <p class="muted small">Log it on the form as "Make-up for a missed practice" with the date you missed.</p></div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
@@ -389,6 +390,10 @@ async function showAthlete(id) {
     ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
   const notYou = document.getElementById('not-you');
   if (notYou) notYou.onclick = signOut;
+  app.querySelectorAll('tr.session-row').forEach((tr) => { tr.onclick = () => { tr.nextElementSibling.hidden = !tr.nextElementSibling.hidden; }; });
+  app.querySelectorAll('button.more-toggle').forEach((b) => {
+    b.onclick = () => { const d = b.nextElementSibling; d.hidden = !d.hidden; b.textContent = d.hidden ? 'Show more' : 'Show less'; };
+  });
   wireTips(app);
   wireFooter();
   wireWorkouts(v.workouts, v.yearStart);
@@ -565,11 +570,15 @@ function nextStarText(g) {
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
 function gmsCard(gms, coach = false) {
   if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="muted">No tests with a GMS yet this season.</p></div>';
+  // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
+  const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
-    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th><th></th></tr>
+    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
-      <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td><td class="small wrap">${g.stars === null ? '' : nextStarText(g)}</td></tr>`).join('')}
-    </table></div><p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
+      <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
+    </table></div>
+    ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
+    <p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
 }
 
 // ---- week ahead ----
@@ -830,7 +839,7 @@ function bestsTable(v) {
   return `<div class="table-wrap"><table><tr><th>Test</th><th class="r">This season</th><th class="r">Split</th><th class="r">All time</th><th>Date</th></tr>
     ${v.bests.map((b) => `<tr><td>${TEST_LABELS[b.test]}</td>
       <td class="r">${b.season ? fmtResult(b.season) : '–'}</td><td class="r">${b.season ? split(b.season) : ''}</td>
-      <td class="r">${fmtResult(b.allTime)}</td><td>${fmtDate(b.allTime.date, { month: 'short', day: 'numeric', year: 'numeric' })}</td></tr>`).join('')}
+      <td class="r">${fmtResult(b.allTime)}</td><td>${fmtDate(b.allTime.date, { month: '2-digit', day: '2-digit', year: '2-digit' })}</td></tr>`).join('')}
   </table></div>`;
 }
 
@@ -845,12 +854,19 @@ function testsTable(tests) {
 
 function sessionsTable(rows) {
   if (!rows.length) return '<p class="muted">Nothing logged yet.</p>';
-  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th>Main set</th><th>Zone</th><th class="r">Minutes</th><th class="r">Weighted</th><th class="r">Meters</th><th class="r">RPE</th></tr>
-    ${rows.map((r) => `<tr><td>${fmtDate(r.date)}</td>
+  // Four columns fit a phone. Tap a row for the rest; the detail row sits under it.
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th class="r">Minutes</th></tr>
+    ${rows.map((r) => {
+      const extra = [
+        r.mainSet && `Main set: ${esc(r.mainSet)}`, r.zone && `Zone: ${esc(r.zone)}`,
+        r.status !== 'Out' && `Weighted: ${fmtMin(r.weighted)}`, r.meters && `Meters: ${fmtNum(r.meters)}`,
+        r.rpe != null && `RPE ${r.rpe}`
+      ].filter(Boolean).join(' · ');
+      return `<tr class="session-row"><td>${fmtDate(r.date)}</td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
-      <td>${esc(r.activity)}</td><td>${esc(r.mainSet)}</td><td>${esc(r.zone)}</td>
-      <td class="r">${r.status === 'Out' ? '' : fmtMin(r.minutes)}</td><td class="r">${r.status === 'Out' ? '' : fmtMin(r.weighted)}</td>
-      <td class="r">${r.meters ? fmtNum(r.meters) : ''}</td><td class="r">${r.rpe ?? ''}</td></tr>`).join('')}
+      <td>${esc(r.activity)}</td><td class="r">${r.status === 'Out' ? '' : fmtMin(r.minutes)}</td></tr>
+      <tr class="detail-row" hidden><td colspan="4" class="small detail">${extra || 'Nothing else logged.'}</td></tr>`;
+    }).join('')}
   </table></div>`;
 }
 
