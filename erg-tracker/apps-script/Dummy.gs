@@ -22,6 +22,8 @@ var DUMMY = {
   PRACTICE_START: [2026, 9, 5],
   PRACTICE_END: [2026, 9, 23],
   PLAN_END: [2026, 9, 30],
+  // Saturday OYO day in the planned week (David 2026-10-25): no practice, 60' OYO, no logged results yet.
+  OYO_DAY: [2026, 9, 31],
   // Test rounds: [20' date, 2k date]. Months are 0-based (7 = August).
   ROUNDS: [[[2026, 7, 24], [2026, 7, 27]], [[2026, 8, 21], [2026, 8, 24]], [[2026, 9, 19], [2026, 9, 22]]]
 };
@@ -57,7 +59,8 @@ var DUMMY_WORKOUTS = [
   ['W07', '2 x 5000m r5:00', [[2, 'Distance', '5000', '5:00', '', 'Aerobic', '22']]],
   ['W08', "20' test", [[1, 'Time', '20:00', '', '', 'Threshold', '']]],
   ['W09', '2k test', [[1, 'Distance', '2000', '', '', 'Anaerobic', '']]],
-  ['W10', "Novice 4 x 6' r2:00", [[4, 'Time', '6:00', '2:00', '', 'Aerobic', '22']]]
+  ['W10', "Novice 4 x 6' r2:00", [[4, 'Time', '6:00', '2:00', '', 'Aerobic', '22']]],
+  ['W11', "OYO 60' steady", [[1, 'Time', '60:00', '', '', 'Aerobic', '']]]
 ];
 
 // Weekday plan: [varsity, novice] Workout IDs, Mon..Fri for each week.
@@ -198,6 +201,9 @@ function buildDummyData(opts) {
         'Workout ID': DUMMY.WORKOUT_PREFIX + t[1], 'Published': true, 'Notes': '' });
     });
   });
+  // Saturday OYO day: a plan row with Session OYO, no practice shift.
+  data.schedule.push({ 'Date': dummyDate_(DUMMY.OYO_DAY), 'Squad': 'All', 'Session': 'OYO',
+    'Workout ID': DUMMY.WORKOUT_PREFIX + 'W11', 'Published': true, 'Notes': '' });
   data.schedule.sort(function (x, y) { return x.Date - y.Date; });
 
   // Athletes: profile, fitness, habits.
