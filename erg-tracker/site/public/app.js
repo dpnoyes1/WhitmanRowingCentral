@@ -705,16 +705,18 @@ async function showOyo() {
     const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
     const met = rows.filter((r) => r.status !== 'short').length, elite = rows.filter((r) => r.status === 'elite').length;
+    // One scale for every bar, so the Required and Elite marks line up down the board.
+    // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
+    const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
       <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)}${(which === 'now' ? v.breakWeek : v.lastBreakWeek) ? ' · <b>break week goals</b>' : ''} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
       <div class="card">${rows.map((r) => {
-        const max = Math.max(r.elite * 1.15, r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}">
           <div class="oyo-name"><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${fmtMin(r.minutes)} / ${r.required}m${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</span></div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div></div>`;
-      }).join('')}<p class="muted small">Marks: Required and Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
+      }).join('')}<p class="muted small">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
