@@ -77,4 +77,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
