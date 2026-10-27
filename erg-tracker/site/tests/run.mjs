@@ -1,5 +1,8 @@
 // Site tests against the dummy feed: `node erg-tracker/site/tests/run.mjs` (no dependencies).
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
 import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
@@ -556,6 +559,22 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   body = await (await get('/api/athlete/A902', her)).json();
   assert.strictEqual(body.insights, null);
   clearFeedCache();
+});
+
+test('home-screen install: manifest and icons match their declared sizes', () => {
+  const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+  const manifest = JSON.parse(fs.readFileSync(path.join(publicDir, 'manifest.webmanifest'), 'utf8'));
+  assert.strictEqual(manifest.start_url, '/');
+  assert.strictEqual(manifest.display, 'standalone');
+  const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+  assert.ok(html.includes('href="/manifest.webmanifest"'));
+  const icons = [...manifest.icons, { src: '/icons/apple-touch-icon.png', sizes: '180x180' }];
+  for (const icon of icons) {
+    const file = fs.readFileSync(path.join(publicDir, icon.src));
+    assert.strictEqual(file.toString('ascii', 1, 4), 'PNG', icon.src);
+    const [w, h] = [file.readUInt32BE(16), file.readUInt32BE(20)];
+    assert.strictEqual(`${w}x${h}`, icon.sizes, icon.src);
+  }
 });
 
 for (const [name, fn] of tests) {
