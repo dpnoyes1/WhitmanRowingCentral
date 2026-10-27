@@ -30,7 +30,8 @@ HEADERS[TABS.ENTRIES] = [
   'Session type', 'Make-up for date', 'Status', 'Activity',
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
-  'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID',
+  'Warmup m', 'Cooldown m'
 ];
 HEADERS[TABS.INTERVALS] = [
   'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'
@@ -38,7 +39,7 @@ HEADERS[TABS.INTERVALS] = [
 HEADERS[TABS.BENCHMARKS] = [
   'Benchmark ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
   'Test', 'Time s', 'Meters', 'Avg rate', 'Drag factor', 'Splits s',
-  'Coach note', 'Source', 'Review status', 'Response ID', 'Entry ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Entry ID', 'Drag check'
 ];
 HEADERS[TABS.WEIGHTS] = [
   'Date', 'Athlete ID', 'Athlete', 'Weight lb', 'Entered by', 'Note'
@@ -96,7 +97,6 @@ var LOGGED_TABS = [TABS.ENTRIES, TABS.INTERVALS, TABS.BENCHMARKS, TABS.WEIGHTS, 
 
 var ACTIVITIES = [
   ['Erg (RowErg)', 1.0],
-  ['SkiErg', 1.0],
   ['BikeErg', 1.0],
   ['Bike', 0.6],
   ['Run', 1.2],
@@ -111,20 +111,20 @@ var ACTIVITIES = [
 // Every test also becomes an Entries session. meters/seconds fill the fixed side
 // of the piece; zone is the default tag for that session (assumption, edit freely).
 var BENCHMARK_TESTS = {
-  '100m': { score: 'time', meters: 100, zone: 'AN' },
-  '500m': { score: 'time', meters: 500, zone: 'AN' },
-  '2000m': { score: 'time', meters: 2000, zone: 'AN' },
-  "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'AT' },
-  '30r20': { score: 'meters', seconds: 1800, zone: 'UT1' }
+  '100m': { score: 'time', meters: 100, zone: 'Anaerobic' },
+  '500m': { score: 'time', meters: 500, zone: 'Anaerobic' },
+  '2000m': { score: 'time', meters: 2000, zone: 'Anaerobic' },
+  "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'Threshold' },
+  '30r20': { score: 'meters', seconds: 1800, zone: 'Aerobic' }
 };
 
-var ZONES = ['UT2', 'UT1', 'AT', 'AN'];
+var ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 var MAX_INTERVALS = 10;
 
 /** [key, default value, note]. Values are stored as text; read with getSettings(). */
 var SETTINGS_DEFAULTS = [
   ['timezone', 'America/New_York', 'Spreadsheet and script time zone'],
-  ['school_year_start', '08-01', 'MM-DD. Leaderboards "School Year" start'],
+  ['school_year_start', '07-01', 'MM-DD. Leaderboards "School Year" start'],
   ['coaches', 'Coach David, Coach Forrest, Coach Greta', 'Comma separated. Shown in "Entered by"'],
   ['default_drag_factor', '105', 'Prefilled; other values flagged for coaches'],
   ['makeup_window_days', '7', 'Make-ups must be within this many days'],
@@ -167,14 +167,12 @@ var SETTINGS_DEFAULTS = [
   ['season.winter_start', '', 'YYYY-MM-DD. Used by "Generate practice schedule"'],
   ['season.winter_end', '', 'YYYY-MM-DD'],
   ['target.default_base', '2k', "Base when a workout piece leaves Base blank: 2k or 20'"],
-  ['target.UT2.2000m', '55-65', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
-  ['target.UT1.2000m', '65-75', 'PLACEHOLDER'],
-  ['target.AT.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
-  ['target.AN.2000m', '95', 'PLACEHOLDER'],
-  ['target.UT2.20min', '65-75', "PLACEHOLDER: % of season-best 20' watts"],
-  ['target.UT1.20min', '75-85', 'PLACEHOLDER'],
-  ['target.AT.20min', '95', 'PLACEHOLDER'],
-  ['target.AN.20min', '110', 'PLACEHOLDER'],
+  ['target.Aerobic.2000m', '60-70', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
+  ['target.Threshold.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
+  ['target.Anaerobic.2000m', '95', 'PLACEHOLDER'],
+  ['target.Aerobic.20min', '70-80', "PLACEHOLDER: % of season-best 20' watts"],
+  ['target.Threshold.20min', '95', 'PLACEHOLDER'],
+  ['target.Anaerobic.20min', '110', 'PLACEHOLDER'],
   ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
   ['form.id', '', 'Written by setup()'],
   ['form.edit_url', '', 'Written by setup()'],
@@ -197,9 +195,11 @@ var Q = {
   MAKEUP_FOR: 'Date of the practice you missed',
   ACTIVITY: 'Activity',
   WARMUP: 'Warmup time',
+  WARMUP_M: 'Warmup meters (optional)',
   MAIN_SET: 'Main set (e.g. 3x10\' r2\')',
   ZONE: 'Main set zone',
   COOLDOWN: 'Cooldown time (optional)',
+  COOLDOWN_M: 'Cooldown meters (optional)',
   RPE: 'Session RPE (how hard was the whole session?)',
   HR: 'Average heart rate (optional)',
   DRAG: 'Drag factor',
@@ -212,12 +212,12 @@ var Q = {
   // Titles must be unique across the whole form, so the two test sections differ slightly.
   T_TIME: 'Test time',
   T_RATE: 'Average stroke rate (optional)',
-  T_DRAG: 'Drag factor on the test (optional)',
+  T_DRAG: 'Drag factor on the test',
   T_SPLITS: '500m splits (optional, comma separated)',
   T_NOTE: 'Test note for coaches (optional)',
   D_METERS: 'Total meters',
   D_RATE: 'Average stroke rate',
-  D_DRAG: 'Drag factor during the test (optional)',
+  D_DRAG: 'Drag factor during the test',
   D_SPLITS: 'Splits per 500m (optional, comma separated)',
   D_NOTE: 'Note on this test for coaches (optional)'
 };

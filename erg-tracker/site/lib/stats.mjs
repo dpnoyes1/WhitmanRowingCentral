@@ -2,7 +2,7 @@
 // (CLAUDE.md rule 2: raw data is stored, multipliers and goals apply here).
 // Pure functions: dates are 'YYYY-MM-DD' strings, times seconds.
 
-export const ZONES = ['UT2', 'UT1', 'AT', 'AN'];
+export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 export const TESTS = ['2000m', '20min', '500m', '100m', '30r20'];
 export const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
 
@@ -30,8 +30,8 @@ export function todayIn(timeZone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
 
-/** First day of the school year containing `day`. mmdd like "08-01". */
-export function schoolYearStart(day, mmdd = '08-01') {
+/** First day of the school year containing `day`. mmdd like "07-01". */
+export function schoolYearStart(day, mmdd = '07-01') {
   const y = Number(day.slice(0, 4));
   const start = `${y}-${mmdd}`;
   return start > day ? `${y - 1}-${mmdd}` : start;
@@ -59,10 +59,41 @@ export function boardGroup(gradYear, day, mmdd = '08-01') {
 
 // ---- minutes ----------------------------------------------------------------
 
-/** Training minutes on the machine: warmup + work + rest + cooldown. */
+/** Warm-up and cool-down count only if the erg's average split is faster than this (s per 500m). */
+export const WARMCOOL_MAX_SPLIT_S = 180; // 3:00/500m (David, 2026-10-25)
+
+/** Average split of the work on the erg, s per 500m. Null for non-erg sessions or no meters. */
+export function ergSplitS(e) {
+  const m = rowMeters(e);
+  return e.workS > 0 && m > 0 ? (e.workS * 500) / m : null;
+}
+
+/**
+ * Warm-up and cool-down seconds that count as Aerobic minutes. Erg only, and
+ * only when the average split is faster than WARMCOOL_MAX_SPLIT_S (David, 2026-10-25).
+ */
+export function warmCoolS(e) {
+  if (e.status === 'Out') return 0;
+  const split = ergSplitS(e);
+  return split !== null && split < WARMCOOL_MAX_SPLIT_S ? (e.warmupS || 0) + (e.cooldownS || 0) : 0;
+}
+
+/** Training minutes: work + counted warm-up and cool-down. Rest is never training minutes (David, 2026-10-25). */
 export function rawMinutes(e) {
   if (e.status === 'Out') return 0;
-  return ((e.warmupS || 0) + (e.workS || 0) + (e.restS || 0) + (e.cooldownS || 0)) / 60;
+  return ((e.workS || 0) + warmCoolS(e)) / 60;
+}
+
+/**
+ * Shortest OYO piece that counts, in raw minutes (David, 2026-10-25): a run
+ * 10, a bike (road or stationary) 20, any other cardio 15. Shorter pieces
+ * still show in the log but weigh 0. Practices are not affected.
+ */
+export const OYO_MIN_MINUTES = { Run: 10, Bike: 20 };
+export const OYO_MIN_DEFAULT = 15;
+
+export function oyoMinimum(activity) {
+  return OYO_MIN_MINUTES[activity] ?? OYO_MIN_DEFAULT;
 }
 
 /**
@@ -73,13 +104,19 @@ export function rawMinutes(e) {
 export function weightedMinutes(e, settings) {
   const raw = rawMinutes(e);
   if (!raw) return 0;
+  if (e.type === 'OYO' && raw < oyoMinimum(e.activity)) return 0;
   const m = settings.multipliers[e.activity];
   return raw * (m === undefined ? 1 : m);
 }
 
-/** Lifting is not distance (David, 2026-10-23): its meters never count toward the season total. Its minutes weigh 0, so it never counts toward OYO either. */
+/**
+ * Total meters: work plus optional warmup and cooldown meters. Rest meters never
+ * count (David, 2026-10-25). Lifting is not distance (David, 2026-10-23): its
+ * meters never count toward the season total. Its minutes weigh 0, so it never
+ * counts toward OYO either.
+ */
 export function meterTotal(e) {
-  return /^lifting$/i.test(e.activity) ? 0 : (e.workM || 0) + (e.restM || 0);
+  return /^lifting$/i.test(e.activity) ? 0 : (e.workM || 0) + (e.warmupM || 0) + (e.cooldownM || 0);
 }
 
 /** 'practice' for practices and make-ups (make-ups count as practice), 'oyo' for OYO. */
@@ -195,12 +232,16 @@ export function oyoWeekStreak(athlete, feed, today) {
   return n;
 }
 
-/** Minutes by zone (raw training minutes) for entries in [from, to]. */
+/**
+ * Minutes by zone (raw training minutes) for entries in [from, to]. Counted
+ * warm-up and cool-down are Aerobic minutes, whatever the session's zone.
+ */
 export function zoneMinutes(entries, from, to) {
   const z = Object.fromEntries(ZONES.map((k) => [k, 0]));
   entries.forEach((e) => {
-    if (e.date < from || e.date > to || !z.hasOwnProperty(e.zone)) return;
-    z[e.zone] += rawMinutes(e);
+    if (e.date < from || e.date > to || e.status === 'Out') return;
+    if (z.hasOwnProperty(e.zone)) z[e.zone] += (e.workS || 0) / 60;
+    z.Aerobic += warmCoolS(e) / 60;
   });
   return z;
 }
@@ -285,12 +326,12 @@ function rowMeters(e) {
 }
 
 /**
- * Steady-state (UT2/UT1) split per week on the RowErg and BikeErg (BikeErg as
+ * Steady-state (Aerobic) split per week on the RowErg and BikeErg (BikeErg as
  * row-equivalent): total main-set time x 500 / meters, so long pieces weigh
  * more. Weeks with no steady erg work have split null.
  */
 export function steadySplits(entries, mondays) {
-  const steady = entries.filter((e) => e.status !== 'Out' && /^UT[12]$/.test(e.zone) && e.workS > 0 && rowMeters(e) > 0);
+  const steady = entries.filter((e) => e.status !== 'Out' && e.zone === 'Aerobic' && e.workS > 0 && rowMeters(e) > 0);
   return mondays.map((mon) => {
     const end = addDays(mon, 6);
     let s = 0, m = 0;

@@ -287,7 +287,7 @@ function startNewSchoolYear() {
     '2. Save each rower\'s squad for ' + y.label + ' (Squad history).\n' +
     '3. Set ' + grads.length + ' athletes with Grad year ' + y.gradYear + ' or earlier to Active = No.\n\n' +
     'Nothing is deleted. Results, stars and leaderboards start over on their own on ' +
-    (s.school_year_start || '08-01') + '; All Time boards keep everything.', ui.ButtonSet.OK_CANCEL);
+    (s.school_year_start || '07-01') + '; All Time boards keep everything.', ui.ButtonSet.OK_CANCEL);
   if (ok !== ui.Button.OK) return;
 
   var archive = copySpreadsheet_(ARCHIVE_PREFIX + y.label);

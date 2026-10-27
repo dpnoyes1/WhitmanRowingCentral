@@ -73,6 +73,7 @@ function buildForm_(settings) {
   form.addListItem().setTitle(Q.ACTIVITY).setRequired(true)
     .setChoiceValues(ACTIVITIES.map(function (a) { return a[0]; }));
   addTime(Q.WARMUP, true, WARMUP_HELP);
+  addNumber(Q.WARMUP_M, false, 0, 20000, 'Meters rowed or moved during the warmup, if you know them. Leave blank if not.');
   form.addTextItem().setTitle(Q.MAIN_SET).setRequired(true)
     .setHelpText('Describe the workout. Then enter each piece below.');
   form.addMultipleChoiceItem().setTitle(Q.ZONE).setRequired(true)
@@ -100,6 +101,7 @@ function buildForm_(settings) {
   // Finish
   var pbFinish = form.addPageBreakItem().setTitle('Finish');
   addTime(Q.COOLDOWN, false);
+  addNumber(Q.COOLDOWN_M, false, 0, 20000, 'Meters rowed or moved during the cooldown, if you know them. Leave blank if not.');
   form.addScaleItem().setTitle(Q.RPE).setRequired(true).setBounds(1, 10)
     .setLabels('Very easy', 'Max effort');
   addNumber(Q.HR, false, 40, 230);
@@ -121,7 +123,7 @@ function buildForm_(settings) {
   var pbTime = form.addPageBreakItem().setTitle('Timed test (100m, 500m, 2000m)');
   addTime(Q.T_TIME, true);
   addNumber(Q.T_RATE, false, 10, 60);
-  addNumber(Q.T_DRAG, false, 50, 250);
+  addNumber(Q.T_DRAG, true, 50, 250, DRAG_TEST_HELP + settings.default_drag_factor);
   form.addTextItem().setTitle(Q.T_SPLITS).setHelpText('2000m only, e.g. 1:55.2, 1:56.0, 1:56.1, 1:54.8');
   form.addParagraphTextItem().setTitle(Q.T_NOTE);
 
@@ -129,7 +131,7 @@ function buildForm_(settings) {
   pbDist.setGoToPage(FormApp.PageNavigationType.SUBMIT);     // end of "Timed test" submits
   addNumber(Q.D_METERS, true, 100, 20000, 'Total meters');
   addNumber(Q.D_RATE, true, 10, 60, 'Required. 30r20 counts when the average is 20 or lower.');
-  addNumber(Q.D_DRAG, false, 50, 250);
+  addNumber(Q.D_DRAG, true, 50, 250, DRAG_TEST_HELP + settings.default_drag_factor);
   form.addTextItem().setTitle(Q.D_SPLITS).setHelpText('e.g. 1:58.0, 1:58.4, ...');
   form.addParagraphTextItem().setTitle(Q.D_NOTE);
 
@@ -206,6 +208,7 @@ function fillMissingAthleteIds_() {
 
 var WARMUP_HELP = 'Time spent warming up before the main set, m:ss. It is different from day to day.';
 var WORK_M_HELP = 'Meters for this piece. Enter 0 for lifting.';
+var DRAG_TEST_HELP = 'Required for tests. Prefilled at ';
 
 /**
  * Brings the questions of the live form up to date in place (the link stays the
@@ -216,12 +219,20 @@ function refreshFormQuestions_(form) {
     .requireNumberBetween(0, 100000).build();
   var workTitles = {};
   for (var n = 1; n <= MAX_INTERVALS; n++) workTitles[qInterval(n).WORK_M] = true;
+  // Test drag was optional and had "(optional)" in its title. Renaming it here keeps the live form link.
+  var oldTestDrag = {
+    'Drag factor on the test (optional)': Q.T_DRAG,
+    'Drag factor during the test (optional)': Q.D_DRAG
+  };
   form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
     var title = item.getTitle();
     if (title === Q.WARMUP || title === Q.B_WARMUP) {
       item.asTextItem().setHelpText(WARMUP_HELP);
     } else if (workTitles[title]) {
       item.asTextItem().setHelpText(WORK_M_HELP).setValidation(zeroOk);
+    } else if (oldTestDrag[title]) {
+      item.setTitle(oldTestDrag[title]).setRequired(true)
+        .setHelpText(DRAG_TEST_HELP + getSettings()['default_drag_factor']);
     }
   });
 }
@@ -229,9 +240,10 @@ function refreshFormQuestions_(form) {
 /** Share link with the drag factor prefilled (warmup is different every day). */
 function prefilledUrl_(form, settings) {
   var response = form.createResponse();
+  var dragTitles = [Q.DRAG, Q.T_DRAG, Q.D_DRAG];
   form.getItems(FormApp.ItemType.TEXT).forEach(function (item) {
     var title = item.getTitle();
-    if (title === Q.DRAG) {
+    if (dragTitles.indexOf(title) >= 0) {
       response.withItemResponse(item.asTextItem().createResponse(settings.default_drag_factor));
     }
   });

@@ -8,7 +8,7 @@
  * - Each athlete counts once, with her best GMS % in the window.
  * - Rank bands are team-wide and use raw erg rank (best 2k-equivalent time,
  *   no weight), not boat placement.
- * - Years are compared school year to date: last year runs from its Aug 1
+ * - Years are compared school year to date: last year runs from its Jul 1
  *   to the same number of days in as today.
  *
  * Weight is read here only to compute each GMS %. Nothing returned by
@@ -50,9 +50,9 @@ function gmsOptionsFromSettings(s) {
   };
 }
 
-/** Start of the school year containing `date`. mmdd like "08-01". */
+/** Start of the school year containing `date`. mmdd like "07-01". */
 function teamGmsYearStart_(date, mmdd) {
-  var p = String(mmdd || '08-01').split('-').map(Number);
+  var p = String(mmdd || '07-01').split('-').map(Number);
   var start = new Date(date.getFullYear(), p[0] - 1, p[1]);
   if (start > date) start = new Date(date.getFullYear() - 1, p[0] - 1, p[1]);
   return start;

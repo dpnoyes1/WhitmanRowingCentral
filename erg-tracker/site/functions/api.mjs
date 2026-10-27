@@ -1,7 +1,7 @@
 import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, workoutView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -27,7 +27,8 @@ export async function handle(req, envFn, deps = {}) {
     if (who.kind === 'athlete' && !a) return json({ error: 'signin' }, 401);   // dropped from the Roster
     return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
   }
-  if (path === '/api/team') return json({ ...teamView(data, today), meta });
+  // Coach split averages on the Team page: coaches only (David, 2026-10-25).
+  if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today) } : {}), meta });
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
@@ -52,9 +53,16 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const { todayPlan, insights, ...rest } = view;
+    const { todayPlan, insights, workouts, ...rest } = view;
     return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
-      insights: coach ? insights : own ? ownInsights(insights) : null, own, coach, meta });
+      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], own, coach, meta });
+  }
+  // One logged workout: her own (or any, for coaches). Splits and targets come with it (David, 2026-10-25).
+  const wk = path.match(/^\/api\/workout\/([A-Za-z0-9_-]+)$/);
+  if (wk) {
+    const entry = data.entries.find((x) => x.id === wk[1]);
+    if (!entry || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No workout with that ID.' }, 404);
+    return json({ ...workoutView(data, wk[1], today), meta });
   }
   return json({ error: 'Not found' }, 404);
 }
@@ -67,4 +75,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };

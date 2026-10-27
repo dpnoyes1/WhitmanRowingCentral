@@ -96,7 +96,7 @@ function roundZones(z) {
 
 function sessionRow(e, settings) {
   return {
-    date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
+    id: e.id, date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
     makeupFor: e.makeupFor || '', minutes: round(rawMinutes(e)), weighted: round(weightedMinutes(e, settings)),
     meters: meterTotal(e) ? round(meterTotal(e)) : null, rpe: e.rpe, test: !!e.benchmarkId
   };
@@ -142,7 +142,7 @@ export function athleteView(feed, id, today) {
       makeupsDone: season.filter((r) => r.how === 'Make-up').length
     },
     streaks: { practices: practiceStreak(record), oyoWeeks: oyoWeekStreak(a, feed, today) },
-    openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays),
+    openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays).map((m) => ({ ...m, sessions: dayPlan(feed, m.date, a) })),
     recentPractices: record.slice(-10).reverse(),
     weekly: weeks.map((w) => {
       const t = weekMinutes(mine, feed.settings, w)[id] || { practice: 0, oyo: 0 };
@@ -160,7 +160,27 @@ export function athleteView(feed, id, today) {
     sessions: mine.filter((e) => e.date <= today)
       .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .slice(0, 30)
+      .map((e) => sessionRow(e, feed.settings)),
+    // Every workout she has logged, for "My workouts" (api.mjs sends it to her and coaches only).
+    workouts: mine.filter((e) => e.date <= today && e.status !== 'Out')
+      .sort((x, y) => (x.date === y.date ? (x.id < y.id ? 1 : -1) : x.date < y.date ? 1 : -1))
       .map((e) => sessionRow(e, feed.settings))
+  };
+}
+
+/**
+ * One logged workout for "My workouts" click-in. Totals always; splits against
+ * targets only for the current school year (feed.logged). null for an unknown ID.
+ */
+export function workoutView(feed, id, today) {
+  const e = feed.entries.find((x) => x.id === id);
+  if (!e) return null;
+  const a = feed.athletes.find((x) => x.id === e.athleteId);
+  return {
+    today,
+    athlete: a ? athleteSummary(a) : null,
+    workout: sessionRow(e, feed.settings),
+    detail: (feed.logged || []).find((x) => x.id === id) || null
   };
 }
 
@@ -285,6 +305,67 @@ export function leaderboardsView(feed, today) {
   };
 }
 
+// ---- coach split averages (David, 2026-10-25) --------------------------------
+
+const SPLIT_GROUPS = [
+  { key: 'top8', label: 'Top 8' },
+  { key: 'second8', label: 'Second 8' },
+  { key: 'top16', label: 'Top 16' },
+  { key: 'varsity', label: 'Varsity' },
+  { key: 'freshman', label: 'Freshman' },
+  { key: 'all', label: 'All' }
+];
+
+/**
+ * A result as seconds per 500m. 2k: time / 4. 20': its 2k-equivalent split
+ * (20' split minus 8.5 s, as in GMS and twoKFrom20), so both tests compare.
+ */
+function splitOf(b) {
+  const v = resultValue(b);
+  if (!v) return null;
+  if (b.test === '2000m') return v / 4;
+  if (b.test === '20min') return (1200 * 500) / v - 8.5;
+  return null;
+}
+
+/**
+ * Coaches only. Each rower's season-best split (2k or 20'), ranked fastest
+ * first (team-wide, all rowers), then the average split of each group. Every
+ * average is shown, however few rowers it has. Freshman = the 9th-grade
+ * class, as the feed works it out from Grad year.
+ */
+export function teamSplitsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const rowers = activeRowers(feed);
+  const best = {};
+  feed.benchmarks.forEach((b) => {
+    if (!STAR_TESTS.includes(b.test) || !b.valid || b.date < yearStart || b.date > today) return;
+    const s = splitOf(b);
+    if (s === null || !(s > 0)) return;
+    if (!(b.athleteId in best) || s < best[b.athleteId]) best[b.athleteId] = s;
+  });
+  const rank = {};
+  rowers.filter((a) => a.id in best)
+    .sort((x, y) => best[x.id] - best[y.id])
+    .forEach((a, i) => { rank[a.id] = i + 1; });
+
+  const inGroup = {
+    top8: (a) => rank[a.id] <= 8,
+    second8: (a) => rank[a.id] >= 9 && rank[a.id] <= 16,
+    top16: (a) => rank[a.id] <= 16,
+    varsity: (a) => /^varsity$/i.test(a.squad),
+    freshman: (a) => a.grade === '9th',
+    all: () => true
+  };
+  const groups = SPLIT_GROUPS.map(({ key, label }) => {
+    const members = rowers.filter(inGroup[key]);
+    const splits = members.filter((a) => a.id in best).map((a) => best[a.id]);
+    const avg = splits.length ? splits.reduce((x, y) => x + y, 0) / splits.length : null;
+    return { key, label, avgSplit: round(avg, 1), n: splits.length, rowers: members.length };
+  });
+  return { today, yearStart, groups };
+}
+
 /** Best result by GMS % this season for one athlete and test, or null. */
 function bestGms(feed, id, test, yearStart, today) {
   let best = null;
@@ -394,21 +475,13 @@ export function weekView(feed, today, id = null, opts = {}) {
   const results = opts.results || 'none';
   const monday = addDays(comingMonday(today), 7 * (opts.offset || 0));
   const plan = (feed.weeks || []).find((w) => w.weekStart === monday) || { sessions: [] };
-  const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
   const rowers = activeRowers(feed).sort((x, y) => x.name.localeCompare(y.name));
   let pieces = 0, targeted = 0;
   const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
     day,
     sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquad(s, a.squad))).map((s) => {
-      const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
-      const out = {
-        session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
-        pieces: s.pieces.map((p, i) => {
-          const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
-          if (a) { pieces++; if (t && t.target) targeted++; }
-          return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
-        })
-      };
+      const out = planSession(s, a);
+      if (a) { pieces += out.pieces.length; targeted += out.pieces.filter((p) => p.target).length; }
       const of = (athleteId) => {
         const r = (s.results || []).filter((x) => x.athleteId === athleteId).pop();
         return r ? resultView(r, s.pieces) : null;
@@ -435,4 +508,24 @@ export function weekView(feed, today, id = null, opts = {}) {
     // No 2k or 20' to base targets on: she sees a note; coaches see it as a FLAG row in the Sheet's plan report.
     noTargets: !!a && pieces > 0 && targeted === 0
   };
+}
+
+const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
+
+/** One published session as the athlete sees it: her target per piece (null without an athlete). */
+function planSession(s, a) {
+  const mine = a && (s.athletes || []).find((x) => x.athlete === a.name);
+  return {
+    session: s.session, squad: s.squad, workout: s.workout, notes: s.notes || '',
+    pieces: s.pieces.map((p, i) => {
+      const t = mine && (mine.targets[i] && mine.targets[i].piece === p.label ? mine.targets[i] : mine.targets.find((x) => x.piece === p.label));
+      return { label: p.label, notes: p.notes || '', target: a ? (t && t.target) || null : undefined };
+    })
+  };
+}
+
+/** The workouts published for one past day, in her squad, with her targets. Make-ups use the missed day's plan. */
+export function dayPlan(feed, day, a) {
+  const plan = (feed.weeks || []).find((w) => w.weekStart === weekStart(day)) || { sessions: [] };
+  return plan.sessions.filter((s) => s.day === day && inSquad(s, a.squad)).map((s) => planSession(s, a));
 }

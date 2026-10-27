@@ -54,11 +54,11 @@ You now have every tab, the Form, a raw responses backup tab, and four triggers:
 ### 4. Plan a week
 
 1. **Workouts tab** is the library. One row per piece, so a workout is one or more rows sharing a Workout ID (e.g. `PYR`).
-   - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone UT1.
+   - Same pieces: one row with Reps, e.g. 3 x Time 20:00, Rest 2:00, Zone Aerobic.
    - Variable intervals (2000/1500/1000/500/250): one row per piece, Piece # 1 to 5, each with its own Work, Rest and target.
    - Common start (8 x 500m, everyone goes together): Reps 8, Distance 500, Start every 3:30, Rest blank. For coach-called starts, Rest = Undefined.
    - Activity defaults to Erg (RowErg). Only RowErg pieces get watts targets.
-   - Target: pick Base (2k or 20') and Target low % / high %. Leave % blank to use the zone default from Settings (`target.<zone>.2000m` / `.20min`). A range (UT2, UT1) shows a range; one number (AT, AN) shows a single target.
+   - Target: pick Base (2k or 20') and Target low % / high %. Leave % blank to use the zone default from Settings (`target.<zone>.2000m` / `.20min`). A range (Aerobic) shows a range; one number (Threshold, Anaerobic) shows a single target.
 2. **Schedule tab:** one row per session: Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID. Tick **Published** when athletes should see it. To plan from last week, use **Erg Tracker > Copy last week (as drafts)**: it copies the previous week's rows 7 days forward, unpublished, and refuses if the week already has rows. Edit, then tick Published.
 3. **Erg Tracker > Preview week ahead** writes a *Week ahead (preview)* tab with every athlete's targets, drafts included. FLAG rows at the top list athletes with no 2k or 20' this season or last; they get no target.
 4. **Erg Tracker > Check week against plan** writes a *Plan check* tab: each logged practice, OYO and make-up checked against its planned workout (did the plan, hit target, watts per interval). Make-ups are checked against the missed day's workout.
@@ -70,7 +70,7 @@ Targets use season-best watts (school year from `school_year_start`), falling ba
 Before entering real athletes, run **Erg Tracker > Load dummy data**. It adds 30 made-up athletes (12 novices in 7th-9th, 18 varsity in 10th-12th) with:
 - practices from Oct 5 to Oct 23, 2026, including Out days, Modified days, and make-ups
 - OYO sessions; some athletes miss Required and some reach Elite
-- a published plan, including the week of Oct 26 so **Preview week ahead** has something to show
+- a published plan, including the week of Oct 26 (Mon-Fri practices, Saturday Oct 31 is 60' OYO) so **Preview week ahead** has something to show
 - weights
 - three rounds of 2k and 20' tests (late August, September and October)
 
@@ -141,7 +141,7 @@ The URL is a secret: it's saved in the script's properties, never in a cell or t
 
 ## Part D: Each new school year
 
-Results, stars, leaderboards and targets already start over on `school_year_start` (Aug 1 at Whitman); nothing needs resetting, and All Time boards keep every result. Between the last race and the first fall practice:
+Results, stars, leaderboards and targets already start over on `school_year_start` (Jul 1 at Whitman); nothing needs resetting, and All Time boards keep every result. Between the last race and the first fall practice:
 
 1. **Erg Tracker > Start new school year.** It closes out the year (the one that just ended if you run it in the first three months after `school_year_start`, otherwise the current one) and asks before doing anything. It:
    - saves an archive copy of the whole Sheet as "Erg tracker archive 2026-27" in the backups folder (never trashed),

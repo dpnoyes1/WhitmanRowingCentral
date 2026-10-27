@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me
+// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -175,9 +175,9 @@ function weeklyChart(rows, caption, load = null) {
     <svg viewBox="0 0 ${W} ${H}" role="img" aria-label="${esc(caption)}">${grid}${bars}</svg>${table}</div>`;
 }
 
-/** One 100% bar of minutes by zone, easy (UT2) to hard (AN). */
+/** One 100% bar of minutes by zone, easy (Aerobic) to hard (Anaerobic). */
 function zoneBar(z) {
-  const zones = ['UT2', 'UT1', 'AT', 'AN'];
+  const zones = ['Aerobic', 'Threshold', 'Anaerobic'];
   const total = zones.reduce((s, k) => s + (z[k] || 0), 0);
   if (!total) return '<p class="muted">No sessions logged yet.</p>';
   const seg = zones.map((k, i) => {
@@ -274,10 +274,11 @@ async function showTeam() {
           `<button data-sq="${k}" aria-pressed="${k === squad}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div></div>
       <div class="grid">
         ${tile('Practice completion', w.completionPct === null ? '–' : w.completionPct + '%', `${w.practicesDone} of ${w.practicesExpected} this week`)}
-        ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Aug 1')}
+        ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Jul 1')}
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
+      ${t.splits ? splitsCard(t.splits) : ''}
       <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
         ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
@@ -290,6 +291,15 @@ async function showTeam() {
     wireFooter();
   };
   render();
+}
+
+/** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
+function splitsCard(s) {
+  return `<div class="card"><h2>Average season-best split</h2>
+    <p class="muted small">Each rower's best 2k or 20' this school year as a split per 500m (20' at 2k pace, minus 8.5 s). Ranked fastest first, team-wide.</p>
+    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">Average split</th></tr>
+    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td><td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
+    </table></div></div>`;
 }
 
 /**
@@ -341,8 +351,9 @@ async function showAthlete(id) {
   setNav(mine && mine.id === id ? 'me' : 'athletes');
   const oyoMax = Math.max(a.oyoElite * 1.15, w.oyoMin);
   const oyoText = { elite: 'Elite reached', required: 'Required met', short: `${fmtMin(Math.max(0, a.oyoRequired - w.oyoMin))} to Required` }[w.oyoStatus];
-  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2><ul>
-      ${v.openMakeups.map((m) => `<li>Missed ${fmtDay(m.date)}: make it up by <b>${fmtDay(m.makeUpBy)}</b></li>`).join('')}</ul>
+  const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2>
+      ${v.openMakeups.map((m) => `<p><b>Missed ${fmtDay(m.date)}</b>: make it up by <b>${fmtDay(m.makeUpBy)}</b></p>
+        ${m.sessions.length ? m.sessions.map((s) => sessionBlock(s, true)).join('') : '<p class="muted small">No workout was published for this day.</p>'}`).join('')}
       <p class="muted small">Log it on the form as "Make-up for a missed practice" with the date you missed.</p></div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)} · OYO ${esc(a.oyoGroup)}${a.active ? '' : ' · inactive'}</p></div>
@@ -376,11 +387,107 @@ async function showAthlete(id) {
       </div><p class="muted small">Filled: done. Ring: made up. Empty: missed.</p></div>
     </div>
     <div class="card"><h2>Tests</h2>${testsTable(v.tests)}</div>
-    <div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>${footer(v.meta)}`;
+    ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
   const notYou = document.getElementById('not-you');
   if (notYou) notYou.onclick = signOut;
+  app.querySelectorAll('tr.session-row').forEach((tr) => { tr.onclick = () => { tr.nextElementSibling.hidden = !tr.nextElementSibling.hidden; }; });
+  app.querySelectorAll('button.more-toggle').forEach((b) => {
+    b.onclick = () => { const d = b.nextElementSibling; d.hidden = !d.hidden; b.textContent = d.hidden ? 'Show more' : 'Show less'; };
+  });
   wireTips(app);
   wireFooter();
+  wireWorkouts(v.workouts, v.yearStart);
+}
+
+// ---- my workouts: filter by zone and school year, click in for splits -----
+
+const WORKOUT_ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
+const workoutFilter = { year: 'current', zone: '' };   // remembered while the page is open
+
+function workoutsCard(rows, yearStart) {
+  return `<div class="card" id="my-workouts"><h2>My workouts</h2>
+    <div class="workout-tools">
+      <div class="seg" role="group" aria-label="School year">
+        <button type="button" data-year="current" aria-pressed="true">This school year</button>
+        <button type="button" data-year="all" aria-pressed="false">All</button></div>
+      <div class="seg" role="group" aria-label="Zone">
+        ${['', ...WORKOUT_ZONES].map((z) => `<button type="button" data-zone="${z}" aria-pressed="${z === '' ? 'true' : 'false'}">${z || 'All zones'}</button>`).join('')}</div>
+    </div>
+    <div id="workout-list">${workoutList(rows, yearStart)}</div>
+    <p class="muted small">Open a workout to see its splits against your targets. Splits are kept for this school year; older workouts show totals only.</p></div>`;
+}
+
+/** Rows for the current filter. Zone filter is on the Zone tag (Aerobic, Threshold, Anaerobic). */
+function workoutList(rows, yearStart) {
+  const shown = rows.filter((r) => (workoutFilter.year === 'all' || r.date >= yearStart) && (!workoutFilter.zone || r.zone === workoutFilter.zone));
+  if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th>Zone</th><th class="r">Minutes</th><th class="r">Meters</th><th class="r">RPE</th></tr>
+    ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
+      <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
+      <td>${esc(r.activity)}</td><td>${esc(r.zone)}</td>
+      <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td><td class="r">${r.rpe ?? ''}</td></tr>`).join('')}
+  </table></div>`;
+}
+
+function wireWorkouts(rows, yearStart) {
+  const card = document.getElementById('my-workouts');
+  if (!card) return;
+  card.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.year) workoutFilter.year = b.dataset.year;
+    if (b.dataset.zone !== undefined) workoutFilter.zone = b.dataset.zone;
+    card.querySelectorAll('[data-year]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.year === workoutFilter.year)));
+    card.querySelectorAll('[data-zone]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.zone === workoutFilter.zone)));
+    document.getElementById('workout-list').innerHTML = workoutList(rows, yearStart);
+  });
+}
+
+/** One logged workout: totals, and when it is in this school year, each interval against its target. */
+async function showWorkout(id) {
+  const v = await api('/api/workout/' + encodeURIComponent(id));
+  const w = v.workout, d = v.detail;
+  const mine = me();
+  const own = mine && mine.id === v.athlete.id;
+  setNav(own ? 'me' : 'athletes');
+  const pills = `${resultPills({ test: w.test || (d && d.test), status: w.status, type: w.type, date: w.date, activity: w.activity, hit: d ? d.hit : null })}`;
+  let body;
+  if (!d) {
+    body = '<p class="muted">Splits are kept for this school year. This workout is older, so only its totals show.</p>';
+  } else {
+    const rowsHtml = d.pieces.length ? d.pieces.map((p, pi) => {
+      const ivs = d.intervals.filter((x) => x.piece === pi);
+      return `<tr><td>${esc(p.label)}</td><td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>
+        <td class="r splits">${workSplits(ivs, d.rowErg, isBike(w))}</td></tr>`;
+    }).join('') : '';
+    const extra = d.intervals.filter((x) => x.piece === null);
+    body = `${d.matches === false ? `<p class="muted small">${esc(d.reason)}</p>` : ''}
+      ${d.pieces.length ? `<table class="pieces"><tr><th></th><th class="r">Target</th><th class="r">Logged</th></tr>${rowsHtml}
+        ${extra.length ? `<tr><td class="muted">Extra</td><td></td><td class="r splits">${workSplits(extra, d.rowErg, isBike(w))}</td></tr>` : ''}</table>`
+        : `<table class="pieces"><tr><th>Interval</th><th class="r">Logged</th></tr>${d.intervals.map((x) => `<tr><td>${x.n}</td><td class="r splits">${workSplits([x], d.rowErg, isBike(w))}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No intervals logged.</td></tr>'}</table>`}
+      <p class="muted small">Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m. Targets are the ones that stood on the day the workout was planned.</p>`;
+  }
+  app.innerHTML = `${staleNote(v.meta)}
+    <div class="head"><div><h1>${esc(v.athlete.name)} · ${fmtDay(w.date)}</h1>
+      <p class="muted"><a href="#/athlete/${encodeURIComponent(v.athlete.id)}">Back to ${own ? 'my page' : esc(v.athlete.name)}</a></p></div></div>
+    <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
+      <div class="result-line">${pills}</div>
+      <div class="grid">
+        ${tile('Minutes', fmtMin(w.minutes), `${fmtMin(w.weighted)} weighted`)}
+        ${tile('Meters', w.meters ? fmtNum(w.meters) : '–', w.zone ? `Zone ${w.zone}` : 'No zone')}
+        ${tile('RPE', w.rpe ?? '–', '')}
+      </div>
+      ${body}</div>${footer(v.meta)}`;
+  wireFooter();
+}
+
+/** Each interval's split (or its time and meters for machines without a split), marked against the target. */
+function workSplits(list, rowErg, bike = false) {
+  if (!list.length) return '<span class="muted">–</span>';
+  return list.map((x) => {
+    if (!rowErg) return `${fmtTime(x.workS)} · ${x.workM ? fmtNum(x.workM) + ' m' : ''}`;
+    return splitsCell([x], bike);
+  }).join(' ');
 }
 
 // ---- load, effort, progress, consistency (own page and coaches only) ------
@@ -425,7 +532,7 @@ function progressCard(ins, coach) {
   const p = ins.projected2k;
   const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> <span class="muted">from ${who} 20' on ${fmtDate(p.from.date)} (${fmtNum(p.from.meters)} m)${p.last2k ? `; last real 2k ${fmtTime(p.last2k.timeS)} on ${fmtDate(p.last2k.date)}` : ''}. An estimate only: ${who} next 2k test is the real answer.</span></p>` : '';
   return `<div class="card"><h2>Progress</h2>
-    <h3>Steady-state split (UT2 and UT1 on the erg)</h3>${trend}
+    <h3>Steady-state split (Aerobic on the erg)</h3>${trend}
     ${lineChart(ins.steady.map((w) => ({ weekStart: w.weekStart, value: w.splitS })), { caption: 'Steady-state split by week, faster is higher', fmt: fmtTime, invert: true, pad: 1, tipLabel: 'Average split' })}
     <p class="muted small">Higher on the chart is faster. BikeErg counts at half its meters, like the rest of the site. Rate and drag aren't taken into account, so read it as a rough trend.</p>
     <h3>Tests this school year</h3>${proj}<div class="two">${table('2000m')}${table('20min')}</div></div>`;
@@ -463,11 +570,15 @@ function nextStarText(g) {
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
 function gmsCard(gms, coach = false) {
   if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="muted">No tests with a GMS yet this season.</p></div>';
+  // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
+  const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
-    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th><th></th></tr>
+    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
-      <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td><td class="small wrap">${g.stars === null ? '' : nextStarText(g)}</td></tr>`).join('')}
-    </table></div><p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
+      <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
+    </table></div>
+    ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
+    <p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'.</p></div>`;
 }
 
 // ---- week ahead ----
@@ -630,7 +741,7 @@ async function showBoards() {
       <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.</p></div></div>
       <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['freshman', 'Fr/Nov (7th-9th)'], ['varsity', 'Varsity (10th-12th)']])}</div>
+        ${seg('group', [['all', 'All'], ['varsity', 'Varsity (10th-12th)'], ['freshman', 'Fr/Nov (7th-9th)']])}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
         <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
@@ -691,7 +802,7 @@ async function showInsights() {
         <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
         <td class="r">${r.month.streak}</td></tr>`).join('')}
     </table></div>
-    <p class="muted small">Steady split: her latest weeks of UT2/UT1 erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
+    <p class="muted small">Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }
@@ -705,16 +816,18 @@ async function showOyo() {
     const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
     const met = rows.filter((r) => r.status !== 'short').length, elite = rows.filter((r) => r.status === 'elite').length;
+    // One scale for every bar, so the Required and Elite marks line up down the board.
+    // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
+    const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
       <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)}${(which === 'now' ? v.breakWeek : v.lastBreakWeek) ? ' · <b>break week goals</b>' : ''} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
       <div class="card">${rows.map((r) => {
-        const max = Math.max(r.elite * 1.15, r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}">
           <div class="oyo-name"><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${fmtMin(r.minutes)} / ${r.required}m${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</span></div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div></div>`;
-      }).join('')}<p class="muted small">Marks: Required and Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
+      }).join('')}<p class="muted small">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
@@ -726,7 +839,7 @@ function bestsTable(v) {
   return `<div class="table-wrap"><table><tr><th>Test</th><th class="r">This season</th><th class="r">Split</th><th class="r">All time</th><th>Date</th></tr>
     ${v.bests.map((b) => `<tr><td>${TEST_LABELS[b.test]}</td>
       <td class="r">${b.season ? fmtResult(b.season) : '–'}</td><td class="r">${b.season ? split(b.season) : ''}</td>
-      <td class="r">${fmtResult(b.allTime)}</td><td>${fmtDate(b.allTime.date, { month: 'short', day: 'numeric', year: 'numeric' })}</td></tr>`).join('')}
+      <td class="r">${fmtResult(b.allTime)}</td><td>${fmtDate(b.allTime.date, { month: '2-digit', day: '2-digit', year: '2-digit' })}</td></tr>`).join('')}
   </table></div>`;
 }
 
@@ -741,12 +854,19 @@ function testsTable(tests) {
 
 function sessionsTable(rows) {
   if (!rows.length) return '<p class="muted">Nothing logged yet.</p>';
-  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th>Main set</th><th>Zone</th><th class="r">Minutes</th><th class="r">Weighted</th><th class="r">Meters</th><th class="r">RPE</th></tr>
-    ${rows.map((r) => `<tr><td>${fmtDate(r.date)}</td>
+  // Four columns fit a phone. Tap a row for the rest; the detail row sits under it.
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th class="r">Minutes</th></tr>
+    ${rows.map((r) => {
+      const extra = [
+        r.mainSet && `Main set: ${esc(r.mainSet)}`, r.zone && `Zone: ${esc(r.zone)}`,
+        r.status !== 'Out' && `Weighted: ${fmtMin(r.weighted)}`, r.meters && `Meters: ${fmtNum(r.meters)}`,
+        r.rpe != null && `RPE ${r.rpe}`
+      ].filter(Boolean).join(' · ');
+      return `<tr class="session-row"><td>${fmtDate(r.date)}</td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
-      <td>${esc(r.activity)}</td><td>${esc(r.mainSet)}</td><td>${esc(r.zone)}</td>
-      <td class="r">${r.status === 'Out' ? '' : fmtMin(r.minutes)}</td><td class="r">${r.status === 'Out' ? '' : fmtMin(r.weighted)}</td>
-      <td class="r">${r.meters ? fmtNum(r.meters) : ''}</td><td class="r">${r.rpe ?? ''}</td></tr>`).join('')}
+      <td>${esc(r.activity)}</td><td class="r">${r.status === 'Out' ? '' : fmtMin(r.minutes)}</td></tr>
+      <tr class="detail-row" hidden><td colspan="4" class="small detail">${extra || 'Nothing else logged.'}</td></tr>`;
+    }).join('')}
   </table></div>`;
 }
 
@@ -783,6 +903,7 @@ async function route() {
     if (page === 'insights' && isCoach()) return await showInsights();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
+    if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
     location.replace(m ? '#/me' : '#/team');

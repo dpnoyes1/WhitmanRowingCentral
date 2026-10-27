@@ -35,20 +35,24 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 ## Volume and weighting
 
-- Training minutes (headline) = warmup + work + rest + cooldown. Work minutes = main set only.
-- Total meters include rest meters. Rest never counts toward performance scoring.
+- Training minutes (headline) = work + warm-up and cool-down. Rest is never training minutes (David, 2026-10-25). Warm-up and cool-down count only on the erg (RowErg or BikeErg), only when the average split (work time / work meters, BikeErg meters at half) is faster than 3:00/500m, and then as Aerobic minutes. Slower splits and non-erg sessions get no warm-up or cool-down minutes. Constant: `WARMCOOL_MAX_SPLIT_S` in `site/lib/stats.mjs`.
+- Total meters = work meters + optional warmup and cooldown meters (`Warmup m`, `Cooldown m` in Entries). Rest meters never count (David, 2026-10-25). Rest never counts toward performance scoring.
 - Lifting (David, 2026-10-23): no meters and no OYO minutes (multiplier 0, and `meterTotal` in `site/lib/stats.mjs` counts 0 meters). The Form's Work meters allows 0 so a lifting session logs with 0. Warmup is not static day to day, so the Form no longer prefills it (only drag factor 105 is prefilled); `refreshFormQuestions_` updates the live Form in place when Set up Sheet and Form is run.
-- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, SkiErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings.
+- Multipliers apply to practice and OYO: Run 1.2, RowErg 1.0, Stair stepper 0.9, BikeErg 1.0 (counts like RowErg, David 2026-10-23), Swim 0.8, Elliptical 0.7, Bike (road or stationary) 0.6, Hike 0.3, Walk 0.1, Lifting 0. Editable in Settings. SkiErg is removed from the Form and Settings (David, 2026-10-25). Old SkiErg rows keep their data and still count at 1.0, because an activity with no Settings row weighs 1.0.
 - Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
 - Load trend (David, 2026-10-23): weekly weighted minutes per athlete. Coaches see a flag when a week is more than Settings `load.jump_pct` (15) above the average of the 3 weeks before; in her first weeks the average uses the weeks since her first session (her first week is never flagged). `loadTrend` in `site/lib/stats.mjs`. The old `spike_threshold_pct` row is unused.
 - Effort: no new Form question (no soreness; wellness stays out of scope). The site charts weekly average Session RPE, weighted by training minutes.
-- Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor default 105; flag anything else for coaches.
+- Every session tagged Aerobic / Threshold / Anaerobic by main set (David, 2026-10-25: UT1 and UT2 are now one Aerobic zone; AT is Threshold; AN is Anaerobic). HR optional. Drag factor is prefilled at 105 on the share link. It is required on both test pages and optional on the Finish page (David, 2026-10-25). A benchmark with no drag factor gets "FLAG: no drag factor" in its Drag check column and a Change log note; Slack alerts to the athlete and coach come later.
 
 ## OYO goals
 
 Weekly weighted minutes. Standard group Required 60 / Elite 120. Performance group per-athlete (placeholder 90/180; Roster overrides). Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
 
 Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practices or scheduled workouts, so everything is OYO. Settings `oyo.break.dates` holds the range(s) and `oyo.break.required` / `oyo.break.elite` the goals for everyone in a break week (blank = her usual goal). A Mon-Sun week with 4+ break days is a break week (`isBreakWeek` / `oyoGoals` in `site/lib/stats.mjs`). Real dates go in Settings only.
+
+## School year (David, 2026-10-25)
+
+One rollover date for everything: **July 1** (Settings `school_year_start` = `07-01`; code defaults match). Season bests, stars, boards, team GMS years, the My workouts year filter and the new-school-year rollover all use it. The live Sheet's Settings cell must be changed to `07-01` once by David; existing data needs no change.
 
 ## Benchmarks, GMS and stars
 
@@ -62,7 +66,7 @@ Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practic
 
 30r20 is valid when **average** rate <= 20.
 
-Every benchmark test also counts as a session (decided 2026-10-22): it writes a Benchmarks row and an Entries row (Practice or OYO, with warmup, cooldown and RPE) plus one Intervals row, linked both ways by `Entry ID` / `Benchmark ID`. Default zones per test (100m/500m/2000m AN, 20' AT, 30r20 UT1) are an assumption in `BENCHMARK_TESTS`.
+Every benchmark test also counts as a session (decided 2026-10-22): it writes a Benchmarks row and an Entries row (Practice or OYO, with warmup, cooldown and RPE) plus one Intervals row, linked both ways by `Entry ID` / `Benchmark ID`. Default zones per test (100m/500m/2000m Anaerobic, 20' Threshold, 30r20 Aerobic) are an assumption in `BENCHMARK_TESTS`.
 
 GMS math (implemented in `apps-script/Gms.gs`, tested against the planning example):
 1. 2k-equivalent split: 20' split - 8.5s; 500m split / 0.895; 100m split (time x 5) / 0.786. T = split x 4.
@@ -77,7 +81,7 @@ An athlete's season stars on the site are the average of her best 2k and best 20
 Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (decided 2026-10-22). Logic in `apps-script/TeamGms.gs`; coach tab via menu "Team GMS report".
 - Only 2k and 20' count. Each rower counts once with her best GMS % in the window; tests without a weight on or before them are left out of averages.
 - Rank bands are team-wide by raw erg (best 2k-equivalent time, no weight), not boat placement.
-- Years compare school year to date (same number of days after Aug 1), not by test week. Past full years shown on the coach tab for reference.
+- Years compare school year to date (same number of days after Jul 1), not by test week. Past full years shown on the coach tab for reference.
 - Past-year squads come from Squad history ("Save squads for this school year" each season); missing rows fall back to Roster.
 - Team site gets `teamGmsForSite`: averages only, no names, ranks or weights. A group with fewer than `team_gms.min_group` (3) rowers shows no average.
 
@@ -98,12 +102,12 @@ Compares erg standards with racing, e.g. the Stotesbury V8 year to year (decided
 
 Even/odd is the calendar date. No winter weekend practice. Practices tab is generated from Settings (`generatePracticeSchedule`); canceled days are marked by hand.
 
-Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg/SkiErg set from machine; unchanged labels auto-accept after 48 h.
+Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg set from machine; unchanged labels auto-accept after 20 h (David, 2026-10-25).
 
 ## Weekly plan and targets
 
 - Coaches build workouts in the **Workouts** tab (one row per piece; Reps for repeats; one row per piece for variable intervals; `Start every` or Rest = Undefined for common-start sets) and assign them by date and squad in **Schedule**. Only Published rows reach athletes.
-- Erg targets = % of the athlete's **season-best** 2k or 20' **watts** (school year; falls back to last season only). Watts = 2.80 / (split/500)^3. UT2/UT1 show a range, AT/AN a single number; zone defaults in Settings `target.*` are PLACEHOLDERS for David to tune.
+- Erg targets = % of the athlete's **season-best** 2k or 20' **watts** (school year; falls back to last season only). Watts = 2.80 / (split/500)^3. Aerobic shows a range, Threshold and Anaerobic a single number; zone defaults in Settings `target.*` are PLACEHOLDERS for David to tune.
 - No benchmark -> no target shown, and the athlete is flagged to coaches (Slack alert in phase 2).
 - Targets are visible to the whole squad (no per-athlete privacy, by decision).
 - Logged sessions and make-ups are checked against the planned workout at display (`checkAgainstPlan`); make-ups use the missed day's plan. Never stored.
@@ -128,7 +132,9 @@ One per benchmark; toggles School Year (starts Aug 1) / All Time and All / Fr/No
 - GMS % goes only to the signed-in athlete for her own page and to coaches (team session), enforced by `/api/athlete/:id`; teammates get stars only. Coaches also see each athlete's Today card and can open any athlete's week at `#/week/ID`. Stars next to names are public; the Stars ranking tab and `/api/stars` are coaches only (David, 2026-10-23). The team view shows GMS averages only (`teamGmsForSite`).
 - Weighted minutes are computed in `site/lib/stats.mjs`. Modified sessions use their activity multiplier only (no `modified_multiplier`; removed 2026-10-23). Make-ups count as practice minutes. Today's practice counts toward completion only once logged.
 - Week ahead (layer 3, David 2026-10-23): **Week** tab shows only the coming week, Monday to Saturday (this week through Saturday, next week from Sunday), her squad's sessions and only her own targets. Her own page has a **Today** card with today's targets. No 2k or 20' yet: she sees "No target yet: do a 2k or 20' to get one." and coaches see the FLAG row in the Sheet's plan report (coach view and Slack later). Results vs goal (David, 2026-10-23): once logged, each session shows her splits per piece against her target (✓ in range, ↓ under, ↑ over; same rule as the Sheet's Plan check), and past sessions she didn't log say "Not logged". An athlete sees only her own results. Coaches see everyone in the session's squad (logged or not) in a fold-out under each workout, can open any athlete's week, and can look back one week (`#/week/prev`, `?week=prev`). The feed's `weeks` covers last, this and next week; each session carries `results` from `feedWeekResults_` in `Feed.gs`. Benchmark tests are scored, not ranged. BikeErg (David, 2026-10-23): same monitor, double the distance, so its meters count as half (`rowEquivalentIntervals` in `Plan.gs`; 2:00/1000m bike = 2:00/500m row = 202.5 W); its split shows with a * and is ranged against the RowErg target, and it never counts as a benchmark. Other machines show no split or range.
+- My workouts (David, 2026-10-25): on her own page (and coaches' view of her), her logged workouts filtered by zone tag (Aerobic, Threshold, Anaerobic) and by This school year / All. Each opens to its totals and, for this school year only, each interval's split against the target that stood on the planned date (`/api/workout/:id`, `feedLogged_` in `Feed.gs`). Teammates get no list and no splits.
 - Insights (David, 2026-10-23): her own page and coaches only (teammates get none; `/api/athlete/:id` sets `insights` to null): RPE by week, steady-state (UT2/UT1 RowErg, BikeErg at half meters) split by week with a faster/slower trend, 2k and 20' this school year with the change from the last one, an estimated 2k from a 20' newer than her last 2k (8.5 s rule), and this month's practices logged (make-ups count) with her streak. The load flag and trailing average are coaches only. Coaches get an **Insights** tab (`/api/insights`) with every rower, flagged first. No public consistency ranking.
+- Insights (David, 2026-10-23): her own page and coaches only (teammates get none; `/api/athlete/:id` sets `insights` to null): RPE by week, steady-state (Aerobic RowErg, BikeErg at half meters) split by week with a faster/slower trend, 2k and 20' this school year with the change from the last one, an estimated 2k from a 20' newer than her last 2k (8.5 s rule), and this month's practices logged (make-ups count) with her streak. The load flag and trailing average are coaches only. Coaches get an **Insights** tab (`/api/insights`) with every rower, flagged first. No public consistency ranking.
 - Built in layers, one PR each: (1) password gate, team dashboard, athlete pages; (2) leaderboards, stars and GMS, OYO board, team GMS averages; (3) week ahead with targets (`weeks` in the feed). Coach view after.
 - Deploy previews require a Netlify login. Production needs a site sign-in.
 
@@ -162,5 +168,6 @@ Wellness check-ins, menstrual tracking, visible weight anywhere, XBoat, excused/
 - Tests: `node erg-tracker/tests/run.js` (no dependencies). Run before every commit. Keep pure logic (parsing, GMS, schedule) free of Sheet/Form calls so it stays testable and portable to the Netlify site.
 - Site tests: `node erg-tracker/site/tests/run.mjs` (uses the dummy feed from `site/scripts/dummy-feed.js`). Netlify runs both suites as its build command.
 - Netlify deploy credits (David, 2026-10-23): batch a session's work into one PR and merge once, not a PR per item; every PR preview and every merge is a build. `netlify.toml` `ignore` skips every deploy preview (David turned them off) and skips production builds when nothing under `erg-tracker/site/` or `netlify.toml` changed (Apps Script-only changes don't build). So test locally (both suites plus the dev server) before merging; the first live check is after the merge.
+- Publishing My workouts (David, 2026-10-25): `Feed.gs` must go to the Sheet in the same publish (clasp push of all `apps-script/` files), then the Team site feed needs a new web app version, or the splits don't reach the site. The school-year Settings change (`school_year_start` = `07-01`) is already done in the Sheet.
 - After changing `Feed.gs` or anything it calls, the Apps Script web app needs a new version (Deploy > Manage deployments > edit > New version), not only a clasp push.
 - Dummy data (decided 2026-10-23): `apps-script/Dummy.gs`, menu **Load dummy data** / **Clear dummy data**. 30 made-up athletes (4 each 7th-9th novices, 6 each 10th-12th varsity), practices Oct 5-23 2026 plus a planned week Oct 26-30, OYO, make-ups, weights, and three rounds of 2k and 20' (late Aug, Sep, Oct); not everyone improves every round. Seeded, so it is the same each load. Marks: Athlete IDs A901+, Roster Notes / Weights Note start `DUMMY`, Source `Dummy`, IDs contain `-DUMMY-`, Workout IDs start `DUMMY-`. David will clear it all before adding real athletes.

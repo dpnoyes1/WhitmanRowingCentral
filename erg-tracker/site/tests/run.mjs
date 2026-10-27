@@ -1,8 +1,11 @@
 // Site tests against the dummy feed: `node erg-tracker/site/tests/run.mjs` (no dependencies).
 import assert from 'node:assert';
+import fs from 'node:fs';
+import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -24,26 +27,62 @@ test('dates', () => {
   assert.strictEqual(S.weekStart('2026-10-25'), '2026-10-19');
   assert.strictEqual(S.addDays('2026-10-30', 3), '2026-11-02');
   assert.strictEqual(S.daysBetween('2026-10-20', '2026-10-27'), 7);
-  assert.strictEqual(S.schoolYearStart('2026-10-23'), '2026-08-01');
-  assert.strictEqual(S.schoolYearStart('2027-03-01'), '2026-08-01');
+  assert.strictEqual(S.schoolYearStart('2026-10-23'), '2026-07-01');
+  assert.strictEqual(S.schoolYearStart('2027-03-01'), '2026-07-01');
   assert.strictEqual(S.todayIn('America/New_York', new Date('2026-10-23T03:00:00Z')), '2026-10-22');
 });
 
 test('weighted minutes: activity multiplier, modified practice, out', () => {
   const st = feed.settings;
-  const base = { warmupS: 600, workS: 1800, restS: 0, cooldownS: 600, status: 'Full', type: 'OYO' };
+  // 1800 s of work over 7000 m is a 2:08/500m split, faster than 3:00, so warm-up and cool-down count (erg only).
+  const base = { warmupS: 600, workS: 1800, workM: 7000, restS: 0, cooldownS: 600, status: 'Full', type: 'OYO', activity: 'Erg (RowErg)' };
   assert.strictEqual(S.rawMinutes(base), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 60);
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 36);   // no warm-up or cool-down for non-erg: 30 x 1.2
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Lifting' }, st), 0);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg' }, st), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike' }, st), 30);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg', workM: 14000 }, st), 50);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 18);
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Out' }, st), 0);
   // Lifting (David, 2026-10-23): no OYO minutes, no meters.
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
   assert.strictEqual(S.weekMinutes([lift], st, '2026-10-19').A1.oyo, 0);
   assert.strictEqual(S.meterTotal(lift), 0);
-  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 45);
+  // Rest never counts (David, 2026-10-25): rest time and rest meters are left out.
+  assert.strictEqual(S.rawMinutes({ ...base, restS: 120 }), 50);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 40);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)', warmupM: 500, cooldownM: 200 }), 740);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
+});
+
+test('warm-up and cool-down: erg only, split must be faster than 3:00/500m, rest never counts', () => {
+  const erg = { warmupS: 600, workS: 1800, restS: 900, cooldownS: 300, status: 'Full', activity: 'Erg (RowErg)' };
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 5100 }), 45);    // 2:56/500m: faster, so 1800 + 600 + 300 s; rest out
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 5000 }), 30);    // exactly 3:00/500m is not faster: work only
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 4800 }), 30);    // slower
+  assert.strictEqual(S.rawMinutes({ ...erg, workM: 0 }), 30);       // no meters, so no split to check
+  assert.strictEqual(S.rawMinutes({ ...erg, activity: 'SkiErg', workM: 5100 }), 30);  // not rowing or BikeErg
+  assert.strictEqual(S.rawMinutes({ ...erg, activity: 'Run', workM: 5100 }), 30);
+  // Counted warm-up and cool-down go to Aerobic, whatever the session's zone.
+  const z = S.zoneMinutes([{ ...erg, workM: 5100, zone: 'Threshold', date: '2026-10-20' }], '2026-10-19', '2026-10-25');
+  assert.strictEqual(z.Threshold, 30);
+  assert.strictEqual(z.Aerobic, 15);
+  assert.deepStrictEqual(Object.keys(z), ['Aerobic', 'Threshold', 'Anaerobic']);
+});
+
+test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaffected', () => {
+  const st = feed.settings;
+  const piece = (activity, rawMin) => ({ warmupS: 0, workS: rawMin * 60, restS: 0, cooldownS: 0, status: 'Full', type: 'OYO', activity });
+  assert.strictEqual(S.weightedMinutes(piece('Run', 9), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Run', 10), st), 12);          // 10 x 1.2
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 19), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 12);         // 20 x 0.6
+  assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 14), st), 0);
+  assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
+  assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
+  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
+  assert.strictEqual(S.weightedMinutes(piece('Walk', 14), st), 0);
+  assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
+  const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
+  assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);
 });
 
 test('practice record: make-ups fill misses, today never counts as missed', () => {
@@ -54,6 +93,37 @@ test('practice record: make-ups fill misses, today never counts as missed', () =
   assert.ok(r && r.done && r.how === 'Make-up', JSON.stringify(r));
   feed.athletes.forEach((x) => S.practiceRecord(x, feed, TODAY).forEach((p) => assert.ok(p.done || p.date < TODAY)));
   assert.ok(rec.every((p) => p.date <= TODAY));
+});
+
+test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up', () => {
+  // Hand-made: a 2k at 7:00 (105.0 split) beats a 20' of 5000 m (111.5 split: 120 - 8.5).
+  const small = {
+    settings: { schoolYearStart: '08-01' },
+    athletes: [
+      { id: 'A1', name: 'Fake One', role: 'Rower', active: true, squad: 'Varsity', grade: '9th' },
+      { id: 'A2', name: 'Fake Two', role: 'Rower', active: true, squad: 'Novice', grade: '11th' }
+    ],
+    benchmarks: [
+      { athleteId: 'A1', test: '2000m', date: '2026-09-01', valid: true, timeS: 420, meters: 2000 },
+      { athleteId: 'A2', test: '20min', date: '2026-09-01', valid: true, timeS: null, meters: 5000 }
+    ]
+  };
+  const s = teamSplitsView(small, TODAY);
+  const g = Object.fromEntries(s.groups.map((x) => [x.key, x]));
+  assert.strictEqual(g.all.avgSplit, 108.3, 'mean of 105.0 and 111.5');
+  assert.strictEqual(g.top8.n, 2, 'both ranked');
+  assert.strictEqual(g.second8.n, 0, 'nobody ranked 9th to 16th');
+  assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
+  assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
+  assert.strictEqual(g.freshman.avgSplit, 105);
+
+  const v = teamSplitsView(feed, TODAY);
+  const d = Object.fromEntries(v.groups.map((x) => [x.key, x]));
+  assert.ok(d.top8.n <= 8 && d.second8.n <= 8, 'bands hold at most 8 each');
+  assert.strictEqual(d.top16.n, d.top8.n + d.second8.n, 'top 16 = top 8 + second 8');
+  assert.ok(d.all.n >= d.top16.n && d.all.n <= 30, 'all counts every rower with a result');
+  assert.ok(v.groups.every((x) => x.avgSplit === null || (x.avgSplit > 90 && x.avgSplit < 200)), 'splits in a sane range');
+  assert.ok(!/A9\d\d|Name/.test(JSON.stringify(v)), 'group averages carry no names or IDs');
 });
 
 test('team view: three groups, averages only', () => {
@@ -82,6 +152,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
     assert.ok(v.season.practicesDone <= v.season.practicesExpected);
     assert.ok(v.streaks.practices <= v.season.practicesExpected);
     v.openMakeups.forEach((m) => assert.ok(S.daysBetween(m.date, TODAY) <= 7));
+    v.openMakeups.forEach((m) => assert.ok(m.sessions.every((s) => s.pieces.length && s.workout), a.name));
     v.bests.forEach((b) => {
       const all = v.tests.filter((t) => t.test === b.test && t.valid).map((t) => t.result);
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
@@ -264,7 +335,12 @@ test('api: 401 without a session, team and athlete with one', async () => {
   const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
   res = await handle(new Request('https://x/api/team', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 200);
-  assert.strictEqual((await res.json()).athletes.length, 30);
+  const coachTeam = await res.json();
+  assert.strictEqual(coachTeam.athletes.length, 30);
+  assert.ok(coachTeam.splits && coachTeam.splits.groups.length === 6, 'coaches get the split averages');
+  const athleteCookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  res = await handle(new Request('https://x/api/team', { headers: { cookie: athleteCookie } }), env, deps);
+  assert.strictEqual((await res.json()).splits, undefined, 'athletes never get the split averages');
   res = await handle(new Request('https://x/api/athlete/A901', { headers: { cookie } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, 'A901');
   for (const p of ['/api/leaderboards', '/api/stars', '/api/oyo', '/api/week', '/api/week/A901']) {
@@ -493,12 +569,12 @@ test('load trend: trailing average of up to 3 earlier weeks, flag above the jump
 });
 
 test('steady splits, trend, projected 2k and month consistency', () => {
-  const row = (d, s, m, act = 'Erg (RowErg)', zone = 'UT2') => ({ date: d, status: 'Full', activity: act, zone, workS: s, workM: m });
+  const row = (d, s, m, act = 'Erg (RowErg)', zone = 'Aerobic') => ({ date: d, status: 'Full', activity: act, zone, workS: s, workM: m });
   const es = [row('2026-09-07', 1200, 4800), row('2026-09-14', 1200, 4800), row('2026-09-21', 1200, 4900),
-    row('2026-09-28', 1200, 5000), row('2026-09-28', 1200, 10000, 'BikeErg'), row('2026-09-28', 600, 3000, 'Erg (RowErg)', 'AN')];
+    row('2026-09-28', 1200, 5000), row('2026-09-28', 1200, 10000, 'BikeErg'), row('2026-09-28', 600, 3000, 'Erg (RowErg)', 'Anaerobic')];
   const w = S.steadySplits(es, ['2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05']);
   assert.strictEqual(w[0].splitS, 125);
-  assert.strictEqual(w[3].splitS, 120);              // BikeErg at half meters: 2400 s over 10000 m; AN left out
+  assert.strictEqual(w[3].splitS, 120);              // BikeErg at half meters: 2400 s over 10000 m; Anaerobic left out
   assert.strictEqual(w[4].splitS, null);
   const t = S.splitTrend(w);
   assert.strictEqual(t.weeksEach, 2);
@@ -508,8 +584,8 @@ test('steady splits, trend, projected 2k and month consistency', () => {
   assert.strictEqual(S.twoKFrom20(5000), 446);
   const bm = [{ athleteId: 'X', test: '2000m', date: '2026-09-01', timeS: 460, valid: true },
     { athleteId: 'X', test: '20min', date: '2026-10-01', meters: 5000, valid: true }];
-  assert.strictEqual(S.projected2k('X', bm, '2026-08-01').timeS, 446);
-  assert.strictEqual(S.projected2k('X', [...bm, { ...bm[0], date: '2026-10-02' }], '2026-08-01'), null);
+  assert.strictEqual(S.projected2k('X', bm, '2026-07-01').timeS, 446);
+  assert.strictEqual(S.projected2k('X', [...bm, { ...bm[0], date: '2026-10-02' }], '2026-07-01'), null);
   const rec = [{ date: '2026-09-30', done: false }, { date: '2026-10-01', done: true }, { date: '2026-10-02', done: false }, { date: '2026-10-05', done: true }];
   assert.deepStrictEqual(S.monthConsistency(rec, '2026-10-23'), { done: 2, expected: 3, pct: 67 });
 });
@@ -555,6 +631,55 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   assert.ok(!('jumpPct' in body.insights));
   body = await (await get('/api/athlete/A902', her)).json();
   assert.strictEqual(body.insights, null);
+  clearFeedCache();
+});
+
+test('home-screen install: manifest and icons match their declared sizes', () => {
+  const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+  const manifest = JSON.parse(fs.readFileSync(path.join(publicDir, 'manifest.webmanifest'), 'utf8'));
+  assert.strictEqual(manifest.start_url, '/');
+  assert.strictEqual(manifest.display, 'standalone');
+  const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
+  assert.ok(html.includes('href="/manifest.webmanifest"'));
+  const icons = [...manifest.icons, { src: '/icons/apple-touch-icon.png', sizes: '180x180' }];
+  for (const icon of icons) {
+    const file = fs.readFileSync(path.join(publicDir, icon.src));
+    assert.strictEqual(file.toString('ascii', 1, 4), 'PNG', icon.src);
+    const [w, h] = [file.readUInt32BE(16), file.readUInt32BE(20)];
+    assert.strictEqual(`${w}x${h}`, icon.sizes, icon.src);
+  }
+});
+
+test('my workouts: own and coaches see splits, teammates and strangers do not', async () => {
+  clearFeedCache();
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
+  // Her workout list: this school year's workouts with splits, every zone tag she logged.
+  let body = await (await get('/api/athlete/A901', her)).json();
+  assert.ok(body.workouts.length > 0 && body.workouts.every((w) => w.id && w.status !== 'Out'));
+  assert.ok(body.workouts.some((w) => w.zone === 'Threshold'), 'zone tags come through');
+  assert.strictEqual((await (await get('/api/athlete/A902', her)).json()).workouts.length, 0, 'teammates get no list');
+  // Her own workout: totals plus splits for the current school year.
+  const mine = body.workouts.find((w) => w.date >= body.yearStart && feed.logged.some((l) => l.id === w.id));
+  body = await (await get('/api/workout/' + mine.id, her)).json();
+  assert.strictEqual(body.athlete.id, 'A901');
+  assert.ok(body.detail && body.detail.intervals.length > 0, 'splits this year');
+  assert.ok(!/logins|"weight"|birthday/i.test(JSON.stringify(body)), "no weight, birthday or logins");
+  // Someone else's workout: refused to her, open to coaches.
+  const theirs = feed.logged.find((l) => l.athleteId !== 'A901');
+  assert.strictEqual((await get('/api/workout/' + theirs.id, her)).status, 404);
+  assert.strictEqual((await get('/api/workout/' + theirs.id, coach)).status, 200);
+  assert.strictEqual((await get('/api/workout/nope', coach)).status, 404);
+  // An older workout keeps its totals and no splits.
+  const old = feed.entries.find((e) => e.athleteId === 'A901' && e.date < feed.settings.schoolYearStart && e.status !== 'Out');
+  if (old) {
+    body = await (await get('/api/workout/' + old.id, her)).json();
+    assert.strictEqual(body.detail, null);
+    assert.ok(body.workout.minutes >= 0);
+  }
   clearFeedCache();
 });
 
