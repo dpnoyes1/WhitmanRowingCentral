@@ -665,6 +665,16 @@ test('balance: watts ratios, recency weighting, rule comparison (coaches only)',
   assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
 });
 
+test('api routes: every /api path the handler answers is in the function config', () => {
+  // A route missing from config.path 404s on Netlify without ever reaching the handler (the Balance page, 2026-10-27).
+  const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../functions/api.mjs'), 'utf8');
+  const routed = [...src.match(/export const config = \{ path: \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const handled = [...new Set([...src.matchAll(/path === '(\/api\/[a-z]+)'/g)].map((m) => m[1]))];
+  assert.ok(handled.length >= 8);
+  handled.forEach((p) => assert.ok(routed.includes(p), p + ' is handled but not routed'));
+  assert.ok(routed.includes('/api/balance'));
+});
+
 test('insights: own page without flags, teammates none, coaches everything', async () => {
   const v = athleteView(feed, 'A901', TODAY);
   assert.strictEqual(v.insights.load.length, 8);
