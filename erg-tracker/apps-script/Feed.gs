@@ -214,6 +214,7 @@ function siteFeed(inputs, asOf) {
       status: String(e.Status || ''), activity: String(e.Activity || ''),
       warmupS: feedNum_(e['Warmup s']), workS: feedNum_(e['Work s']), restS: feedNum_(e['Rest s']),
       cooldownS: feedNum_(e['Cooldown s']), workM: feedNum_(e['Work m']), restM: feedNum_(e['Rest m']),
+      warmupM: feedNum_(e['Warmup m']), cooldownM: feedNum_(e['Cooldown m']),
       mainSet: String(e['Main set'] || ''), zone: String(e.Zone || ''), rpe: feedNum_(e.RPE),
       dragFactor: feedNum_(e['Drag factor']), intervals: feedNum_(e.Intervals),
       benchmarkId: String(e['Benchmark ID'] || ''), source: String(e.Source || '')

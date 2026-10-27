@@ -73,6 +73,7 @@ function buildForm_(settings) {
   form.addListItem().setTitle(Q.ACTIVITY).setRequired(true)
     .setChoiceValues(ACTIVITIES.map(function (a) { return a[0]; }));
   addTime(Q.WARMUP, true, WARMUP_HELP);
+  addNumber(Q.WARMUP_M, false, 0, 20000, 'Meters rowed or moved during the warmup, if you know them. Leave blank if not.');
   form.addTextItem().setTitle(Q.MAIN_SET).setRequired(true)
     .setHelpText('Describe the workout. Then enter each piece below.');
   form.addMultipleChoiceItem().setTitle(Q.ZONE).setRequired(true)
@@ -100,6 +101,7 @@ function buildForm_(settings) {
   // Finish
   var pbFinish = form.addPageBreakItem().setTitle('Finish');
   addTime(Q.COOLDOWN, false);
+  addNumber(Q.COOLDOWN_M, false, 0, 20000, 'Meters rowed or moved during the cooldown, if you know them. Leave blank if not.');
   form.addScaleItem().setTitle(Q.RPE).setRequired(true).setBounds(1, 10)
     .setLabels('Very easy', 'Max effort');
   addNumber(Q.HR, false, 40, 230);

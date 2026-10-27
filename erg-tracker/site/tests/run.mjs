@@ -46,7 +46,10 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
   assert.strictEqual(S.weekMinutes([lift], st, '2026-10-19').A1.oyo, 0);
   assert.strictEqual(S.meterTotal(lift), 0);
-  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 45);
+  // Rest never counts (David, 2026-10-25): rest time and rest meters are left out.
+  assert.strictEqual(S.rawMinutes({ ...base, restS: 120 }), 50);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 40);
+  assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)', warmupM: 500, cooldownM: 200 }), 740);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
 });
 
