@@ -38,7 +38,7 @@ HEADERS[TABS.INTERVALS] = [
 HEADERS[TABS.BENCHMARKS] = [
   'Benchmark ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
   'Test', 'Time s', 'Meters', 'Avg rate', 'Drag factor', 'Splits s',
-  'Coach note', 'Source', 'Review status', 'Response ID', 'Entry ID'
+  'Coach note', 'Source', 'Review status', 'Response ID', 'Entry ID', 'Drag check'
 ];
 HEADERS[TABS.WEIGHTS] = [
   'Date', 'Athlete ID', 'Athlete', 'Weight lb', 'Entered by', 'Note'
@@ -212,12 +212,12 @@ var Q = {
   // Titles must be unique across the whole form, so the two test sections differ slightly.
   T_TIME: 'Test time',
   T_RATE: 'Average stroke rate (optional)',
-  T_DRAG: 'Drag factor on the test (optional)',
+  T_DRAG: 'Drag factor on the test',
   T_SPLITS: '500m splits (optional, comma separated)',
   T_NOTE: 'Test note for coaches (optional)',
   D_METERS: 'Total meters',
   D_RATE: 'Average stroke rate',
-  D_DRAG: 'Drag factor during the test (optional)',
+  D_DRAG: 'Drag factor during the test',
   D_SPLITS: 'Splits per 500m (optional, comma separated)',
   D_NOTE: 'Note on this test for coaches (optional)'
 };

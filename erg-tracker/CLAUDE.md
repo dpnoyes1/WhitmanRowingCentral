@@ -42,7 +42,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 - Modified practice (alternative activity, or cut short / DNF with only the completed work logged) counts as complete. No extra minutes multiplier (David, 2026-10-23): it gets its activity multiplier like any session, and less work already means fewer minutes.
 - Load trend (David, 2026-10-23): weekly weighted minutes per athlete. Coaches see a flag when a week is more than Settings `load.jump_pct` (15) above the average of the 3 weeks before; in her first weeks the average uses the weeks since her first session (her first week is never flagged). `loadTrend` in `site/lib/stats.mjs`. The old `spike_threshold_pct` row is unused.
 - Effort: no new Form question (no soreness; wellness stays out of scope). The site charts weekly average Session RPE, weighted by training minutes.
-- Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor default 105; flag anything else for coaches.
+- Every session tagged UT2 / UT1 / AT / AN by main set. HR optional. Drag factor is prefilled at 105 on the share link. It is required on both test pages and optional on the Finish page (David, 2026-10-25). A benchmark with no drag factor gets "FLAG: no drag factor" in its Drag check column and a Change log note; Slack alerts to the athlete and coach come later.
 
 ## OYO goals
 
