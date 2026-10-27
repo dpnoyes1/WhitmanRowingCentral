@@ -577,6 +577,14 @@ test('dummy: same data every run, every row marked, columns match headers', () =
   assert.ok(!g.isDummyRow_(g.TABS.ROSTER, { Notes: 'Captain' }));
 });
 
+test('dummy: clear picks only marked rows, never real rows around them', () => {
+  const roster = [{ Notes: '' }, { Notes: 'DUMMY: sprinter' }, { Notes: 'DUMMY' }, { Notes: 'Captain' }, { Notes: '' }, { Notes: 'DUMMY' }];
+  assert.deepStrictEqual(Array.from(g.dummyRowNumbers_(g.TABS.ROSTER, roster)), [3, 4, 7]);
+  const bench = [{ Source: 'Form' }, { Source: 'Dummy' }, { Source: 'Import' }, { 'Benchmark ID': 'B-DUMMY-0001' }];
+  assert.deepStrictEqual(Array.from(g.dummyRowNumbers_(g.TABS.BENCHMARKS, bench)), [3, 5]);
+  assert.deepStrictEqual(Array.from(g.dummyRowNumbers_(g.TABS.WORKOUTS, [{ 'Workout ID': 'W01' }, { 'Workout ID': 'DUMMY-W01' }])), [3]);
+});
+
 test('dummy: sessions link to intervals and tests, times in seconds, at most 10 intervals', () => {
   const byEntry = {};
   dummy.intervals.forEach(iv => { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
