@@ -231,7 +231,7 @@ function refreshFormQuestions_(form) {
     } else if (workTitles[title]) {
       item.asTextItem().setHelpText(WORK_M_HELP).setValidation(zeroOk);
     } else if (oldTestDrag[title]) {
-      item.setTitle(oldTestDrag[title]).setRequired(true)
+      item.asTextItem().setTitle(oldTestDrag[title]).setRequired(true)
         .setHelpText(DRAG_TEST_HELP + getSettings()['default_drag_factor']);
     }
   });
