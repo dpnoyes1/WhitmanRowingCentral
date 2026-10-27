@@ -379,3 +379,67 @@ export function monthConsistency(record, today) {
   const done = month.filter((r) => r.done).length;
   return { done, expected: month.length, pct: month.length ? Math.round((100 * done) / month.length) : null };
 }
+
+// ---- balance: 100m vs 2k vs 20' in watts (David, 2026-10-27, coaches only) ----
+
+export const BALANCE_WINDOW_DAYS = 365;
+export const BALANCE_HALF_LIFE_DAYS = 56;   // a pair 56 days apart weighs half as much as one on the same day
+export const BALANCE_WEAK_WEIGHT = 0.25;    // under this the pairing is marked weak (about 4 months apart)
+export const GMS_100M_DIVISOR = 0.786;      // same constants as Gms.gs, used to compare the tracker's own rules
+export const GMS_20_PLUS_S = 8.5;
+
+/** Concept2 watts from a 500 m split in seconds (same formula as wattsFromSplit in Plan.gs). */
+export const wattsFromSplit = (split500) => (split500 > 0 ? 2.80 / Math.pow(split500 / 500, 3) : null);
+
+/** Watts for a valid 100m, 2000m or 20min result; null for anything else. */
+export function benchmarkWatts(b) {
+  if (b.test === '100m' && b.timeS > 0) return wattsFromSplit((b.timeS * 5));
+  if (b.test === '2000m' && b.timeS > 0) return wattsFromSplit(b.timeS / 4);
+  if (b.test === '20min' && b.meters > 0) return wattsFromSplit((1200 * 500) / b.meters);
+  return null;
+}
+
+/** Paul's Law: split500 at `meters` from a 2k split, +5 s per doubling of distance. */
+export const paulSplit = (split2k, meters) => split2k + 5 * Math.log2(meters / 2000);
+
+/** Paul's Law split for a 20' piece (distance depends on the split, so iterate). */
+export function paulSplit20(split2k) {
+  let s = split2k + 6;
+  for (let i = 0; i < 25; i++) s = paulSplit(split2k, (1200 * 500) / s);
+  return s;
+}
+
+/**
+ * Predicted watts of the longer-or-shorter piece from the 2k result, by rule.
+ * short = 100m vs 2k gap, long = 2k vs 20' gap. Splits in s/500m.
+ */
+export function ruleSplits(split2k) {
+  return {
+    paul20: paulSplit20(split2k), rule20: split2k + GMS_20_PLUS_S,
+    paul100: paulSplit(split2k, 100), rule100: split2k * GMS_100M_DIVISOR
+  };
+}
+
+/**
+ * One gap between a harder-and-shorter test (`hi`) and a longer test (`lo`):
+ * every valid pair of her results in the last 12 months, weighted by how close
+ * in time the two were. Returns the best-weighted pair, the weighted average
+ * ratio across all pairs, and how the tracker's rules compare for that pair.
+ * Ratio = hi watts / lo watts. Null when she has no pair.
+ */
+export function balanceGap(athleteId, benchmarks, today, hi, lo) {
+  const from = addDays(today, -BALANCE_WINDOW_DAYS);
+  const mine = (test) => benchmarks.filter((b) => b.athleteId === athleteId && b.test === test && b.valid && b.date >= from && b.date <= today && benchmarkWatts(b));
+  const pairs = [];
+  mine(hi).forEach((a) => mine(lo).forEach((b) => {
+    const days = Math.abs(daysBetween(a.date, b.date));
+    const wHi = benchmarkWatts(a), wLo = benchmarkWatts(b);
+    pairs.push({ hi: a, lo: b, days, weight: Math.pow(0.5, days / BALANCE_HALF_LIFE_DAYS), wattsHi: wHi, wattsLo: wLo, ratio: wHi / wLo });
+  }));
+  if (!pairs.length) return null;
+  pairs.sort((x, y) => y.weight - x.weight || (y.wattsHi + y.wattsLo) - (x.wattsHi + x.wattsLo));
+  const best = pairs[0];
+  const total = pairs.reduce((s, p) => s + p.weight, 0);
+  const avgRatio = pairs.reduce((s, p) => s + p.weight * p.ratio, 0) / total;
+  return { best, avgRatio, pairs: pairs.length, weak: best.weight < BALANCE_WEAK_WEIGHT };
+}

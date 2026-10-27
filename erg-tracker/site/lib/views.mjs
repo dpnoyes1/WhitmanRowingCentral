@@ -5,7 +5,8 @@
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal
+  resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal,
+  balanceGap, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -532,4 +533,44 @@ function planSession(s, a) {
 export function dayPlan(feed, day, a) {
   const plan = (feed.weeks || []).find((w) => w.weekStart === weekStart(day)) || { sessions: [] };
   return plan.sessions.filter((s) => s.day === day && inSquad(s, a.squad)).map((s) => planSession(s, a));
+}
+
+// ---- balance: 100m vs 2k vs 20' in watts, coaches only (David, 2026-10-27) --------
+
+/**
+ * Per rower, the 100m vs 2k and 2k vs 20' watts ratios from her last 12 months:
+ * the best-weighted pair (results close in time count more) and the weighted
+ * average of all her pairs, beside what Paul's Law and the tracker's own rules
+ * (8.5 s, 0.786) would have predicted from that pair's 2k. No labels or ranges:
+ * the point is to compare the rules with Whitman's results and fit our own model.
+ * Never sent to athletes.
+ */
+export function balanceView(feed, today) {
+  const ratioPct = (x) => round(100 * x, 1);
+  const wattsOfSplit = (s) => wattsFromSplit(s);
+  const gapRow = (g, predicted) => {
+    if (!g) return null;
+    const { best } = g;
+    const twoK = best.hi.test === '2000m' ? best.hi : best.lo;
+    const split2k = twoK.timeS / 4;
+    const rules = Object.fromEntries(Object.entries(predicted(ruleSplits(split2k))).map(([k, s]) => [k, {
+      splitS: round(s, 1), ratioPct: ratioPct(best.hi.test === '2000m' ? wattsOfSplit(split2k) / wattsOfSplit(s) : wattsOfSplit(s) / wattsOfSplit(split2k))
+    }]));
+    return {
+      ratioPct: ratioPct(best.ratio), wattsHi: round(best.wattsHi, 0), wattsLo: round(best.wattsLo, 0),
+      hiDate: best.hi.date, loDate: best.lo.date, daysApart: best.days, recency: round(best.weight, 2), weak: g.weak,
+      avgRatioPct: ratioPct(g.avgRatio), pairs: g.pairs, rules
+    };
+  };
+  const rows = activeRowers(feed).map((a) => ({
+    ...athleteSummary(a),
+    sprint: gapRow(balanceGap(a.id, feed.benchmarks, today, '100m', '2000m'), (r) => ({ paul: r.paul100, tracker: r.rule100 })),
+    endurance: gapRow(balanceGap(a.id, feed.benchmarks, today, '2000m', '20min'), (r) => ({ paul: r.paul20, tracker: r.rule20 }))
+  })).sort((x, y) => x.name.localeCompare(y.name));
+  const mean = (list) => (list.length ? round(list.reduce((s, v) => s + v, 0) / list.length, 1) : null);
+  const summary = (key) => {
+    const g = rows.map((r) => r[key]).filter(Boolean);
+    return { rowers: g.length, ratioPct: mean(g.map((x) => x.ratioPct)), paulPct: mean(g.map((x) => x.rules.paul.ratioPct)), trackerPct: mean(g.map((x) => x.rules.tracker.ratioPct)) };
+  };
+  return { today, windowDays: BALANCE_WINDOW_DAYS, halfLifeDays: BALANCE_HALF_LIFE_DAYS, weakBelow: BALANCE_WEAK_WEIGHT, rowers: rows, sprint: summary('sprint'), endurance: summary('endurance') };
 }
