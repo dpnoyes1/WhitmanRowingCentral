@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me
+// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -274,7 +274,7 @@ async function showTeam() {
           `<button data-sq="${k}" aria-pressed="${k === squad}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div></div>
       <div class="grid">
         ${tile('Practice completion', w.completionPct === null ? '–' : w.completionPct + '%', `${w.practicesDone} of ${w.practicesExpected} this week`)}
-        ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Aug 1')}
+        ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Jul 1')}
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
@@ -386,11 +386,103 @@ async function showAthlete(id) {
       </div><p class="muted small">Filled: done. Ring: made up. Empty: missed.</p></div>
     </div>
     <div class="card"><h2>Tests</h2>${testsTable(v.tests)}</div>
-    <div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>${footer(v.meta)}`;
+    ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
   const notYou = document.getElementById('not-you');
   if (notYou) notYou.onclick = signOut;
   wireTips(app);
   wireFooter();
+  wireWorkouts(v.workouts, v.yearStart);
+}
+
+// ---- my workouts: filter by zone and school year, click in for splits -----
+
+const WORKOUT_ZONES = ['UT2', 'UT1', 'AT', 'AN'];
+const workoutFilter = { year: 'current', zone: '' };   // remembered while the page is open
+
+function workoutsCard(rows, yearStart) {
+  return `<div class="card" id="my-workouts"><h2>My workouts</h2>
+    <div class="workout-tools">
+      <div class="seg" role="group" aria-label="School year">
+        <button type="button" data-year="current" aria-pressed="true">This school year</button>
+        <button type="button" data-year="all" aria-pressed="false">All</button></div>
+      <div class="seg" role="group" aria-label="Zone">
+        ${['', ...WORKOUT_ZONES].map((z) => `<button type="button" data-zone="${z}" aria-pressed="${z === '' ? 'true' : 'false'}">${z || 'All zones'}</button>`).join('')}</div>
+    </div>
+    <div id="workout-list">${workoutList(rows, yearStart)}</div>
+    <p class="muted small">Open a workout to see its splits against your targets. Splits are kept for this school year; older workouts show totals only.</p></div>`;
+}
+
+/** Rows for the current filter. Zone filter is on the Zone tag (UT2, UT1, AT, AN). */
+function workoutList(rows, yearStart) {
+  const shown = rows.filter((r) => (workoutFilter.year === 'all' || r.date >= yearStart) && (!workoutFilter.zone || r.zone === workoutFilter.zone));
+  if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th>Zone</th><th class="r">Minutes</th><th class="r">Meters</th><th class="r">RPE</th></tr>
+    ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
+      <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
+      <td>${esc(r.activity)}</td><td>${esc(r.zone)}</td>
+      <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td><td class="r">${r.rpe ?? ''}</td></tr>`).join('')}
+  </table></div>`;
+}
+
+function wireWorkouts(rows, yearStart) {
+  const card = document.getElementById('my-workouts');
+  if (!card) return;
+  card.addEventListener('click', (ev) => {
+    const b = ev.target.closest('button');
+    if (!b) return;
+    if (b.dataset.year) workoutFilter.year = b.dataset.year;
+    if (b.dataset.zone !== undefined) workoutFilter.zone = b.dataset.zone;
+    card.querySelectorAll('[data-year]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.year === workoutFilter.year)));
+    card.querySelectorAll('[data-zone]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.zone === workoutFilter.zone)));
+    document.getElementById('workout-list').innerHTML = workoutList(rows, yearStart);
+  });
+}
+
+/** One logged workout: totals, and when it is in this school year, each interval against its target. */
+async function showWorkout(id) {
+  const v = await api('/api/workout/' + encodeURIComponent(id));
+  const w = v.workout, d = v.detail;
+  const mine = me();
+  const own = mine && mine.id === v.athlete.id;
+  setNav(own ? 'me' : 'athletes');
+  const pills = `${resultPills({ test: w.test || (d && d.test), status: w.status, type: w.type, date: w.date, activity: w.activity, hit: d ? d.hit : null })}`;
+  let body;
+  if (!d) {
+    body = '<p class="muted">Splits are kept for this school year. This workout is older, so only its totals show.</p>';
+  } else {
+    const rowsHtml = d.pieces.length ? d.pieces.map((p, pi) => {
+      const ivs = d.intervals.filter((x) => x.piece === pi);
+      return `<tr><td>${esc(p.label)}</td><td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>
+        <td class="r splits">${workSplits(ivs, d.rowErg, isBike(w))}</td></tr>`;
+    }).join('') : '';
+    const extra = d.intervals.filter((x) => x.piece === null);
+    body = `${d.matches === false ? `<p class="muted small">${esc(d.reason)}</p>` : ''}
+      ${d.pieces.length ? `<table class="pieces"><tr><th></th><th class="r">Target</th><th class="r">Logged</th></tr>${rowsHtml}
+        ${extra.length ? `<tr><td class="muted">Extra</td><td></td><td class="r splits">${workSplits(extra, d.rowErg, isBike(w))}</td></tr>` : ''}</table>`
+        : `<table class="pieces"><tr><th>Interval</th><th class="r">Logged</th></tr>${d.intervals.map((x) => `<tr><td>${x.n}</td><td class="r splits">${workSplits([x], d.rowErg, isBike(w))}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No intervals logged.</td></tr>'}</table>`}
+      <p class="muted small">Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m. Targets are the ones that stood on the day the workout was planned.</p>`;
+  }
+  app.innerHTML = `${staleNote(v.meta)}
+    <div class="head"><div><h1>${esc(v.athlete.name)} · ${fmtDay(w.date)}</h1>
+      <p class="muted"><a href="#/athlete/${encodeURIComponent(v.athlete.id)}">Back to ${own ? 'my page' : esc(v.athlete.name)}</a></p></div></div>
+    <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
+      <div class="result-line">${pills}</div>
+      <div class="grid">
+        ${tile('Minutes', fmtMin(w.minutes), `${fmtMin(w.weighted)} weighted`)}
+        ${tile('Meters', w.meters ? fmtNum(w.meters) : '–', w.zone ? `Zone ${w.zone}` : 'No zone')}
+        ${tile('RPE', w.rpe ?? '–', '')}
+      </div>
+      ${body}</div>${footer(v.meta)}`;
+  wireFooter();
+}
+
+/** Each interval's split (or its time and meters for machines without a split), marked against the target. */
+function workSplits(list, rowErg, bike = false) {
+  if (!list.length) return '<span class="muted">–</span>';
+  return list.map((x) => {
+    if (!rowErg) return `${fmtTime(x.workS)} · ${x.workM ? fmtNum(x.workM) + ' m' : ''}`;
+    return splitsCell([x], bike);
+  }).join(' ');
 }
 
 // ---- load, effort, progress, consistency (own page and coaches only) ------
@@ -795,6 +887,7 @@ async function route() {
     if (page === 'insights' && isCoach()) return await showInsights();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
+    if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
     location.replace(m ? '#/me' : '#/team');

@@ -141,7 +141,7 @@ The URL is a secret: it's saved in the script's properties, never in a cell or t
 
 ## Part D: Each new school year
 
-Results, stars, leaderboards and targets already start over on `school_year_start` (Aug 1 at Whitman); nothing needs resetting, and All Time boards keep every result. Between the last race and the first fall practice:
+Results, stars, leaderboards and targets already start over on `school_year_start` (Jul 1 at Whitman); nothing needs resetting, and All Time boards keep every result. Between the last race and the first fall practice:
 
 1. **Erg Tracker > Start new school year.** It closes out the year (the one that just ended if you run it in the first three months after `school_year_start`, otherwise the current one) and asks before doing anything. It:
    - saves an archive copy of the whole Sheet as "Erg tracker archive 2026-27" in the backups folder (never trashed),

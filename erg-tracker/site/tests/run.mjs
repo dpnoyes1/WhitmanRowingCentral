@@ -27,8 +27,8 @@ test('dates', () => {
   assert.strictEqual(S.weekStart('2026-10-25'), '2026-10-19');
   assert.strictEqual(S.addDays('2026-10-30', 3), '2026-11-02');
   assert.strictEqual(S.daysBetween('2026-10-20', '2026-10-27'), 7);
-  assert.strictEqual(S.schoolYearStart('2026-10-23'), '2026-08-01');
-  assert.strictEqual(S.schoolYearStart('2027-03-01'), '2026-08-01');
+  assert.strictEqual(S.schoolYearStart('2026-10-23'), '2026-07-01');
+  assert.strictEqual(S.schoolYearStart('2027-03-01'), '2026-07-01');
   assert.strictEqual(S.todayIn('America/New_York', new Date('2026-10-23T03:00:00Z')), '2026-10-22');
 });
 
@@ -547,8 +547,8 @@ test('steady splits, trend, projected 2k and month consistency', () => {
   assert.strictEqual(S.twoKFrom20(5000), 446);
   const bm = [{ athleteId: 'X', test: '2000m', date: '2026-09-01', timeS: 460, valid: true },
     { athleteId: 'X', test: '20min', date: '2026-10-01', meters: 5000, valid: true }];
-  assert.strictEqual(S.projected2k('X', bm, '2026-08-01').timeS, 446);
-  assert.strictEqual(S.projected2k('X', [...bm, { ...bm[0], date: '2026-10-02' }], '2026-08-01'), null);
+  assert.strictEqual(S.projected2k('X', bm, '2026-07-01').timeS, 446);
+  assert.strictEqual(S.projected2k('X', [...bm, { ...bm[0], date: '2026-10-02' }], '2026-07-01'), null);
   const rec = [{ date: '2026-09-30', done: false }, { date: '2026-10-01', done: true }, { date: '2026-10-02', done: false }, { date: '2026-10-05', done: true }];
   assert.deepStrictEqual(S.monthConsistency(rec, '2026-10-23'), { done: 2, expected: 3, pct: 67 });
 });
@@ -611,6 +611,39 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
     const [w, h] = [file.readUInt32BE(16), file.readUInt32BE(20)];
     assert.strictEqual(`${w}x${h}`, icon.sizes, icon.src);
   }
+});
+
+test('my workouts: own and coaches see splits, teammates and strangers do not', async () => {
+  clearFeedCache();
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
+  // Her workout list: this school year's workouts with splits, every zone tag she logged.
+  let body = await (await get('/api/athlete/A901', her)).json();
+  assert.ok(body.workouts.length > 0 && body.workouts.every((w) => w.id && w.status !== 'Out'));
+  assert.ok(body.workouts.some((w) => w.zone === 'AT'), 'zone tags come through');
+  assert.strictEqual((await (await get('/api/athlete/A902', her)).json()).workouts.length, 0, 'teammates get no list');
+  // Her own workout: totals plus splits for the current school year.
+  const mine = body.workouts.find((w) => w.date >= body.yearStart && feed.logged.some((l) => l.id === w.id));
+  body = await (await get('/api/workout/' + mine.id, her)).json();
+  assert.strictEqual(body.athlete.id, 'A901');
+  assert.ok(body.detail && body.detail.intervals.length > 0, 'splits this year');
+  assert.ok(!/logins|"weight"|birthday/i.test(JSON.stringify(body)), "no weight, birthday or logins");
+  // Someone else's workout: refused to her, open to coaches.
+  const theirs = feed.logged.find((l) => l.athleteId !== 'A901');
+  assert.strictEqual((await get('/api/workout/' + theirs.id, her)).status, 404);
+  assert.strictEqual((await get('/api/workout/' + theirs.id, coach)).status, 200);
+  assert.strictEqual((await get('/api/workout/nope', coach)).status, 404);
+  // An older workout keeps its totals and no splits.
+  const old = feed.entries.find((e) => e.athleteId === 'A901' && e.date < feed.settings.schoolYearStart && e.status !== 'Out');
+  if (old) {
+    body = await (await get('/api/workout/' + old.id, her)).json();
+    assert.strictEqual(body.detail, null);
+    assert.ok(body.workout.minutes >= 0);
+  }
+  clearFeedCache();
 });
 
 for (const [name, fn] of tests) {

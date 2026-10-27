@@ -30,8 +30,8 @@ export function todayIn(timeZone, now = new Date()) {
   return new Intl.DateTimeFormat('en-CA', { timeZone, year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
 }
 
-/** First day of the school year containing `day`. mmdd like "08-01". */
-export function schoolYearStart(day, mmdd = '08-01') {
+/** First day of the school year containing `day`. mmdd like "07-01". */
+export function schoolYearStart(day, mmdd = '07-01') {
   const y = Number(day.slice(0, 4));
   const start = `${y}-${mmdd}`;
   return start > day ? `${y - 1}-${mmdd}` : start;
