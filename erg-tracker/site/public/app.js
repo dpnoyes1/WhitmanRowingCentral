@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/insights, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
+// #/team, #/week, #/boards, #/stars, #/insights, #/balance, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -80,6 +80,7 @@ function setNav(active) {
   if (m) link.textContent = m.name.split(' ')[0];
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
+  document.getElementById('nav-balance').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
 
@@ -807,6 +808,30 @@ async function showInsights() {
   wireFooter();
 }
 
+/** Coaches only: 100m vs 2k vs 20' in watts, beside Paul's Law and the tracker's rules. */
+async function showBalance() {
+  const v = await api('/api/balance');
+  setNav('balance');
+  const dash = '<span class="muted">–</span>';
+  const gap = (g) => !g ? `<td class="r" colspan="4">${dash}</td>`
+    : `<td class="r">${g.ratioPct}%${g.weak ? ' <span class="pill warn" title="Results far apart in time">weak</span>' : ''}<div class="muted small">${g.wattsHi}/${g.wattsLo} W · ${g.daysApart}d apart</div></td>
+       <td class="r">${g.avgRatioPct}% <span class="muted small">${g.pairs} pair${g.pairs === 1 ? '' : 's'}</span></td>
+       <td class="r">${g.rules.paul.ratioPct}%</td><td class="r">${g.rules.tracker.ratioPct}%</td>`;
+  const sum = (s) => `${s.rowers} rowers · actual ${s.ratioPct ?? '–'}% · Paul ${s.paulPct ?? '–'}% · tracker rule ${s.trackerPct ?? '–'}%`;
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Balance</h1>
+    <p class="muted">Coaches only. Watts ratio of a shorter, harder piece to a longer one, from each rower's last ${v.windowDays} days. Results close in time count more (half the recency score at ${v.halfLifeDays} days apart); weak means under ${v.weakBelow} recency. Not shown to athletes.</p></div></div>
+    <div class="card"><div class="table-wrap"><table class="insights">
+      <tr><th rowspan="2">Rower</th><th class="r" colspan="4">100m vs 2k</th><th class="r" colspan="4">2k vs 20'</th></tr>
+      <tr><th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th>
+        <th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th></tr>
+      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
+    </table></div>
+    <p class="muted small">Team means (best pair): 100m vs 2k: ${sum(v.sprint)}. 2k vs 20': ${sum(v.endurance)}.</p>
+    <p class="muted small">Best pair: the 2k and the other piece closest in time. Average: all her pairs, weighted the same way. Paul's Law: +5 s per 500 m for each doubling of distance, applied to that pair's 2k (outside its 1k to 10k range for 100m). Tracker rule: 20' split = 2k split + 8.5 s; 100m split = 0.786 x 2k split. The 100m watts use the 100m average split, standing start included. Ratio = shorter piece watts / longer piece watts. Open a rower for her tests.</p></div>
+    ${footer(v.meta)}`;
+  wireFooter();
+}
+
 async function showOyo() {
   const v = await api('/api/oyo');
   setNav('oyo');
@@ -901,6 +926,7 @@ async function route() {
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'insights' && isCoach()) return await showInsights();
+    if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -632,6 +632,39 @@ test('break weeks: 4+ break days use the break OYO goals; blank keeps her own', 
   assert.ok(athleteView(f, 'A901', TODAY).athlete.breakWeek);
 });
 
+test('balance: watts ratios, recency weighting, rule comparison (coaches only)', () => {
+  const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, a + ' vs ' + b);
+  near(S.wattsFromSplit(120), 202.5, 0.1);
+  near(S.benchmarkWatts({ test: '2000m', timeS: 480 }), 202.5, 0.1);
+  near(S.benchmarkWatts({ test: '100m', timeS: 24 }), S.wattsFromSplit(120), 0.01);   // 100m time x 5 = split
+  assert.strictEqual(S.benchmarkWatts({ test: '500m', timeS: 100 }), null);
+  const r = S.ruleSplits(120);
+  near(r.paul20, 126.3, 0.1);
+  assert.strictEqual(r.rule20, 128.5);
+  near(r.rule100, 94.32, 0.01);
+  near(r.paul100, 120 - 5 * Math.log2(20), 0.01);
+  const bm = (test, date, v) => ({ athleteId: 'X', test, date, valid: true, ...(test === '20min' ? { meters: v } : { timeS: v }) });
+  const rows = [bm('2000m', '2026-09-01', 480), bm('2000m', '2026-01-15', 500), bm('20min', '2026-09-08', 4700), bm('2000m', '2025-08-01', 470), { ...bm('20min', '2026-10-01', 4800), valid: false }];
+  const g = S.balanceGap('X', rows, '2026-10-23', '2000m', '20min');
+  assert.strictEqual(g.pairs, 2);                      // the 2025 2k is outside 12 months; the invalid 20' is ignored
+  assert.strictEqual(g.best.hi.date, '2026-09-01');    // a week apart outranks eight months apart
+  near(g.best.weight, Math.pow(0.5, 7 / 56), 1e-9);
+  assert.strictEqual(g.weak, false);
+  assert.ok(g.avgRatio !== g.best.ratio);
+  near(g.best.ratio, S.wattsFromSplit(120) / S.wattsFromSplit(1200 * 500 / 4700), 1e-9);
+  assert.strictEqual(S.balanceGap('X', rows, '2026-10-23', '100m', '2000m'), null);
+  const far = S.balanceGap('X', [bm('2000m', '2026-01-01', 480), bm('20min', '2026-09-30', 4700)], '2026-10-23', '2000m', '20min');
+  assert.strictEqual(far.weak, true);
+  const bv = balanceView(feed, TODAY);
+  assert.strictEqual(bv.rowers.length, 30);
+  assert.ok(bv.rowers.some((x) => x.endurance && x.endurance.rules.paul.ratioPct > 100));
+  const withSprint = { ...feed, benchmarks: [...feed.benchmarks, { athleteId: 'A922', test: '100m', date: '2026-10-21', timeS: 19, valid: true }] };
+  const sp = balanceView(withSprint, TODAY).rowers.find((x) => x.id === 'A922').sprint;
+  assert.strictEqual(sp.daysApart, 1);
+  assert.ok(sp.ratioPct > 150 && sp.rules.tracker.ratioPct > sp.rules.paul.ratioPct);   // 0.786 rule is steeper than Paul's Law
+  assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
+});
+
 test('insights: own page without flags, teammates none, coaches everything', async () => {
   const v = athleteView(feed, 'A901', TODAY);
   assert.strictEqual(v.insights.load.length, 8);
@@ -648,6 +681,8 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
   assert.strictEqual((await get('/api/insights', coach)).status, 200);
   assert.strictEqual((await get('/api/insights', her)).status, 403);
+  assert.strictEqual((await get('/api/balance', coach)).status, 200);
+  assert.strictEqual((await get('/api/balance', her)).status, 403);
   let body = await (await get('/api/athlete/A901', coach)).json();
   assert.ok(body.insights.load.every((l) => 'flag' in l && 'trailing' in l));
   body = await (await get('/api/athlete/A901', her)).json();
