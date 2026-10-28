@@ -351,21 +351,6 @@ function processLogbookConfirm_(body) {
   }
 }
 
-/**
- * doPost action logbook-pending: {athleteId}. Her "Found on Logbook" cards straight from the
- * Sheet, so a new session shows without waiting for the site's 5-minute feed copy.
- */
-function processLogbookPending_(body) {
-  var id = String(body.athleteId || '');
-  var entries = readObjects_(TABS.ENTRIES).filter(function (e) { return String(e['Athlete ID']) === id; });
-  var ids = {};
-  entries.forEach(function (e) { ids[e['Entry ID']] = true; });
-  var intervals = readObjects_(TABS.INTERVALS).filter(function (iv) { return ids[iv['Entry ID']]; });
-  var known = {};
-  known[id] = true;
-  return { status: 'ok', pending: feedLogbookPending_({ entries: entries, intervals: intervals }, known) };
-}
-
 /** doPost action logbook-accept-due (the site's poll calls it every 15 minutes). */
 function processLogbookAcceptDue_() {
   var lock = LockService.getScriptLock();
@@ -381,4 +366,29 @@ function processLogbookAcceptDue_() {
   } finally {
     lock.releaseLock();
   }
+}
+
+/** Pure: one athlete's pending Logbook sessions, in the same shape as the feed's logbookPending. */
+function logbookPendingFor(entries, intervals, athleteId) {
+  var known = {};
+  known[athleteId] = true;
+  return feedLogbookPending_({
+    entries: entries.filter(function (e) { return String(e['Athlete ID']) === String(athleteId); }),
+    intervals: intervals
+  }, known);
+}
+
+/**
+ * doPost action logbook-pending: {athleteId}. Read straight from the Sheet, so a
+ * session shows on her page the moment it is written instead of after the
+ * site's 5-minute copy of the feed refreshes.
+ */
+function processLogbookPending_(body) {
+  var mine = readObjects_(TABS.ENTRIES).filter(function (e) {
+    return String(e['Athlete ID']) === String(body.athleteId) && feedPending_(e);
+  });
+  var ids = {};
+  mine.forEach(function (e) { ids[e['Entry ID']] = true; });
+  var intervals = readObjects_(TABS.INTERVALS).filter(function (iv) { return ids[iv['Entry ID']]; });
+  return { status: 'ok', pending: logbookPendingFor(mine, intervals, body.athleteId) };
 }

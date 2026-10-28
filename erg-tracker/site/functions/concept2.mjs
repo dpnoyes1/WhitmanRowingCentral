@@ -1,11 +1,9 @@
 // /api/concept2/connect (athlete, redirects to Concept2), /status, /disconnect.
 import { session } from '../lib/auth.mjs';
 import * as C2 from '../lib/concept2.mjs';
-import { getFeed } from '../lib/feed.mjs';
-import { callSheet, hasNewSession } from '../lib/logbook-sync.mjs';
+import { callSheet, syncAthlete } from '../lib/logbook-sync.mjs';
 
 const env = (k) => Netlify.env.get(k);
-const DONE_HIDE_MS = 15 * 60 * 1000;   // the feed copy can lag; hide a confirmed session meanwhile
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handleConcept2(req, envFn, deps = {}) {
@@ -30,19 +28,17 @@ export async function handleConcept2(req, envFn, deps = {}) {
   }
   if (who.kind !== 'athlete') return json({ error: 'Athletes connect their own Logbook account.' }, 403);
   if (path === '/api/concept2/pending' && req.method === 'GET') {
-    let mine = null;
-    if (await hasNewSession(store, who.id)) {   // new session: ask the Sheet, the feed copy can be 5 minutes behind
-      try { mine = (await callSheet(envFn, deps.fetch || fetch, { action: 'logbook-pending', athleteId: who.id })).pending; } catch { mine = null; }
+    // Always fresh (David, 2026-10-28: no waiting on the 5-minute feed copy, and all cards at once):
+    // pick up anything Logbook has that the Sheet hasn't seen, then read her pending list from the Sheet itself.
+    const fetchImpl = deps.fetch || fetch;
+    if (await C2.isConnected(store, who.id)) await syncAthlete(envFn, store, fetchImpl, who.id);
+    try {
+      const out = await callSheet(envFn, fetchImpl, { action: 'logbook-pending', athleteId: who.id });
+      return json({ pending: Array.isArray(out.pending) ? out.pending : [] });
+    } catch (err) {
+      console.error('logbook pending failed:', err.message);
+      return json({ error: 'Could not check Logbook just now. Try again in a minute.' }, 502);
     }
-    if (!mine) {
-      let feed;
-      try { feed = (await getFeed(envFn, deps)).data; } catch { return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502); }
-      mine = (feed.logbookPending || []).filter((p) => p.athleteId === who.id);
-    }
-    const recent = Date.now() - DONE_HIDE_MS;
-    const hidden = new Set();
-    for (const p of mine) if (Number(await store.get('done/' + p.id)) > recent) hidden.add(p.id);
-    return json({ pending: mine.filter((p) => !hidden.has(p.id)) });
   }
   if (path === '/api/concept2/confirm' && req.method === 'POST') {
     let b = {};
@@ -55,7 +51,6 @@ export async function handleConcept2(req, envFn, deps = {}) {
     if (['2000m', '20min'].includes(b.benchmark)) payload.benchmark = b.benchmark;
     try {
       const out = await callSheet(envFn, deps.fetch || fetch, payload);
-      await store.set('done/' + payload.entryId, String(Date.now()));
       return json({ ok: true, benchmark: !!out.benchmark });
     } catch (err) {
       return json({ error: String(err.message).replace(/^Sheet said: /, '') }, 400);
