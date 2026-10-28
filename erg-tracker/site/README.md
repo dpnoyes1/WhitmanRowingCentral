@@ -4,8 +4,10 @@ Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their n
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/balance (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me, #/workout/E-ID)
-functions/   refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/balance (coaches only), /api/oyo, /api/week, /api/week/:id, /api/workout/:id)
-lib/         auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
+functions/   concept2.mjs (/api/concept2/connect, /status, /disconnect), concept2-callback.mjs (the registered redirect URI /.netlify/functions/concept2-callback),
+             refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/balance (coaches only), /api/oyo, /api/week, /api/week/:id, /api/workout/:id)
+lib/         concept2.mjs (Logbook OAuth, encrypted token storage in Blobs store `concept2`),
+             auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
 netlify.toml short links: /logworkout goes to the Google Form, /guide to the logging guide (a Google Doc).
              Both are linked from the sign-in page, the menu and the Today card.
@@ -29,6 +31,9 @@ The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster no
 | `FEED_KEY` | The key from **Erg Tracker > Site feed key** in the Sheet. Mark it as secret. |
 | `FEED_URL` | The Apps Script web app URL (ends in `/exec`). |
 | `COACH_PASSWORD` | For the coach view later. Not used yet. |
+| `CONCEPT2_CLIENT_ID` | Concept2 Logbook app client ID (read-only app, scope `user:read,results:read`). |
+| `CONCEPT2_CLIENT_SECRET` | Logbook app secret. Mark as secret. |
+| `CONCEPT2_TOKEN_KEY` | 64 random hex characters (`openssl rand -hex 32`). Encrypts the athletes' stored Logbook tokens; changing it disconnects everyone. Mark as secret. |
 
 ## One-time setup
 

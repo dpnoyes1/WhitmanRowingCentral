@@ -386,6 +386,7 @@ async function showAthlete(id) {
     <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}</p></div>
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
     ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
+    ${v.own ? '<div id="logbook-card"></div>' : ''}
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
@@ -417,6 +418,7 @@ async function showAthlete(id) {
     ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
   const notYou = document.getElementById('not-you');
   if (notYou) notYou.onclick = signOut;
+  if (v.own) loadLogbookCard();
   app.querySelectorAll('tr.session-row').forEach((tr) => { tr.onclick = () => { tr.nextElementSibling.hidden = !tr.nextElementSibling.hidden; }; });
   app.querySelectorAll('button.more-toggle').forEach((b) => {
     b.onclick = () => { const d = b.nextElementSibling; d.hidden = !d.hidden; b.textContent = d.hidden ? 'Show more' : 'Show less'; };
@@ -701,6 +703,40 @@ function wireResultsSort(root) {
   root.querySelectorAll('.results-sort button').forEach((b) => {
     b.onclick = () => { store.set(RESULTS_SORT_KEY, b.dataset.sort); sortResults(root, b.dataset.sort); };
   });
+}
+
+/** Concept2 Logbook connection on her own page: connect once, then ErgData sessions show up for her to confirm. */
+const LOGBOOK_NOTES = {
+  connected: 'Connected. Your Logbook sessions will show up here once syncing is switched on.',
+  denied: 'Not connected: you chose Deny on the Concept2 page.',
+  error: 'Something went wrong connecting. Try again, and tell a coach if it keeps happening.'
+};
+async function loadLogbookCard() {
+  const box = document.getElementById('logbook-card');
+  if (!box) return;
+  const flash = new URLSearchParams(location.search).get('logbook');
+  let connected = false;
+  try {
+    const st = await api('/api/concept2/status');
+    connected = !!st.connected;
+  } catch (e) {
+    return;   // not set up yet, or signed out: show nothing
+  }
+  box.innerHTML = `<div class="card"><h2>Concept2 Logbook</h2>
+    ${LOGBOOK_NOTES[flash] ? `<p>${esc(LOGBOOK_NOTES[flash])}</p>` : ''}
+    ${connected
+      ? '<p>Connected to your Concept2 Logbook. <button class="linkish small" id="logbook-off">Disconnect</button></p>'
+      : '<p class="muted small">Connect your free Concept2 Logbook account once, so erg sessions saved from ErgData can be filled in for you. We only read your results, and you can disconnect any time.</p><p><a class="btn" href="/api/concept2/connect">Connect Logbook</a></p>'}
+  </div>`;
+  const off = document.getElementById('logbook-off');
+  if (off) {
+    off.onclick = async () => {
+      off.disabled = true;
+      await fetch('/api/concept2/disconnect', { method: 'POST', credentials: 'same-origin' });
+      history.replaceState(null, '', location.pathname + location.hash);
+      loadLogbookCard();
+    };
+  }
 }
 
 /** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
