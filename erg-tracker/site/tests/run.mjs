@@ -5,13 +5,15 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
+import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import photoTests from './photo.mjs';
+import { handleSlackTest, signatureValid } from '../functions/slack-test.mjs';
+import { createHmac } from 'node:crypto';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -116,6 +118,9 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
   assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
   assert.strictEqual(g.freshman.avgSplit, 105);
+  assert.deepStrictEqual(g.all.twoK, { n: 1, avgSplit: 105 }, '2k average counts only 2k tests');
+  assert.deepStrictEqual(g.all.twenty, { n: 1, avgMeters: 5000, avgSplit: 120 }, "20' average is meters and its real split");
+  assert.strictEqual(g.varsity.twenty.avgMeters, null, 'no 20 in the varsity group');
 
   const v = teamSplitsView(feed, TODAY);
   const d = Object.fromEntries(v.groups.map((x) => [x.key, x]));
@@ -124,6 +129,18 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.ok(d.all.n >= d.top16.n && d.all.n <= 30, 'all counts every rower with a result');
   assert.ok(v.groups.every((x) => x.avgSplit === null || (x.avgSplit > 90 && x.avgSplit < 200)), 'splits in a sane range');
   assert.ok(!/A9\d\d|Name/.test(JSON.stringify(v)), 'group averages carry no names or IDs');
+});
+
+test('insights: missed practices not made up in the last 4 weeks', () => {
+  const rec = (date, done) => ({ date, done });
+  const m = missedNotMadeUp([rec('2026-09-01', false), rec('2026-10-05', false), rec('2026-10-19', false), rec('2026-10-21', true), rec('2026-10-22', false)], '2026-10-23', 7);
+  assert.strictEqual(m.count, 3, 'Oct 5 is 18 days ago, inside 28; Sep 1 is outside');
+  assert.strictEqual(m.open, 2, 'Oct 19 and Oct 22 are within the 7-day make-up window');
+  assert.strictEqual(m.overdue, 1);
+  assert.strictEqual(m.flag, true);
+  assert.strictEqual(missedNotMadeUp([rec('2026-10-22', false)], '2026-10-23', 7).flag, false, 'one miss is not flagged');
+  const v = insightsView(feed, TODAY);
+  assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
 });
 
 test('team view: three groups, averages only', () => {
@@ -567,6 +584,42 @@ test('health: key required, counts only, flags a broken feed or missing sign-in 
   b = await (await handleHealth(post({ key: 'fake-key' }), noTeam, serve(feed))).json();
   assert.ok(!b.ok && b.checks.env === false);
   clearFeedCache();
+});
+
+test('slack test endpoint: signature, replay window, slash command, buttons, photo download', async () => {
+  const env = (k) => ({ SLACK_TEST_SIGNING_SECRET: 'fake-secret', SLACK_TEST_BOT_TOKEN: 'xoxb-FAKE' })[k];
+  const NOW = 1_800_000_000;
+  const sign = (body, ts = NOW) => ({
+    'x-slack-request-timestamp': String(ts),
+    'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${ts}:${body}`).digest('hex'),
+  });
+  const req = (body, type, ts) => new Request('https://x/api/slack-test', { method: 'POST', body, headers: { 'content-type': type, ...sign(body, ts) } });
+  const sent = [];
+  const deps = { nowS: NOW, fetchImpl: async (url, init) => {
+    if (/chat\.postMessage/.test(url)) { sent.push(JSON.parse(init.body)); return Response.json({ ok: true }); }
+    return new Response('abc', { headers: { 'content-type': 'image/png' } });
+  } };
+  const form = 'application/x-www-form-urlencoded';
+  assert.ok(signatureValid('fake-secret', new Headers(sign('a')), 'a', NOW));
+  assert.ok(!signatureValid('fake-secret', new Headers(sign('a', NOW - 400)), 'a', NOW), 'old timestamp rejected');
+  assert.ok(!signatureValid('fake-secret', new Headers(sign('a')), 'b', NOW), 'changed body rejected');
+  assert.strictEqual((await handleSlackTest(new Request('https://x/api/slack-test', { method: 'POST', body: 'a' }), env, deps)).status, 401);
+  assert.strictEqual((await handleSlackTest(req('a=1', form), () => undefined, deps)).status, 503);
+  const challenge = JSON.stringify({ type: 'url_verification', challenge: 'abc123' });
+  assert.deepStrictEqual(await (await handleSlackTest(req(challenge, 'application/json'), env, deps)).json(), { challenge: 'abc123' });
+  const cmd = new URLSearchParams({ command: '/logtest', channel_name: 'directmessage', channel_id: 'D123', trigger_id: 't', response_url: 'u' }).toString();
+  const slash = await (await handleSlackTest(req(cmd, form), env, deps)).json();
+  assert.ok(/channel_name=directmessage/.test(slash.text) && slash.blocks[1].elements.length === 2);
+  const press = (id) => new URLSearchParams({ payload: JSON.stringify({ user: { id: 'U1' }, actions: [{ action_id: id }] }) }).toString();
+  assert.strictEqual((await handleSlackTest(req(press('ack_200'), form), env, deps)).status, 200);
+  assert.strictEqual((await handleSlackTest(req(press('ack_202'), form), env, deps)).status, 202);
+  assert.strictEqual(sent.length, 2);
+  const photo = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', channel: 'D123', files: [{ id: 'F1', mimetype: 'image/png', size: 3, url_private: 'https://files.example/F1' }] } });
+  assert.strictEqual((await handleSlackTest(req(photo, 'application/json'), env, deps)).status, 200);
+  assert.ok(/download 200 image\/png, got 3 bytes/.test(sent[2].text), sent[2].text);
+  const own = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', bot_id: 'B1', channel: 'D123', files: [] } });
+  await handleSlackTest(req(own, 'application/json'), env, deps);
+  assert.strictEqual(sent.length, 3, 'ignores its own messages');
 });
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {

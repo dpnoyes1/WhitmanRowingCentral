@@ -74,6 +74,9 @@ const isCoach = () => !!SESSION && SESSION.kind === 'team';
 
 function setNav(active) {
   document.getElementById('nav').hidden = false;
+  document.getElementById('menu').hidden = false;
+  document.getElementById('log-top').hidden = false;
+  closeMenu();
   const m = me();
   const link = document.getElementById('nav-me');
   link.hidden = !m;
@@ -83,6 +86,17 @@ function setNav(active) {
   document.getElementById('nav-balance').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
+
+/** Phone menu (David, 2026-10-28): the links fold into a hamburger under 720px; CSS ignores it on wider screens. */
+function closeMenu() {
+  document.querySelector('.top').classList.remove('open');
+  document.getElementById('menu').setAttribute('aria-expanded', 'false');
+}
+document.getElementById('menu').onclick = () => {
+  const open = document.querySelector('.top').classList.toggle('open');
+  document.getElementById('menu').setAttribute('aria-expanded', String(open));
+};
+document.getElementById('nav').addEventListener('click', (ev) => { if (ev.target.closest('a')) closeMenu(); });
 
 function staleNote(meta) {
   if (!meta || !meta.stale) return '';
@@ -120,9 +134,13 @@ function wireTips(root) {
     };
     el.addEventListener('pointermove', show);
     el.addEventListener('pointerdown', show);
-    el.addEventListener('pointerleave', () => { tip.hidden = true; });
+    el.addEventListener('pointerleave', (ev) => { if (ev.pointerType !== 'touch') tip.hidden = true; });   // touch: stays until the next tap elsewhere
   });
 }
+
+// A tooltip opened by touch never gets pointerleave, so the next tap anywhere else (or a scroll) closes it.
+document.addEventListener('pointerdown', (ev) => { if (!ev.target.closest('[data-tip]')) tip.hidden = true; });
+window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true });
 
 // ---- charts --------------------------------------------------------------
 
@@ -167,9 +185,9 @@ function weeklyChart(rows, caption, load = null) {
   }).join('');
   const coachLoad = load && load.some((l) => l.trailing !== undefined);
   const table = `<details class="small"><summary class="muted">Show as a table</summary><div class="table-wrap"><table>
-    <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th>${load ? '<th class="r">RPE</th>' : ''}${coachLoad ? '<th class="r">vs average</th>' : ''}</tr>
-    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
-      ${load ? `<td class="r">${load[i].rpe ?? ''}</td>` : ''}${coachLoad ? `<td class="r">${load[i].changePct === null ? '' : `${load[i].flag ? '▲ ' : ''}${load[i].changePct > 0 ? '+' : ''}${load[i].changePct}%`}</td>` : ''}</tr>`).join('')}
+    <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th>${coachLoad ? '<th class="r">vs average</th>' : ''}</tr>
+    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}${load && load[i].rpe != null ? `<div class="muted small">RPE ${load[i].rpe}</div>` : ''}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
+      ${coachLoad ? `<td class="r">${load[i].changePct === null ? '' : `${load[i].flag ? '▲ ' : ''}${load[i].changePct > 0 ? '+' : ''}${load[i].changePct}%`}</td>` : ''}</tr>`).join('')}
   </table></div></details>`;
   return `<div class="chart">
     <div class="legend"><span><i style="background:var(--series-1)"></i>Practice</span><span><i style="background:var(--series-2)"></i>OYO</span>${coachLoad ? '<span><i class="tick-key"></i>Average of the 3 weeks before</span><span class="flag-label">▲ jump</span>' : ''}</div>
@@ -226,6 +244,9 @@ function tile(label, value, sub = '') {
 
 function showLogin() {
   document.getElementById('nav').hidden = true;
+  document.getElementById('menu').hidden = true;
+  document.getElementById('log-top').hidden = true;
+  closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
     <p class="muted">Sign in with your first and last name and the password from your coach.</p>
@@ -296,11 +317,14 @@ async function showTeam() {
 
 /** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
 function splitsCard(s) {
-  return `<div class="card"><h2>Average season-best split</h2>
+  return `<div class="card"><h2>Average season-best results</h2>
     <p class="muted small">Each rower's best 2k or 20' this school year as a split per 500m (20' at 2k pace, minus 8.5 s). Ranked fastest first, team-wide.</p>
-    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">Average split</th></tr>
-    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td><td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
-    </table></div></div>`;
+    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">2k split</th><th class="r">20' meters</th><th class="r">Combined</th></tr>
+    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td>
+      <td class="r">${g.twoK.avgSplit === null ? '–' : `${fmtTime(g.twoK.avgSplit)}<div class="muted small">${g.twoK.n} tested</div>`}</td>
+      <td class="r">${g.twenty.avgMeters === null ? '–' : `${fmtNum(g.twenty.avgMeters)} m<div class="muted small">${fmtTime(g.twenty.avgSplit)} /500m · ${g.twenty.n} tested</div>`}</td>
+      <td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
+    </table></div><p class="muted small">2k split is the average best 2k per 500m. 20' is the average best distance and its real split. Combined is the old number (each rower's best of the two).</p></div>`;
 }
 
 /**
@@ -322,9 +346,10 @@ function teamTodayCard(wk, squad) {
 function recentList(t) {
   const names = Object.fromEntries(t.athletes.map((a) => [a.id, a.name]));
   if (!t.recent.length) return '<p class="muted">Nothing logged yet.</p>';
+  // Activity sits under the name so the table fits a phone (David, 2026-10-28).
   return `<div class="table-wrap"><table>${t.recent.map((r) => `<tr>
-    <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a></td>
-    <td class="muted">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}</td>
+    <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
+    <div class="muted small">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}</div></td>
     <td class="r">${fmtMin(r.minutes)}</td></tr>`).join('')}</table></div>`;
 }
 
@@ -350,7 +375,8 @@ async function showAthlete(id) {
   const a = v.athlete, w = v.week, s = v.season;
   const mine = me();
   setNav(mine && mine.id === id ? 'me' : 'athletes');
-  const oyoMax = Math.max(a.oyoElite * 1.15, w.oyoMin);
+  // Fixed 3 h scale (Required 1 h, Elite 2 h); a bar stops at the end (David, 2026-10-28). Other goals (break weeks) scale to 1.5 x Elite.
+  const oyoMax = Math.max(180, a.oyoElite * 1.5);
   const oyoText = { elite: 'Elite reached', required: 'Required met', short: `${fmtMin(Math.max(0, a.oyoRequired - w.oyoMin))} to Required` }[w.oyoStatus];
   const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2>
       ${v.openMakeups.map((m) => `<p><b>Missed ${fmtDay(m.date)}</b>: make it up by <b>${fmtDay(m.makeUpBy)}</b></p>
@@ -422,11 +448,12 @@ function workoutsCard(rows, yearStart) {
 function workoutList(rows, yearStart) {
   const shown = rows.filter((r) => (workoutFilter.year === 'all' || r.date >= yearStart) && (!workoutFilter.zone || r.zone === workoutFilter.zone));
   if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
-  return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th>Zone</th><th class="r">Minutes</th><th class="r">Meters</th><th class="r">RPE</th></tr>
+  // Activity, zone and RPE sit under the type so the table fits a phone (David, 2026-10-28).
+  return `<div class="table-wrap"><table><tr><th>Date</th><th>Workout</th><th class="r">Min</th><th class="r">Meters</th></tr>
     ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
-      <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
-      <td>${esc(r.activity)}</td><td>${esc(r.zone)}</td>
-      <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td><td class="r">${r.rpe ?? ''}</td></tr>`).join('')}
+      <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}
+        <div class="muted small">${[r.activity, r.zone, r.rpe != null && `RPE ${r.rpe}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
+      <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td></tr>`).join('')}
   </table></div>`;
 }
 
@@ -525,10 +552,10 @@ function progressCard(ins, coach) {
   const trend = !t ? '<p class="muted">Not enough steady erg work logged yet to show a trend.</p>'
     : `<p>${Math.abs(t.changeS) < 0.5 ? 'About the same as' : `<b>${Math.abs(t.changeS).toFixed(1)}s/500m ${t.changeS < 0 ? 'faster' : 'slower'}</b> than`} ${t.weeksEach > 1 ? `the ${t.weeksEach} weeks before` : 'the week before'}
       <span class="muted">(${fmtTime(t.earlierS)} → ${fmtTime(t.recentS)})</span></p>`;
-  const rows = (test) => ins.progress[test].map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td>
+  const rows = (test) => ins.progress[test].map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}<div class="muted small">${split(r)}</div></td>
       <td class="r">${changeText(r.change, test === '2000m')}</td></tr>`).join('');
   const table = (test) => ins.progress[test].length ? `<div><h3>${TEST_LABELS[test]}</h3><div class="table-wrap"><table>
-      <tr><th>Date</th><th class="r">Result</th><th class="r">Split</th><th class="r">Change</th></tr>${rows(test)}</table></div></div>`
+      <tr><th>Date</th><th class="r">Result / split</th><th class="r">Change</th></tr>${rows(test)}</table></div></div>`
     : `<div><h3>${TEST_LABELS[test]}</h3><p class="muted">None this school year.</p></div>`;
   const p = ins.projected2k;
   const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> <span class="muted">from ${who} 20' on ${fmtDate(p.from.date)} (${fmtNum(p.from.meters)} m)${p.last2k ? `; last real 2k ${fmtTime(p.last2k.timeS)} on ${fmtDate(p.last2k.date)}` : ''}. An estimate only: ${who} next 2k test is the real answer.</span></p>` : '';
@@ -575,7 +602,7 @@ function gmsCard(gms, coach = false) {
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th></tr>
-    ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}</td><td class="r">${g.gmsPct.toFixed(1)}%</td>
+    ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
     </table></div>
     ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
@@ -744,11 +771,11 @@ async function showBoards() {
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
         ${seg('group', [['all', 'All'], ['varsity', 'Varsity (10th-12th)'], ['freshman', 'Fr/Nov (7th-9th)']])}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
-        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r">Rate</th><th class="date">Date</th></tr>
+        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
           <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
             <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
-          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
+          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
       </table></div>` : '<p class="muted">No results yet.</p>'}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
@@ -792,18 +819,20 @@ async function showInsights() {
   const trend = (t) => (!t ? '<span class="muted">–</span>' : Math.abs(t.changeS) < 0.5 ? 'same'
     : `<span class="${t.changeS < 0 ? 'good-text' : ''}">${t.changeS < 0 ? '▲' : '▼'} ${Math.abs(t.changeS).toFixed(1)}s</span>`);
   const flagged = v.rowers.filter((r) => r.thisWeek.flag || r.lastWeek.flag).length;
+  const missedFlagged = v.rowers.filter((r) => r.missed.flag).length;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
-    <p class="muted">Coaches only. Weighted minutes against each rower's average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it. ${flagged ? `<b>${flagged} flagged.</b>` : 'Nobody flagged.'}</p></div></div>
+    <p class="muted">Coaches only. Weighted minutes against each rower's average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it. ${flagged ? `<b>${flagged} flagged.</b>` : 'Nobody flagged.'} ${missedFlagged ? `<b>${missedFlagged} missing practices without making them up.</b>` : ''}</p></div></div>
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th>Rower</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
-        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
+        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th><th class="r">Missed, 4 wks</th></tr>
       ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
         ${loadCell(r.thisWeek)}${loadCell(r.lastWeek)}<td class="r">${r.lastWeek.rpe ?? ''}</td>
         <td class="r">${trend(r.splitTrend)}</td><td class="r">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
         <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
-        <td class="r">${r.month.streak}</td></tr>`).join('')}
+        <td class="r">${r.month.streak}</td>
+        <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td></tr>`).join('')}
     </table></div>
-    <p class="muted small">Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
+    <p class="muted small">Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Missed: practices not logged or made up in the last ${v.missedWindowDays} days (open = still inside the make-up window, overdue = past it); ${v.missedFlagAt} or more is flagged. Open a rower for her charts.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }
@@ -861,10 +890,11 @@ async function showOyo() {
 
 function bestsTable(v) {
   if (!v.bests.length) return '<p class="muted">No tests yet.</p>';
-  return `<div class="table-wrap"><table><tr><th>Test</th><th class="r">This season</th><th class="r">Split</th><th class="r">All time</th><th>Date</th></tr>
+  // Split under the season result and date under the all-time result, so it fits a phone (David, 2026-10-28).
+  return `<div class="table-wrap"><table><tr><th>Test</th><th class="r">This season</th><th class="r">All time</th></tr>
     ${v.bests.map((b) => `<tr><td>${TEST_LABELS[b.test]}</td>
-      <td class="r">${b.season ? fmtResult(b.season) : '–'}</td><td class="r">${b.season ? split(b.season) : ''}</td>
-      <td class="r">${fmtResult(b.allTime)}</td><td>${fmtDate(b.allTime.date, { month: '2-digit', day: '2-digit', year: '2-digit' })}</td></tr>`).join('')}
+      <td class="r">${b.season ? fmtResult(b.season) : '–'}<div class="muted small">${b.season ? split(b.season) : ''}</div></td>
+      <td class="r">${fmtResult(b.allTime)}<div class="muted small">${fmtDate(b.allTime.date, { month: '2-digit', day: '2-digit', year: '2-digit' })}</div></td></tr>`).join('')}
   </table></div>`;
 }
 
