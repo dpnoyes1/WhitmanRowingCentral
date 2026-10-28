@@ -3,6 +3,8 @@
 import assert from 'node:assert';
 import * as R from '../lib/ergscreen.mjs';
 import * as C from '../lib/ergchecks.mjs';
+import { makeKeepCopy, TARGET_BYTES } from '../lib/photocopy.mjs';
+import sharp from 'sharp';
 
 const TODAY = '2026-10-28';
 
@@ -343,5 +345,36 @@ export default function photoTests(test) {
     });
     const res = C.runChecks(r, { today: TODAY });
     assert.deepStrictEqual(res.issues, [], JSON.stringify(res.issues));
+  });
+
+  // ---- the kept copy (step 6): made-up pixels only, no real photos ----
+  const noisy = async (w, h, extra = {}) => {
+    const px = Buffer.alloc(w * h * 3);
+    for (let i = 0; i < px.length; i++) px[i] = (i * 2654435761 >>> 24) & 255;   // noise: hard to compress
+    return sharp(px, { raw: { width: w, height: h, channels: 3 } }).jpeg({ quality: 95 })
+      .withExif({ IFD0: { Make: 'FakeCam' }, IFD3: { GPSLatitudeRef: 'N', GPSLatitude: '40/1 0/1 0/1' } }).toBuffer();
+  };
+  test('photo copy: a big noisy phone photo shrinks to about 150 KB with every tag gone', async () => {
+    const big = await noisy(3024, 2268);
+    assert.ok(big.length > 1_000_000 && (await sharp(big).metadata()).exif, 'the test photo starts big, with EXIF');
+    const out = await makeKeepCopy(big);
+    assert.ok(out.bytes.length <= TARGET_BYTES, 'size ' + out.bytes.length);
+    assert.ok(Math.max(out.width, out.height) <= 1280);
+    const meta = await sharp(out.bytes).metadata();
+    assert.strictEqual(meta.format, 'jpeg');
+    assert.ok(!meta.exif && !meta.xmp && !meta.icc && !out.bytes.includes(Buffer.from('FakeCam')), 'no EXIF, GPS or camera name left');
+  });
+  test('photo copy: a rotated phone photo comes out upright', async () => {
+    const px = Buffer.alloc(200 * 100 * 3, 128);
+    const tilted = await sharp(px, { raw: { width: 200, height: 100, channels: 3 } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();
+    const out = await makeKeepCopy(tilted);
+    assert.deepStrictEqual([out.width, out.height], [100, 200], 'orientation 6 turns 200x100 upright');
+    assert.ok(!(await sharp(out.bytes).metadata()).orientation, 'the tag is gone');
+  });
+  test('photo copy: small images are not enlarged, bad input throws', async () => {
+    const small = await sharp(Buffer.alloc(300 * 200 * 3, 90), { raw: { width: 300, height: 200, channels: 3 } }).png().toBuffer();
+    const out = await makeKeepCopy(small);
+    assert.deepStrictEqual([out.width, out.height], [300, 200]);
+    await assert.rejects(() => makeKeepCopy(Buffer.from('not an image')));
   });
 }

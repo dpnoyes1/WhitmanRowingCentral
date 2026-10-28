@@ -1,6 +1,7 @@
 import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
+import { callSheet } from '../lib/slack.mjs';
 import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, workoutView, balanceView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -66,6 +67,20 @@ export async function handle(req, envFn, deps = {}) {
     if (!entry || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No workout with that ID.' }, 404);
     return json({ ...workoutView(data, wk[1], today), meta });
   }
+  // The kept copy of the erg-screen photo for one workout, same access as the workout itself. The Drive folder is private; the
+  // Sheet's script hands the file to this function, which passes it on to a signed-in person. It is only asked for when a workout is opened.
+  const ph = path.match(/^\/api\/photo\/([A-Za-z0-9_-]+)$/);
+  if (ph) {
+    const entry = data.entries.find((x) => x.id === ph[1]);
+    if (!entry || !entry.hasPhoto || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No photo for that workout.' }, 404);
+    let out;
+    try { out = await callSheet(envFn, deps.fetchImpl || fetch, { action: 'photo-get', entryId: entry.id }); } catch (err) {
+      console.error('photo error:', err.message);
+      return json({ error: 'The photo could not be loaded.' }, 502);
+    }
+    if (out.status !== 'ok') return json({ error: 'No photo for that workout.' }, 404);
+    return new Response(Buffer.from(out.data, 'base64'), { headers: { 'content-type': out.mime || 'image/jpeg', 'cache-control': 'private, max-age=86400', 'x-content-type-options': 'nosniff' } });
+  }
   return json({ error: 'Not found' }, 404);
 }
 
@@ -77,4 +92,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/photo/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };

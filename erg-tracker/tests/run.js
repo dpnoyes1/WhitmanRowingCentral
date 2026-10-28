@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'SlackPhoto.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -116,7 +116,7 @@ test('parse practice with intervals', () => {
   assert.strictEqual(r.intervals[2]['Rest s'], '');
   const headers = g.HEADERS[g.TABS.ENTRIES];
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
-  assert.strictEqual(headers.slice(-2).join(), 'Warmup m,Cooldown m');
+  assert.strictEqual(headers.slice(-3).join(), 'Warmup m,Cooldown m,Photo link');
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
 });
 
@@ -1242,6 +1242,30 @@ test('slack photo: saved read becomes the same entry the Form would make', () =>
   assert.strictEqual(bike.entry['Main set'], 'Erg screen photo');
   assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: [] }, 'Jane Smith'), /No pieces/);
   assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: Array(11).fill(photo.pieces[0]) }, 'Jane Smith'), /More than 10/);
+});
+
+test('photos: Drive link, same-workout match, Logbook wins, feed says only that a photo exists', () => {
+  assert.strictEqual(g.photoFileId_('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp-_/view?usp=drivesdk'), '1AbCdEfGhIjKlMnOp-_');
+  assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');
+  assert.strictEqual(g.photoFileId_(''), '');
+  assert.strictEqual(g.photoFileId_('hello'), '');
+  assert.ok(g.HEADERS['Entries'].slice(-1)[0] === 'Photo link', 'the new column is last');
+  const mine = { athleteId: 'A001', date: '2026-10-28', workS: 480, workM: 2000 };
+  const twin = (over) => g.photoSameWorkout_(mine, { ...mine, ...over });
+  assert.ok(twin({}) && twin({ workS: 482.3, workM: 2008 }), 'close totals match');
+  assert.ok(!twin({ workM: 2060 }) && !twin({ workS: 490 }) && !twin({ date: '2026-10-27' }) && !twin({ athleteId: 'A002' }), 'different meters, time, day or athlete');
+  assert.ok(!twin({ workM: 0 }) && !twin({ workM: '' }), 'blank totals never match');
+  const row = (over) => ({ 'Entry ID': 'E1', 'Athlete ID': 'A001', Date: new Date(2026, 9, 28), 'Work s': 480.4, 'Work m': 2000, Source: 'Logbook', 'Review status': '', 'Photo link': '', ...over });
+  assert.strictEqual(g.photoFindLogbookTwin_(mine, [row({ Source: 'Form' }), row({ 'Review status': 'Rejected' })]), null, 'only live Logbook entries');
+  assert.strictEqual(g.photoFindLogbookTwin_(mine, [row({ 'Entry ID': 'E2' }), row({ 'Entry ID': 'E3' })])['Entry ID'], 'E2');
+  assert.strictEqual(g.photoFindSlackTwins_(mine, [row({ Source: 'Slack' })]).length, 0, 'a Slack entry with no photo is left alone');
+  assert.strictEqual(g.photoFindSlackTwins_(mine, [row({ Source: 'Slack', 'Photo link': 'https://drive.google.com/file/d/xyz/view' }), row({ Source: 'Form', 'Photo link': 'x' })]).length, 1);
+  // the feed carries a yes/no, never the link
+  const inputs = dummyFeedInputs();
+  inputs.entries.slice(0, 2).forEach((e, i) => { e['Photo link'] = i ? '' : 'https://drive.google.com/file/d/SECRETFILEID123456/view'; });
+  const feed = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12))));
+  assert.ok(feed.entries.some((e) => e.hasPhoto === true) && feed.entries.some((e) => e.hasPhoto === false));
+  assert.ok(!JSON.stringify(feed).includes('SECRETFILEID'), 'no Drive link in the feed');
 });
 
 console.log(`${passed} tests passed`);

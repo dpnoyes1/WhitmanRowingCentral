@@ -814,10 +814,10 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   const bad = { ...single, total: { ...single.total, time: '9:30.0' } };   // time does not match meters at that split
   const intervals = { ...single, title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
     pieces: [0, 1, 2, 3].map(() => piece('1:40.0', 500, '1:40.0')) };
-  const world = ({ answers = [single], sheet = {} } = {}) => {
+  const world = ({ answers = [single], sheet = {}, copy = null } = {}) => {
     const calls = []; const store = new Map(); let ai = 0;
     const fake = { get: async (k) => store.get(k) || null, set: async (k, v) => { store.set(k, JSON.parse(JSON.stringify(v))); }, delete: async (k) => { store.delete(k); } };
-    const deps = { today: '2026-10-28', store: fake, fetchImpl: async (url, init) => {
+    const deps = { today: '2026-10-28', store: fake, makeCopy: copy || (async (b) => ({ bytes: Buffer.from('small-copy') })), fetchImpl: async (url, init) => {
       const body = init && init.body ? JSON.parse(init.body) : null;
       calls.push({ url, body, headers: init && init.headers });
       if (url === 'https://script.example/exec') {
@@ -876,6 +876,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual(save.photo.machine, 'RowErg');
   assert.deepStrictEqual(save.photo.pieces, [{ timeS: 480, meters: 2000, rate: 24, restS: 0 }], 'single piece saves totals only');
   assert.ok(/Splits: 2:00\.0, 2:00\.0, 2:00\.0, 2:00\.0/.test(save.photo.note));
+  assert.strictEqual(save.photo.image, Buffer.from('small-copy').toString('base64'), 'the small copy goes with the save, not the original');
   const sent = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
   assert.ok(/Saved for Olivia Fake with RPE 7/.test(sent.text) && sent.replace_original);
   out = await handlePhotoButton(press('photo_rpe_7', token), env, w.deps);
@@ -898,6 +899,24 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual(out.status, 'unknown_name');
   assert.ok(w.store.has('pending:UC1') && /can't find "Nobody"/.test(w.dms().pop().text));
   assert.deepStrictEqual(await handlePhotoEvent(textMsg('hello'), env, world().deps), { ignored: 'nothing pending' });
+
+  // a copy that cannot be made never blocks the workout; Logbook already having it says so
+  w = world({ copy: async () => { throw new Error('bad image'); } });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const tokC = w.dms()[0].blocks[1].elements[0].value;
+  await handlePhotoButton(press('photo_norpe', tokC), env, w.deps);
+  const noCopy = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo;
+  assert.strictEqual(noCopy.image, '');
+  assert.ok(/No photo copy kept \(bad image\)/.test(noCopy.note));
+  w = world({ sheet: { save: { status: 'merged', athlete: 'Olivia Fake', photo: 'added' } } });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  out = await handlePhotoButton(press('photo_norpe', w.dms()[0].blocks[1].elements[0].value), env, w.deps);
+  assert.strictEqual(out.status, 'merged');
+  assert.ok(/Logbook already has this workout.*photo is kept with it/.test(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body.text));
+  w = world({ sheet: { save: { status: 'ok', athlete: 'Olivia Fake', photo: 'failed' } } });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  await handlePhotoButton(press('photo_norpe', w.dms()[0].blocks[1].elements[0].value), env, w.deps);
+  assert.ok(/photo copy could not be kept/.test(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body.text));
 
   // cancel, and a failed save lets her press again
   w = world();
@@ -1133,6 +1152,39 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
     const [w, h] = [file.readUInt32BE(16), file.readUInt32BE(20)];
     assert.strictEqual(`${w}x${h}`, icon.sizes, icon.src);
   }
+});
+
+test('workout photo: only the owner and coaches get the kept copy, only when the workout has one', async () => {
+  clearFeedCache();
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const mine = feed.entries.find((e) => e.athleteId === 'A901' && e.status !== 'Out');
+  const other = feed.entries.find((e) => e.athleteId !== 'A901' && e.status !== 'Out');
+  const withPhoto = { ...feed, entries: feed.entries.map((e) => (e.id === mine.id || e.id === other.id ? { ...e, hasPhoto: true } : e)) };
+  const calls = [];
+  const deps = { today: TODAY, fetchImpl: async (url, init) => {
+    const body = JSON.parse(init.body);
+    if (body.action === 'photo-get') { calls.push(body); return Response.json({ status: 'ok', mime: 'image/jpeg', data: Buffer.from('JPEGBYTES').toString('base64') }); }
+    return new Response(JSON.stringify(withPhoto));
+  } };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
+  let res = await get('/api/photo/' + mine.id, her);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get('content-type'), 'image/jpeg');
+  assert.strictEqual(Buffer.from(await res.arrayBuffer()).toString(), 'JPEGBYTES');
+  assert.deepStrictEqual(calls[0], { action: 'photo-get', entryId: mine.id, key: 'fake-key' });
+  assert.strictEqual((await get('/api/photo/' + other.id, her)).status, 404, 'a teammate\'s photo is refused');
+  assert.strictEqual((await get('/api/photo/' + other.id, coach)).status, 200);
+  const noPhoto = feed.entries.find((e) => e.athleteId === 'A901' && e.id !== mine.id && e.status !== 'Out');
+  assert.strictEqual((await get('/api/photo/' + noPhoto.id, her)).status, 404, 'no photo, no call to the Sheet');
+  assert.strictEqual(calls.length, 2);
+  assert.strictEqual((await get('/api/photo/' + mine.id, '')).status, 401, 'sign-in needed');
+  // the workout page is told a photo exists (and nothing else about it)
+  const wv = await (await get('/api/workout/' + mine.id, her)).json();
+  assert.strictEqual(wv.workout.photo, true);
+  assert.ok(!/drive\.google|Photo link/i.test(JSON.stringify(wv)), 'no Drive link reaches the browser');
+  clearFeedCache();
 });
 
 test('my workouts: own and coaches see splits, teammates and strangers do not', async () => {

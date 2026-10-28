@@ -1,8 +1,9 @@
 {
   "name": "whitmanrowingcentral",
   "private": true,
-  "description": "Netlify installs these for the team site's functions (erg-tracker/site). Tests need nothing.",
+  "description": "Netlify installs these for the team site's functions (erg-tracker/site). sharp shrinks the kept erg photos. Tests need @netlify/blobs only for the live store (they pass a fake) and sharp for the photo copy test.",
   "dependencies": {
-    "@netlify/blobs": "11.1.4"
+    "@netlify/blobs": "11.1.4",
+    "sharp": "0.35.5"
   }
 }
