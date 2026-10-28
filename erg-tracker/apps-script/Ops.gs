@@ -5,6 +5,9 @@
  *   once a day while it stays broken, and once when it recovers. A form
  *   submission that can't be saved alerts too. With no webhook set, alerts
  *   go by email to alerts.email (blank: the Sheet owner).
+ * - Monday list: at 7:00 every Monday a message names the active rowers with no
+ *   2k and no 20' test this school year or last, so no target can be worked out
+ *   for her. Nothing is sent when everyone has one.
  * - Backups: every Sunday night a values-only copy of every tab goes into the
  *   Drive folder "Erg tracker backups"; the newest backup.keep (12) are kept.
  * - New school year: archives a copy, saves squads, and sets graduated
@@ -21,7 +24,7 @@ var ALERT_STATE_PROP = 'ALERT_STATE';
 var ALERT_REPEAT_MS = 24 * 60 * 60 * 1000;
 var BACKUP_PREFIX = 'Erg tracker backup ';
 var ARCHIVE_PREFIX = 'Erg tracker archive ';
-var OPS_TRIGGERS = ['checkSiteHealth', 'backupSheet'];
+var OPS_TRIGGERS = ['checkSiteHealth', 'backupSheet', 'sendNoTargetList'];
 
 // ---- Pure parts (tested in Node) ----
 
@@ -93,6 +96,40 @@ function graduatesToRetire(roster, gradYear) {
     var g = Number(r['Grad year']);
     return r.Name && isActive_(r.Active) && g && g <= gradYear;
   });
+}
+
+// ---- Monday list: athletes with no target ----
+
+/**
+ * Active rowers with neither a 2k nor a 20' season best (this school year or
+ * last, rejected rows ignored), so every target on her plan is blank. Alumni
+ * have no plan and are left out. Names in roster order.
+ */
+function noTargetAthletes(roster, benchmarks, today, yearStartMMDD) {
+  return roster.filter(function (a) {
+    if (isAlumSquad_(a.Squad)) return false;
+    return Object.keys(PLAN_BASES).every(function (base) {
+      return !seasonBestWatts(benchmarks, a['Athlete ID'], base, today, yearStartMMDD);
+    });
+  }).map(function (a) { return a.Name; });
+}
+
+/** The Monday message, or '' when there is nobody to list. */
+function noTargetText(names) {
+  if (!names.length) return '';
+  return ':clipboard: ' + names.length + (names.length === 1 ? ' athlete has' : ' athletes have') +
+    ' no 2k or 20\' test yet, so no targets show for ' + (names.length === 1 ? 'her' : 'them') + ':\n' +
+    names.map(function (n) { return '\u2022 ' + n; }).join('\n') +
+    '\nBook a test day and enter the result to switch targets on.';
+}
+
+/** Monday 7:00 trigger. Silent when every active rower has a test. */
+function sendNoTargetList() {
+  var settings = getSettings();
+  var names = noTargetAthletes(activeRoster_(false), readObjects_(TABS.BENCHMARKS), new Date(), settings.school_year_start);
+  var text = noTargetText(names);
+  if (text) sendAlert_(text);
+  return names;
 }
 
 // ---- Alerts ----
@@ -256,6 +293,7 @@ function installOpsTriggers_() {
   });
   ScriptApp.newTrigger('checkSiteHealth').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('backupSheet').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(23).create();
+  ScriptApp.newTrigger('sendNoTargetList').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).create();
 }
 
 /** Menu: turn on (or repair) alerts and backups, and show what the site check sees now. */
@@ -266,6 +304,7 @@ function turnOnAlertsAndBackups() {
   var hook = PropertiesService.getScriptProperties().getProperty(SLACK_WEBHOOK_PROP);
   SpreadsheetApp.getUi().alert('Alerts and backups are on.\n\n' +
     'Site check every hour, alerts to ' + (hook ? 'Slack' : 'email (set a Slack webhook from the menu to use Slack)') + '.\n' +
+    'Monday 7:00: a list of athletes with no 2k or 20\' test, only when there is someone to list.\n' +
     'Backup every Sunday night to Drive > Erg tracker backups, keeping ' + (parseInt(getSettings()['backup.keep'], 10) || 12) + '.\n\n' +
     (problems.length ? 'The site check found problems right now:\n' + problems.join('\n') : 'The site check passed.'));
 }
