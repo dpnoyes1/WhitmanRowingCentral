@@ -1,12 +1,13 @@
-// Erg-screen photos in Slack, coaches only (David, 2026-10-28). A coach sends a
+// Erg-screen photos in Slack (David, 2026-10-28). A coach or an athlete sends a
 // photo to the bot; the bot reads it (ergscreen.mjs), runs the checks
-// (ergchecks.mjs), asks which athlete, and shows a card whose RPE buttons save it
+// (ergchecks.mjs), asks a coach which athlete (an athlete is found by the Slack
+// member ID on her Roster row and can log only herself), and shows a card whose RPE buttons save it
 // through the Sheet (apps-script/SlackPhoto.gs). Pending photos and cards are kept
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
-import { todayEastern } from './slacklog.mjs';
+import { todayEastern, NOT_ON_ROSTER } from './slacklog.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
@@ -111,7 +112,7 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
 
   if (image) {
     const who = await callSheet(envFn, fetchImpl, { action: 'slack-access', slackUserId: user }).catch((e) => ({ status: 'error', error: e.message }));
-    if (who.status === 'not_allowed') { await say(':lock: Photo logging is for coaches for now. Please use the Form: whitmanrowingcentral.netlify.app/logworkout'); return { status: 'not_allowed' }; }
+    if (who.status === 'not_allowed') { await say(NOT_ON_ROSTER); return { status: 'not_allowed' }; }
     if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the photo again in a minute.'); return { status: 'error' }; }
     const key = envFn('ANTHROPIC_API_KEY');
     if (!key) { await say(':warning: Photo reading is not set up yet (no API key). Use /log for now.'); return { status: 'no_key' }; }
@@ -125,9 +126,10 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     if (pieces.length > MAX_PIECES) { await say(`:warning: That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { status: 'too_many' }; }
     const shown = parseScreenDate(read.date, today);
     const useShown = shown && Math.abs(Math.round((Date.parse(today) - Date.parse(shown)) / 86400000)) <= 3;   // a clock-reset date is flagged, not used
-    const notes = [`Logged from an erg photo by a coach.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
+    const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
     if (pieces.length === 1 && read.pieces.length > 1) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
     await store.set('pending:' + user, { at: Date.now(), summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, note: notes.join(' | ').slice(0, 400) });
+    if (who.role === 'athlete') return nameStep(who.athlete, user, event, envFn, fetchImpl, store, say);   // only ever herself
     const caption = String(event.text || '').trim();
     if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with her full name.`); return { status: 'asked' }; }
     return nameStep(caption, user, event, envFn, fetchImpl, store, say);
@@ -143,7 +145,8 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
 async function nameStep(name, user, event, envFn, fetchImpl, store, say) {
   const pending = await store.get('pending:' + user);
   const who = await callSheet(envFn, fetchImpl, { action: 'slack-access', slackUserId: user, athleteName: name }).catch((e) => ({ status: 'error', error: e.message }));
-  if (who.status === 'not_allowed') { await say(':lock: Photo logging is for coaches for now.'); return { status: 'not_allowed' }; }
+  if (who.status === 'not_allowed') { await say(NOT_ON_ROSTER); return { status: 'not_allowed' }; }
+  if (who.status === 'not_yourself') { await say(':lock: You can only log your own sessions. Send the photo again without a name.'); return { status: 'not_yourself' }; }
   if (who.status === 'unknown_name') { await say(`I can't find "${name}" as an active athlete on the roster. Reply with her full name as it is on the roster.`); return { status: 'unknown_name' }; }
   if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the name again in a minute.'); return { status: 'error' }; }
   const token = randomBytes(9).toString('hex');
@@ -167,7 +170,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   const note = (line) => ({ response_type: 'ephemeral', replace_original: false, text: line });
   const card = await store.get('card:' + token);
   if (!card) { await sendReply(envFn, fetchImpl, payload, note('That card was already used or has expired. Send the photo again.')); return { status: 'gone' }; }
-  if (card.user !== payload.user.id) { await sendReply(envFn, fetchImpl, payload, note('Only the coach who sent the photo can save it.')); return { status: 'not_owner' }; }
+  if (card.user !== payload.user.id) { await sendReply(envFn, fetchImpl, payload, note('Only the person who sent the photo can save it.')); return { status: 'not_owner' }; }
   if (id === 'photo_cancel') {
     await store.delete('card:' + token);
     await sendReply(envFn, fetchImpl, payload, replace(':x: Cancelled, nothing was saved.'));

@@ -2,9 +2,12 @@
  * /log in Slack (David, 2026-10-28): the athlete fills a modal, the Slack
  * function (site/functions/slack-background.mjs) sends the values here, and
  * they go through the same parseSubmission as the Form. Source = Slack.
- * Coaches only for now (David, 2026-10-28: David, Greta and Forrest, the Slack
- * member IDs in Settings slack.coach_ids). The coach types the athlete's name;
- * Entered by is the coach. Tests and Benchmarks stay on the Form.
+ * Coaches (David, Greta and Forrest, the Slack member IDs in Settings
+ * slack.coach_ids) type the athlete's name; Entered by is the coach. Athletes
+ * (David, 2026-10-28) are found by the Slack member ID on their active Roster
+ * row and can log only for themselves; Entered by is the athlete. Slack has
+ * already proved who is pressing, so no birthday is asked. Tests and
+ * Benchmarks stay on the Form.
  */
 
 var SLACK_LOG_ACTION = 'slack-log';
@@ -14,19 +17,30 @@ var SLACK_LOG_STATUSES = { full: STATUSES.FULL, modified: STATUSES.MODIFIED, out
 // ---- Pure parts (tested in Node) ----
 
 /**
- * Who may log and for whom. Only Slack IDs in coachIds; the athlete is an
- * active Roster row matched by name (case and extra spaces ignored).
- * Returns { status: 'not_allowed' | 'unknown_name' | 'ok', athlete }.
+ * Who may log and for whom. A Slack ID in coachIds may log for any active
+ * Roster athlete, found by the typed name (case and extra spaces ignored). Any
+ * other Slack ID that is the Slack member ID of an active Roster row is that
+ * athlete and may log only for herself: the name is optional, and a different
+ * name is refused. Returns { status: 'not_allowed' |
+ * 'unknown_name' | 'not_yourself' | 'ok', role: 'coach' | 'athlete', athlete }.
  */
 function slackLogAccess_(roster, coachIds, slackUserId, athleteName) {
   var id = String(slackUserId || '').trim();
-  if (!id || coachIds.indexOf(id) < 0) return { status: 'not_allowed' };
-  var want = String(athleteName || '').replace(/\s+/g, ' ').trim().toLowerCase();
-  for (var i = 0; i < roster.length; i++) {
-    var r = roster[i];
-    if (want && r.Name && isActive_(r.Active) && String(r.Name).replace(/\s+/g, ' ').trim().toLowerCase() === want) return { status: 'ok', athlete: r };
+  if (!id) return { status: 'not_allowed' };
+  var norm = function (v) { return String(v || '').replace(/\s+/g, ' ').trim().toLowerCase(); };
+  var want = norm(athleteName);
+  if (coachIds.indexOf(id) >= 0) {
+    if (!want) return { status: 'unknown_name', role: 'coach' };
+    for (var i = 0; i < roster.length; i++) {
+      var r = roster[i];
+      if (r.Name && isActive_(r.Active) && norm(r.Name) === want) return { status: 'ok', role: 'coach', athlete: r };
+    }
+    return { status: 'unknown_name', role: 'coach' };
   }
-  return { status: 'unknown_name' };
+  var self = slackAthleteFor_(roster, id);
+  if (!self) return { status: 'not_allowed' };
+  if (want && norm(self.Name) !== want) return { status: 'not_yourself', role: 'athlete' };
+  return { status: 'ok', role: 'athlete', athlete: self };
 }
 
 /**
@@ -111,7 +125,7 @@ function slackLogAnswers(form, athleteName, enteredBy) {
 
 /**
  * doPost action from the Slack function: body { slackUserId, slackName, viewId, form }.
- * Answers { status: 'ok' | 'not_allowed' | 'unknown_name' | 'duplicate' | 'error', ... }.
+ * Answers { status: 'ok' | 'not_allowed' | 'unknown_name' | 'not_yourself' | 'duplicate' | 'error', ... }.
  */
 function processSlackLog_(body) {
   var form = body.form || {};
@@ -120,16 +134,21 @@ function processSlackLog_(body) {
   });
 }
 
-/** doPost action 'slack-access': may this Slack user log, and is the name on the Roster? Body { slackUserId, athleteName }. */
+/**
+ * doPost action 'slack-access': may this Slack user log, and for whom? Body
+ * { slackUserId, athleteName }. A coach with no name is 'ok' (role coach); an
+ * athlete is always 'ok' with her own name (role athlete).
+ */
 function processSlackAccess_(body) {
   var roster = readObjects_(TABS.ROSTER);
   var coaches = slackCoachIds_(getSettings());
-  if (!body.athleteName) return { status: coaches.indexOf(String(body.slackUserId || '').trim()) < 0 ? 'not_allowed' : 'ok' };
-  var access = slackLogAccess_(roster, coaches, body.slackUserId, body.athleteName);
-  return access.status === 'ok' ? { status: 'ok', athlete: String(access.athlete.Name).trim() } : { status: access.status };
+  var id = String(body.slackUserId || '').trim();
+  if (!body.athleteName && coaches.indexOf(id) >= 0) return { status: 'ok', role: 'coach' };
+  var access = slackLogAccess_(roster, coaches, id, body.athleteName);
+  return access.status === 'ok' ? { status: 'ok', role: access.role, athlete: String(access.athlete.Name).trim() } : { status: access.status };
 }
 
-/** Coach check, name lookup, one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers. */
+/** Access check (coach or herself), one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers. */
 function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -139,7 +158,7 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
     if (access.status !== 'ok') return { status: access.status };
     var athlete = access.athlete;
     if (dedupe && alreadyProcessed_(rid)) return { status: 'duplicate' };
-    var result = parseSubmission(makeAnswers(String(athlete.Name).trim(), 'Coach ' + (body.slackName || 'via Slack')), {
+    var result = parseSubmission(makeAnswers(String(athlete.Name).trim(), access.role === 'coach' ? 'Coach ' + (body.slackName || 'via Slack') : String(athlete.Name).trim()), {
       submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_
     });
     result.entry.Source = 'Slack';

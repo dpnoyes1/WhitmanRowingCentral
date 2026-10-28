@@ -1,8 +1,9 @@
 /**
- * Erg-screen photos in Slack (David, 2026-10-28), coaches only. The Slack
- * function (site/lib/slackphoto.mjs) reads the photo, the coach names the
- * athlete and presses an RPE button, and these actions save it through the
- * same parseSubmission as the Form. Source = Slack. The photo itself is not
+ * Erg-screen photos in Slack (David, 2026-10-28), for coaches (any athlete) and
+ * athletes (herself only). The Slack function (site/lib/slackphoto.mjs) reads
+ * the photo, a coach names the athlete (an athlete is herself) and presses an
+ * RPE button, and these actions save it through the same parseSubmission as
+ * the Form. Source = Slack. The photo itself is not
  * stored yet (photo plan step 6).
  */
 
@@ -12,7 +13,7 @@ var SLACK_PHOTO_ACTION = 'slack-photo';
 /**
  * The saved read -> Form answers. photo: { date, machine, title, pieces:
  * [{ timeS, meters, rate, restS }], rpe, note }. A photo is a Practice, Full
- * (coach default, David can change); warmup, zone and drag factor stay blank
+ * (default, David can change); warmup, zone and drag factor stay blank
  * because the screen doesn't show them. Times arrive as seconds.
  */
 function slackPhotoAnswers(photo, athleteName, enteredBy) {

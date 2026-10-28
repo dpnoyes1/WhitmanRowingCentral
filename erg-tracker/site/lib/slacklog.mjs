@@ -32,7 +32,8 @@ export function logModal(today = todayEastern()) {
     type: 'modal', callback_id: 'log_modal',
     title: label('Log a workout'), submit: label('Save'), close: label('Cancel'),
     blocks: [
-      input('athlete', 'Athlete', text("Full name as on the Roster"), { hint: 'Coaches only for now: the athlete you are logging for.' }),
+      input('athlete', 'Athlete (coaches only)', text('Full name as on the Roster'), { optional: true,
+        hint: 'Athletes: leave this blank, it saves for you. Coaches: the athlete you are logging for.' }),
       input('date', 'Date of session', { type: 'datepicker', initial_date: today }),
       input('type', 'What are you logging?', select(TYPES, 'practice')),
       input('status', 'Practice only: how did you do practice?', select(STATUSES, 'full'), { optional: true,
@@ -94,7 +95,6 @@ export function piecesError(textValue) {
 export function validateLogForm(f, today = todayEastern()) {
   const errors = {};
   const type = f.type || 'practice';
-  if (!f.athlete) errors.athlete = 'Type the athlete\'s full name';
   if (!f.date) errors.date = 'Pick the date';
   else if (f.date > today) errors.date = 'That date is in the future';
   if (type === 'makeup') {
@@ -129,6 +129,9 @@ export function validateLogForm(f, today = todayEastern()) {
   return errors;
 }
 
+/** When the Slack account isn't a coach's or on an active Roster row. */
+export const NOT_ON_ROSTER = ':lock: I don\'t know this Slack account yet. Ask a coach to add your Slack member ID to the Roster, or use the Form: whitmanrowingcentral.netlify.app/logworkout';
+
 /** DM text after the Sheet answers. */
 export function logReply(result) {
   if (result.status === 'ok') {
@@ -137,7 +140,8 @@ export function logReply(result) {
     return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It doesn\'t match today\'s plan, so a coach will take a look.' : '');
   }
   if (result.status === 'duplicate') return ':information_source: That was already saved. Nothing changed.';
-  if (result.status === 'not_allowed') return ':lock: /log is for coaches for now. Please use the Form: whitmanrowingcentral.netlify.app/logworkout';
-  if (result.status === 'unknown_name') return ':warning: Not saved: that name isn\'t an active athlete on the Roster. Check the spelling and run /log again.';
+  if (result.status === 'not_allowed') return NOT_ON_ROSTER;
+  if (result.status === 'not_yourself') return ':lock: Not saved: you can only log for yourself. Leave the Athlete box blank and run /log again.';
+  if (result.status === 'unknown_name') return ':warning: Not saved: that name isn\'t an active athlete on the Roster. Coaches: check the spelling and run /log again.';
   return `:warning: Not saved: ${result.error || 'unknown problem'}. Run /log again, or use the Form.`;
 }
