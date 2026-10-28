@@ -20,10 +20,11 @@ export async function handleCallback(req, envFn, deps = {}) {
   const fetchImpl = deps.fetch || fetch;
   try {
     const tokens = await C2.exchangeCode(envFn, fetchImpl, code, C2.redirectUri(envFn, req));
-    const logbookId = await C2.fetchLogbookUserId(fetchImpl, tokens.access);
-    await C2.saveConnection(envFn, store, who.id, tokens, logbookId);
+    const user = await C2.fetchLogbookUser(fetchImpl, tokens.access);
+    await C2.saveConnection(envFn, store, who.id, tokens, user);
     return back('connected');
   } catch (err) {
+    if (err instanceof C2.AccountTaken) return back('taken');
     console.error('logbook connect failed:', err.message);
     return back('error');
   }

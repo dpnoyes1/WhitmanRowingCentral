@@ -14,17 +14,21 @@ export async function handleConcept2(req, envFn, deps = {}) {
   if (!store) return json({ error: 'Storage is not available.' }, 503);
 
   if (path === '/api/concept2/status') {
-    if (who.kind === 'team') return json({ kind: 'team', connected: await C2.connectedIds(store) });
-    return json({ kind: 'athlete', connected: await C2.isConnected(store, who.id) });
+    if (who.kind === 'team') return json({ kind: 'team', connected: await C2.connectedList(store) });
+    const info = await C2.connectionInfo(store, who.id);
+    return json({ kind: 'athlete', connected: !!info, username: info ? info.username || '' : '' });
+  }
+  if (path === '/api/concept2/disconnect' && req.method === 'POST') {
+    // Athletes disconnect themselves; a coach names the athlete (?athlete=A001).
+    const target = who.kind === 'team' ? new URL(req.url).searchParams.get('athlete') : who.id;
+    if (!target || !/^[A-Za-z0-9-]+$/.test(target)) return json({ error: 'Say which athlete.' }, 400);
+    await C2.disconnect(envFn, store, target);
+    return json({ ok: true });
   }
   if (who.kind !== 'athlete') return json({ error: 'Athletes connect their own Logbook account.' }, 403);
   if (path === '/api/concept2/connect' && req.method === 'GET') {
     const url = C2.authorizeUrl(envFn, req, C2.makeState(envFn, who.id));
     return new Response(null, { status: 302, headers: { location: url, 'cache-control': 'no-store' } });
-  }
-  if (path === '/api/concept2/disconnect' && req.method === 'POST') {
-    await C2.disconnect(envFn, store, who.id);
-    return json({ ok: true });
   }
   return json({ error: 'Not found.' }, 404);
 }

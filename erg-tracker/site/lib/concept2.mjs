@@ -99,14 +99,17 @@ export const exchangeCode = (env, fetchImpl, code, redirect) =>
 export const refreshTokens = (env, fetchImpl, refresh) =>
   tokenRequest(env, fetchImpl, { grant_type: 'refresh_token', refresh_token: refresh, scope: SCOPE });
 
-/** The Logbook account's numeric id (user:read), so a webhook can be matched to an athlete. */
-export async function fetchLogbookUserId(fetchImpl, access) {
+/** The Logbook account's numeric id and username (user:read). The id matches a webhook to an athlete. */
+export async function fetchLogbookUser(fetchImpl, access) {
   const res = await fetchImpl(LOGBOOK + '/api/users/me', { headers: { authorization: 'Bearer ' + access, accept: 'application/json' } });
   const body = await res.json().catch(() => ({}));
-  const id = body && body.data && body.data.id;
-  if (!res.ok || !id) throw new Error('Logbook profile request failed (' + res.status + ')');
-  return String(id);
+  const d = body && body.data;
+  if (!res.ok || !d || !d.id) throw new Error('Logbook profile request failed (' + res.status + ')');
+  return { id: String(d.id), username: String(d.username || '') };
 }
+
+/** Thrown when a Logbook account is already linked to a different athlete. */
+export class AccountTaken extends Error {}
 
 // ---- storage -----------------------------------------------------------------
 
@@ -130,18 +133,32 @@ const tokKey = (athleteId) => 'tok/' + athleteId;
 const userKey = (logbookId) => 'user/' + logbookId;
 const connKey = (athleteId) => 'conn/' + athleteId;
 
-export async function saveConnection(env, store, athleteId, tokens, logbookUserId) {
-  await store.set(tokKey(athleteId), seal(env, { ...tokens, logbookUserId }));
-  await store.set(userKey(logbookUserId), athleteId);
-  await store.set(connKey(athleteId), JSON.stringify({ at: new Date().toISOString() }));
+/** Links a Logbook account to an athlete. One account per athlete and one athlete per account. */
+export async function saveConnection(env, store, athleteId, tokens, user) {
+  const owner = await store.get(userKey(user.id));
+  if (owner && owner !== athleteId) throw new AccountTaken('Logbook account already linked to another athlete');
+  const old = unseal(env, await store.get(tokKey(athleteId)));
+  if (old && old.logbookUserId && old.logbookUserId !== user.id) await store.delete(userKey(old.logbookUserId));
+  await store.set(tokKey(athleteId), seal(env, { ...tokens, logbookUserId: user.id }));
+  await store.set(userKey(user.id), athleteId);
+  await store.set(connKey(athleteId), JSON.stringify({ at: new Date().toISOString(), username: user.username }));
+}
+
+/** { at, username } or null. */
+export async function connectionInfo(store, athleteId) {
+  const raw = await store.get(connKey(athleteId));
+  if (!raw) return null;
+  try { return JSON.parse(raw); } catch { return { at: '', username: '' }; }
 }
 
 export async function isConnected(store, athleteId) {
   return !!(await store.get(connKey(athleteId)));
 }
 
-export async function connectedIds(store) {
-  return (await store.list('conn/')).map((k) => k.slice(5));
+/** [{ id, username }] for every connected athlete (coaches only). */
+export async function connectedList(store) {
+  const ids = (await store.list('conn/')).map((k) => k.slice(5));
+  return Promise.all(ids.map(async (id) => ({ id, username: ((await connectionInfo(store, id)) || {}).username || '' })));
 }
 
 export async function athleteForLogbookUser(store, logbookUserId) {

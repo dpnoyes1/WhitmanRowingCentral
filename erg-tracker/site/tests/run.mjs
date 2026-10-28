@@ -788,7 +788,7 @@ const fakeLogbook = (log = []) => async (url, init = {}) => {
       ? { access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 604800 }
       : { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 604800 });
   }
-  if (String(url).endsWith('/api/users/me')) return Response.json({ data: { id: 777 } });
+  if (String(url).endsWith('/api/users/me')) return Response.json({ data: { id: 777, username: 'fake-rower' } });
   return new Response('no', { status: 404 });
 };
 
@@ -842,18 +842,35 @@ test('concept2: callback stores sealed tokens, status, refresh and disconnect', 
   assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
   // status: athlete sees her own, coaches see who is connected, other athlete sees false
   const st = async (who) => (await (await handleConcept2(new Request('https://x/api/concept2/status', { headers: { cookie: c2cookie(who) } }), c2env, { store })).json());
-  assert.deepStrictEqual(await st('A901'), { kind: 'athlete', connected: true });
-  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false });
-  assert.deepStrictEqual(await st('team'), { kind: 'team', connected: ['A901'] });
+  assert.deepStrictEqual(await st('A901'), { kind: 'athlete', connected: true, username: 'fake-rower' });
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  assert.deepStrictEqual(await st('team'), { kind: 'team', connected: [{ id: 'A901', username: 'fake-rower' }] });
   // fresh token is reused, an expiring one is refreshed and the new refresh token kept
   const fetchImpl = fakeLogbook(log);
   assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901'), 'access-1');
   assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901', Date.now() + 7 * 86400_000), 'access-2');
   assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A902'), null);
-  // disconnect removes everything
-  const del = await handleConcept2(new Request('https://x/api/concept2/disconnect', { method: 'POST', headers: { cookie: c2cookie('A901') } }), c2env, { store });
+  // a second athlete cannot take the same Logbook account
+  const taken = await cb('code=c2&state=' + C2.makeState(c2env, 'A902'), 'A902');
+  assert.strictEqual(taken.headers.get('location'), '/?logbook=taken#/me');
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  // reconnecting with a different account drops the old link
+  const other = async (url) => (String(url).endsWith('/api/users/me') ? Response.json({ data: { id: 888, username: 'second' } }) : fakeLogbook([])(url, { body: 'grant_type=authorization_code' }));
+  await C2.saveConnection(c2env, store, 'A901', { access: 'x', refresh: 'y', expiresAt: 1 }, await C2.fetchLogbookUser(other, 'x'));
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), null);
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '888'), 'A901');
+  assert.strictEqual((await st('A901')).username, 'second');
+  // a coach disconnects by naming her; an athlete only herself
+  const noName = await handleConcept2(new Request('https://x/api/concept2/disconnect', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(noName.status, 400);
+  const del = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
   assert.strictEqual(del.status, 200);
   assert.strictEqual(store.m.size, 0);
+  await C2.saveConnection(c2env, store, 'A902', { access: 'x', refresh: 'y', expiresAt: 1 }, { id: '999', username: 'u' });
+  const self = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('A902') } }), c2env, { store });
+  assert.strictEqual(self.status, 200);
+  assert.strictEqual(store.m.size, 0, 'an athlete can only disconnect herself, whatever the query says');
 });
 
 for (const [name, fn] of tests) {
