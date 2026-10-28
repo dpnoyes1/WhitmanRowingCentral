@@ -84,6 +84,25 @@ export function fillMissing(read) {
   return r;
 }
 
+/**
+ * A row above the line that equals the sum of the rows under it is the workout's subtotal
+ * (the summary row), not a piece. Taken out of `pieces` so nothing counts twice (David, 2026-10-28).
+ */
+export function dropSubtotal(read) {
+  const pieces = read.pieces || [];
+  if (pieces.length < 3) return { read, dropped: null };
+  const sameTime = (a, b, n) => a != null && b != null && Math.abs(a - b) <= 0.1 * n + 0.3;
+  for (let i = 0; i < pieces.length; i++) {
+    const others = pieces.filter((_, j) => j !== i);
+    const p = pieces[i];
+    const timeOk = others.every((o) => o.timeS != null) && sameTime(p.timeS, others.reduce((a, o) => a + o.timeS, 0), others.length);
+    const metersKnown = p.meters != null && others.every((o) => o.meters != null);
+    const metersOk = !metersKnown || Math.abs(p.meters - others.reduce((a, o) => a + o.meters, 0)) <= 2;
+    if (timeOk && metersOk) return { read: { ...read, pieces: others }, dropped: p };
+  }
+  return { read, dropped: null };
+}
+
 const issue = (code, level, athlete, coach, coaches = true) => ({ code, level, coaches, athlete, coach });
 
 const resend = 'Please send a clearer photo, or type it in with /log.';
@@ -94,8 +113,11 @@ const resend = 'Please send a clearer photo, or type it in with /log.';
  * worst level: 'hold' | 'ask' | 'clean' (flag and note still save).
  */
 export function runChecks(input, ctx) {
-  const read = fillMissing(input);
+  let read = fillMissing(input);
   const issues = [];
+  const sub = dropSubtotal(read);
+  read = sub.read;
+  if (sub.dropped) issues.push(issue('subtotal_dropped', 'note', '', `The summary row (${sub.dropped.meters != null ? sub.dropped.meters + ' m, ' : ''}${formatClock(sub.dropped.timeS)}) was not counted as a piece`, true));
   const title = parseTitle(read.title);
   const pieces = read.pieces || [];
 
@@ -108,6 +130,23 @@ export function runChecks(input, ctx) {
   }
   for (const what of read.calculated) {
     issues.push(issue('calculated', 'note', `The ${what} was calculated from the other numbers, please check it.`, '', false));
+  }
+
+  // Working time, not Total Time (David, 2026-10-28): an interval screen's header Total Time includes
+  // rest. When the time we have is longer than the pace allows, it is that header, so use the working time.
+  if (read.machine && read.avgSplitS && !read.calculated.length) {
+    const d = splitUnit(read.machine);
+    const expect = (read.totalMeters / d) * read.avgSplitS;
+    const tol = 0.05 * (read.totalMeters / d) + 0.3;
+    const interval = (title && title.kind === 'intervals') || read.restMeters != null ||
+      (!title && pieces.length > 1 && read.metersColumn === 'per_piece');
+    if (interval && read.totalTimeS - expect > tol) {
+      const times = pieces.map((p) => p.timeS);
+      const sum = times.length && times.every((t) => t != null) ? tenths(times.reduce((a, b) => a + b, 0)) : null;
+      const working = sum != null && Math.abs(sum - expect) <= tol + 0.1 * pieces.length ? sum : tenths(expect);
+      issues.push(issue('working_time', 'note', '', `Total Time on the screen (${formatClock(read.totalTimeS)}) includes rest; used working time ${formatClock(working)}`, true));
+      read = { ...read, totalTimeInclRestS: read.totalTimeInclRestS ?? read.totalTimeS, totalTimeS: working };
+    }
   }
 
   // Pace: time must match meters at the average split.
@@ -168,8 +207,8 @@ export function runChecks(input, ctx) {
   const shown = parseScreenDate(read.date, ctx.today);
   if (shown) {
     const days = Math.round((toUTC(ctx.today) - toUTC(shown)) / 86400000);
-    if (Math.abs(days) > 3) {
-      issues.push(issue('date_off', 'ask', `This screen says ${shown}. Is that right?`, `Screen date ${shown} is ${Math.abs(days)} days ${days > 0 ? 'before' : 'after'} the day sent`, true));
+    if (Math.abs(days) > 3) {   // flag only: monitor clocks reset (a dead battery gives an old date), and the entry uses the day sent
+      issues.push(issue('date_off', 'flag', '', `Screen date ${shown} is ${Math.abs(days)} days ${days > 0 ? 'before' : 'after'} the day sent; logged on the day sent`, true));
     }
   }
 
