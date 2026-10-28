@@ -680,19 +680,21 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
     hr: { v: { type: 'plain_text_input', value: null } }
   } } };
   assert.deepStrictEqual(SL.readLogForm(view), { date: '2026-10-28', type: 'practice', status: '', warmup: '15:00', hr: '' });
-  const good = { date: '2026-10-28', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', main_set: "3x10' r2'", zone: 'Aerobic', pieces: '10:00, 2400, 20', rpe: '6', drag: '105' };
+  const good = { athlete: 'Fake Athlete', date: '2026-10-28', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', main_set: "3x10' r2'", zone: 'Aerobic', pieces: '10:00, 2400, 20', rpe: '6', drag: '105' };
   assert.deepStrictEqual(SL.validateLogForm(good, '2026-10-28'), {});
-  assert.deepStrictEqual(SL.validateLogForm({ date: '2026-10-28', type: 'practice', status: 'out' }, '2026-10-28'), {}, 'Out needs nothing else');
+  assert.deepStrictEqual(SL.validateLogForm({ athlete: 'Fake Athlete', date: '2026-10-28', type: 'practice', status: 'out' }, '2026-10-28'), {}, 'Out needs nothing else');
   const bad = SL.validateLogForm({ ...good, date: '2026-10-29', warmup: '15', hr: '300', drag: '20', pieces: '10:00', zone: '', main_set: '' }, '2026-10-28');
   assert.deepStrictEqual(Object.keys(bad).sort(), ['date', 'drag', 'hr', 'main_set', 'pieces', 'warmup', 'zone']);
+  assert.ok(SL.validateLogForm({ ...good, athlete: '' }, '2026-10-28').athlete);
   assert.ok(SL.validateLogForm({ ...good, type: 'makeup' }, '2026-10-28').makeup_for);
   assert.ok(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-28' }, '2026-10-28').makeup_for, 'missed practice must be earlier');
   assert.deepStrictEqual(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-27' }, '2026-10-28'), {});
   assert.strictEqual(SL.todayEastern(new Date('2026-10-28T02:00:00Z')), '2026-10-27');
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
+  assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
-  assert.ok(/roster/.test(SL.logReply({ status: 'unknown_athlete' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
+  assert.ok(/coaches for now/.test(SL.logReply({ status: 'not_allowed' })) && /isn't an active athlete/.test(SL.logReply({ status: 'unknown_name' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
 });
 
 test('slack /api/slack: slash command opens the modal, submissions are checked and handed on', async () => {
@@ -712,7 +714,7 @@ test('slack /api/slack: slash command opens the modal, submissions are checked a
   const submit = (values) => new URLSearchParams({ payload: JSON.stringify({ type: 'view_submission', user: { id: 'U1' }, view: { id: 'V1', callback_id: 'log_modal', state: { values } } }) }).toString();
   const sel = (v) => ({ v: { type: 'static_select', selected_option: { value: v } } });
   const txt = (v) => ({ v: { type: 'plain_text_input', value: v } });
-  const goodValues = { date: { v: { type: 'datepicker', selected_date: '2026-10-28' } }, type: sel('practice'), status: sel('full'), activity: sel('Erg (RowErg)'),
+  const goodValues = { athlete: txt('Fake Athlete'), date: { v: { type: 'datepicker', selected_date: '2026-10-28' } }, type: sel('practice'), status: sel('full'), activity: sel('Erg (RowErg)'),
     warmup: txt('15:00'), main_set: txt('Steady'), zone: sel('Aerobic'), pieces: txt('20:00, 5000, 20'), rpe: sel('5'), drag: txt('105') };
 
   let w = world();
@@ -771,7 +773,7 @@ test('slack /log background: Sheet call with member ID and view ID, then a DM', 
   };
   let w = world({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 3 });
   let out = await handleSlackAction(req(), env, w.deps);
-  assert.deepStrictEqual(w.calls[0].body, { action: 'slack-log', slackUserId: 'U1', viewId: 'V1', form: { warmup: '15:00' }, key: 'fake-key' });
+  assert.deepStrictEqual(w.calls[0].body, { action: 'slack-log', slackUserId: 'U1', slackName: 'fake.athlete', viewId: 'V1', form: { warmup: '15:00' }, key: 'fake-key' });
   assert.strictEqual(w.calls[1].url, 'https://slack.com/api/chat.postMessage');
   assert.strictEqual(w.calls[1].body.channel, 'U1');
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 3 pieces\)/.test(w.calls[1].body.text));
@@ -780,9 +782,9 @@ test('slack /log background: Sheet call with member ID and view ID, then a DM', 
   out = await handleSlackAction(req(), env, w.deps);
   assert.strictEqual(out.status, 'error');
   assert.ok(/Not saved/.test(w.calls[1].body.text), 'Sheet down: she is told, nothing is half saved');
-  w = world({ status: 'unknown_athlete' });
+  w = world({ status: 'not_allowed' });
   await handleSlackAction(req(), env, w.deps);
-  assert.ok(/roster/.test(w.calls[1].body.text));
+  assert.ok(/coaches for now/.test(w.calls[1].body.text));
 });
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {

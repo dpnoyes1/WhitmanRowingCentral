@@ -32,6 +32,7 @@ export function logModal(today = todayEastern()) {
     type: 'modal', callback_id: 'log_modal',
     title: label('Log a workout'), submit: label('Save'), close: label('Cancel'),
     blocks: [
+      input('athlete', 'Athlete', text("Full name as on the Roster"), { hint: 'Coaches only for now: the athlete you are logging for.' }),
       input('date', 'Date of session', { type: 'datepicker', initial_date: today }),
       input('type', 'What are you logging?', select(TYPES, 'practice')),
       input('status', 'Practice only: how did you do practice?', select(STATUSES, 'full'), { optional: true,
@@ -93,6 +94,7 @@ export function piecesError(textValue) {
 export function validateLogForm(f, today = todayEastern()) {
   const errors = {};
   const type = f.type || 'practice';
+  if (!f.athlete) errors.athlete = 'Type the athlete\'s full name';
   if (!f.date) errors.date = 'Pick the date';
   else if (f.date > today) errors.date = 'That date is in the future';
   if (type === 'makeup') {
@@ -132,9 +134,10 @@ export function logReply(result) {
   if (result.status === 'ok') {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
     const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
-    return `:white_check_mark: Saved (${bits}).` + (result.flagged ? ' It doesn\'t match today\'s plan, so a coach will take a look.' : '');
+    return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It doesn\'t match today\'s plan, so a coach will take a look.' : '');
   }
   if (result.status === 'duplicate') return ':information_source: That was already saved. Nothing changed.';
-  if (result.status === 'unknown_athlete') return ':warning: I can\'t find you on the roster. Ask a coach to add your Slack member ID, or use the Form (whitmanrowingcentral.netlify.app/logworkout) for now.';
+  if (result.status === 'not_allowed') return ':lock: /log is for coaches for now. Please use the Form: whitmanrowingcentral.netlify.app/logworkout';
+  if (result.status === 'unknown_name') return ':warning: Not saved: that name isn\'t an active athlete on the Roster. Check the spelling and run /log again.';
   return `:warning: Not saved: ${result.error || 'unknown problem'}. Run /log again, or use the Form.`;
 }

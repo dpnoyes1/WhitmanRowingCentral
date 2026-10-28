@@ -1117,16 +1117,15 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   assert.ok(!JSON.stringify(list).match(/weight/i));
 });
 
-test('slack /log: Roster lookup by member ID, pieces box, modal values parse like the Form', () => {
-  const roster = [
-    { Name: 'Jane Smith', Active: 'Yes', 'Slack member ID': 'U111' },
-    { Name: 'Old Athlete', Active: 'No', 'Slack member ID': 'U222' },
-    { Name: 'No Id', Active: 'Yes', 'Slack member ID': '' }
-  ];
-  assert.strictEqual(g.athleteBySlackId_(roster, ' U111 ').Name, 'Jane Smith');
-  assert.strictEqual(g.athleteBySlackId_(roster, 'U222'), null, 'inactive athletes cannot log');
-  assert.strictEqual(g.athleteBySlackId_(roster, ''), null, 'blank ID never matches a blank Roster cell');
-  assert.strictEqual(g.athleteBySlackId_(roster, 'U999'), null);
+test('slack /log: coach-only access, pieces box, modal values parse like the Form', () => {
+  const roster = [{ Name: 'Jane Smith', Active: 'Yes' }, { Name: 'Old Athlete', Active: 'No' }];
+  const coaches = ['UC1', 'UC2'];
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', ' jane  SMITH ').athlete.Name, 'Jane Smith');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UA9', 'Jane Smith').status, 'not_allowed', 'athletes cannot use /log yet');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, '', 'Jane Smith').status, 'not_allowed');
+  assert.strictEqual(g.slackLogAccess_(roster, [], 'UC1', 'Jane Smith').status, 'not_allowed', 'no coach IDs set: nobody');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', 'Old Athlete').status, 'unknown_name', 'inactive');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', '').status, 'unknown_name');
 
   const p = g.parsePiecesText('10:00.0, 2650, 22, 2:00, 300\n\n 10:00, 2660 \n10:00,2675,,');
   assert.strictEqual(p.length, 3);
@@ -1139,7 +1138,7 @@ test('slack /log: Roster lookup by member ID, pieces box, modal values parse lik
 
   const form = { date: '2026-01-12', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', warmup_m: '2000', main_set: "3x10' r2'",
     zone: 'Aerobic', pieces: '10:00.0, 2650, 22, 2:00, 300\n10:00.0, 2660, , 2:00\n10:00.0, 2675', cooldown: '5:00', cooldown_m: '', rpe: '6', drag: '105', hr: '', note: '' };
-  const viaSlack = g.parseSubmission(g.slackLogAnswers(form, 'Jane Smith'), ctxFor());
+  const viaSlack = g.parseSubmission(g.slackLogAnswers(form, 'Jane Smith', 'Jane Smith'), ctxFor());
   const Q = g.Q, i1 = g.qInterval(1), i2 = g.qInterval(2), i3 = g.qInterval(3);
   const viaForm = g.parseSubmission({
     [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Jane Smith', [Q.DATE]: '2026-01-12', [Q.LOG_TYPE]: g.LOG_TYPES.PRACTICE, [Q.STATUS]: g.STATUSES.FULL,
@@ -1151,6 +1150,7 @@ test('slack /log: Roster lookup by member ID, pieces box, modal values parse lik
   }, ctxFor());
   assert.deepStrictEqual(JSON.parse(JSON.stringify(viaSlack)), JSON.parse(JSON.stringify(viaForm)), 'same entry and intervals as the Form');
   assert.strictEqual(viaSlack.entry['Entered by'], 'Jane Smith');
+  assert.strictEqual(g.parseSubmission(g.slackLogAnswers(form, 'Jane Smith', 'Coach Greta'), ctxFor()).entry['Entered by'], 'Coach Greta');
 
   const out = g.parseSubmission(g.slackLogAnswers({ date: '2026-01-12', type: 'practice', status: 'out', note: 'sick' }, 'Jane Smith'), ctxFor());
   assert.strictEqual(out.entry.Status, 'Out');

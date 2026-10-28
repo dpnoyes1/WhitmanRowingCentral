@@ -11,7 +11,7 @@ async function handleLogSubmission(payload, envFn, fetchImpl) {
   let result;
   try {
     result = await callSheet(envFn, fetchImpl, {
-      action: 'slack-log', slackUserId: payload.user.id, viewId: payload.view.id, form: readLogForm(payload.view)
+      action: 'slack-log', slackUserId: payload.user.id, slackName: payload.user.name || payload.user.username || payload.user.id, viewId: payload.view.id, form: readLogForm(payload.view)
     });
   } catch (err) {
     result = { status: 'error', error: err.message };

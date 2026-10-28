@@ -151,11 +151,11 @@ Without a webhook or without coach IDs nothing is posted or changed.
 
 ### /log in Slack (optional, after the plan-flag buttons)
 
-An athlete types `/log` in Slack (a DM with the bot works too), fills in a form with the same questions as the Google Form (date, what she is logging, activity, warmup, main set, zone, RPE, drag factor and so on), and the pieces go in one box, one line each: work time, meters, rate, rest time, rest meters. Slack shows any mistake next to the field. When she presses Save the entry is written through the same parser as the Form (Source = Slack, Entered by = her), and the bot sends her a short "Saved" message. A session that doesn't match the plan also gets the coach's Plan check message. Tests and Benchmarks stay on the Form.
+For now `/log` is for coaches only (David, Greta and Forrest, the member IDs in `slack.coach_ids`); anyone else gets a message pointing to the Form. A coach types `/log` in Slack (a DM with the bot works too), types the athlete's full name, and fills in the same questions as the Google Form (date, what is being logged, activity, warmup, main set, zone, RPE, drag factor and so on). The pieces go in one box, one line each: work time, meters, rate, rest time, rest meters. Slack shows any mistake next to the field. When the coach presses Save the entry is written through the same parser as the Form (Source = Slack, Entered by = "Coach name"), and the bot sends a short "Saved" message. A session that doesn't match the plan also gets the Plan check message. Tests and Benchmarks stay on the Form. Opening it to athletes later means looking them up by the Roster's Slack member ID instead.
 
-1. In the Roster, fill **Slack member ID** for each athlete (Slack: profile, then Copy member ID). Only active athletes on the Roster can log; anyone else is told to ask a coach.
+1. Set `slack.coach_ids` in Settings (see the plan-flag steps above). The athlete's name must match an active Roster row.
 2. In the Slack app: **Slash Commands**, `/log`, Request URL `https://<your site>/api/slack`. The Interactivity Request URL is the same address.
-3. Netlify needs `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` (the bot token is also what opens the form and sends the "Saved" message). The bot scopes are `commands` and `chat:write`.
+3. Netlify needs `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` (the bot token opens the form and sends the "Saved" message). The bot scopes are `commands` and `chat:write`.
 4. Push the Apps Script and publish a new feed version (the Slack function calls the Sheet through the same URL and key as the site).
 
 The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
