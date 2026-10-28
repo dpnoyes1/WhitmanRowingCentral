@@ -20,6 +20,8 @@ function doPost(e) {
   if (body.action === LOGBOOK_ACTION) return feedJson_(processLogbookResult_(body));
   if (body.action === PLAN_FLAG_ACTION) return feedJson_(applyPlanFlagAction_(body));
   if (body.action === SLACK_LOG_ACTION) return feedJson_(processSlackLog_(body));
+  if (body.action === SLACK_ACCESS_ACTION) return feedJson_(processSlackAccess_(body));
+  if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
   if (body.action === 'logbook-confirm') return feedJson_(processLogbookConfirm_(body));
   if (body.action === 'logbook-accept-due') return feedJson_(processLogbookAcceptDue_());
   var inputs = feedInputs_();

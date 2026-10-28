@@ -67,13 +67,13 @@ export async function sendReply(env, fetchImpl, payload, reply) {
 }
 
 /** A direct message from the bot (chat.postMessage to a user ID opens the DM). True when Slack said ok. */
-export async function dmUser(env, fetchImpl, userId, text) {
+export async function dmUser(env, fetchImpl, userId, text, blocks) {
   const token = env('SLACK_BOT_TOKEN');
   if (!token) return false;
   const res = await fetchImpl('https://slack.com/api/chat.postMessage', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ channel: userId, text })
+    body: JSON.stringify({ channel: userId, text, ...(blocks ? { blocks } : {}) })
   });
   const data = await res.json().catch(() => ({}));
   return !!data.ok;

@@ -158,6 +158,14 @@ For now `/log` is for coaches only (David, Greta and Forrest, the member IDs in 
 3. Netlify needs `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` (the bot token opens the form and sends the "Saved" message). The bot scopes are `commands` and `chat:write`.
 4. Push the Apps Script and publish a new feed version (the Slack function calls the Sheet through the same URL and key as the site).
 
+### Erg-screen photos in Slack (optional, after /log)
+
+For now this is for coaches only (the IDs in `slack.coach_ids`). A coach sends a photo of an erg monitor to the bot in a direct message. The bot reads it with the Claude API, checks the numbers add up, and replies with what it read and asks which athlete it is for (a caption with the athlete's name skips that question). The coach replies with the full name, and the bot shows a card: tap the session RPE (1 to 10) or **Save without RPE**, or Cancel. Saving writes a Practice, Full entry through the same parser as the Form (Source = Slack, Entered by = "Coach name"). Warmup, zone and drag factor stay blank because the screen doesn't show them. A single piece saves its totals (the splits go in the note); an interval workout saves each piece with the rest from the title. If the numbers don't add up, the date looks wrong, or only some intervals are visible, the bot says so and saves nothing; the coach sends a clearer photo or uses `/log`. The photo itself is not kept yet.
+
+1. In the Slack app: **Event Subscriptions** on, Request URL `https://<your site>/api/slack` (it must show Verified), and under *Subscribe to bot events* add `message.im` only. Reinstall the app if Slack asks. Scopes needed: `chat:write`, `im:history`, `files:read`.
+2. Netlify: `ANTHROPIC_API_KEY` (a key with a monthly spend limit, in Netlify environment variables only).
+3. Push the Apps Script and publish a new feed version (new actions `slack-access` and `slack-photo`).
+
 The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
 
 ## Part D: Each new school year

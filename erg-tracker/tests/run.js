@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'SlackPhoto.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1162,6 +1162,30 @@ test('slack /log: coach-only access, pieces box, modal values parse like the For
   assert.strictEqual(mk.entry['Session type'], 'Make-up');
   assert.strictEqual(mk.entry['Make-up for date'].getDate(), 10);
   assert.throws(() => g.slackLogAnswers({ ...form, type: 'test' }, 'Jane Smith'), /Pick Practice/);
+});
+
+test('slack photo: saved read becomes the same entry the Form would make', () => {
+  const photo = { date: '2026-10-28', machine: 'RowErg', title: '4x500m/2:00r', rpe: '7', note: 'From erg photo',
+    pieces: [{ timeS: 100.4, meters: 500, rate: 28, restS: 120 }, { timeS: 101.2, meters: 500, rate: 29, restS: 120 }, { timeS: 99.9, meters: 500, rate: null, restS: 0 }] };
+  const r = g.parseSubmission(g.slackPhotoAnswers(photo, 'Jane Smith', 'Coach Greta'), ctxFor());
+  assert.strictEqual(r.entry['Session type'], 'Practice');
+  assert.strictEqual(r.entry.Status, 'Full');
+  assert.strictEqual(r.entry.Activity, 'Erg (RowErg)');
+  assert.strictEqual(r.entry['Entered by'], 'Coach Greta');
+  assert.strictEqual(r.entry['Main set'], '4x500m/2:00r');
+  assert.strictEqual(r.entry.RPE, 7);
+  assert.strictEqual(r.entry['Work m'], 1500);
+  assert.strictEqual(r.entry['Work s'], 301.5);
+  assert.strictEqual(r.intervals.length, 3);
+  assert.strictEqual(r.intervals[0]['Work s'], 100.4);
+  assert.strictEqual(r.intervals[0]['Rest s'], 120);
+  assert.strictEqual(r.intervals[2]['Avg rate'], '');
+  const bike = g.parseSubmission(g.slackPhotoAnswers({ ...photo, machine: 'BikeErg', rpe: '', title: '' }, 'Jane Smith'), ctxFor());
+  assert.strictEqual(bike.entry.Activity, 'BikeErg');
+  assert.strictEqual(bike.entry.RPE, '');
+  assert.strictEqual(bike.entry['Main set'], 'Erg screen photo');
+  assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: [] }, 'Jane Smith'), /No pieces/);
+  assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: Array(11).fill(photo.pieces[0]) }, 'Jane Smith'), /More than 10/);
 });
 
 console.log(`${passed} tests passed`);
