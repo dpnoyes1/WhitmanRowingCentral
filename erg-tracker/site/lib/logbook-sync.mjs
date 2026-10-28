@@ -5,6 +5,7 @@
 // a pending Entries row for her to confirm. Webhook payloads are never trusted
 // for data (retries and signatures are undocumented): they only say "look".
 import { LOGBOOK, accessTokenFor, athleteForLogbookUser } from './concept2.mjs';
+import { notifyLogbook } from './slacklogbook.mjs';
 
 const MACHINES = { rower: 'rower', bike: 'bikerg', skierg: 'skierg' };   // Logbook "bike" is the BikeErg
 const SEEN_DAYS = 30;
@@ -78,8 +79,10 @@ export async function syncResult(env, store, fetchImpl, athleteId, apiResult) {
   if (!payload) return 'skipped';
   const fp = fingerprint(payload);
   if ((await store.get(seenKey(payload.id))) === fp) return 'same';
-  await sendToSheet(env, fetchImpl, athleteId, payload);
+  const out = await sendToSheet(env, fetchImpl, athleteId, payload);
   await store.set(seenKey(payload.id), fp);
+  // A new pending session also goes to her Slack DM (David, 2026-10-28), when the Roster has her member ID.
+  if (out && out.slack) await notifyLogbook(env, fetchImpl, out.slack);
   return 'sent';
 }
 
