@@ -9,6 +9,7 @@ functions/   concept2.mjs (/api/concept2/connect, /status, /disconnect), concept
 lib/         concept2.mjs (Logbook OAuth, encrypted token storage in Blobs store `concept2`),
              auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
+             ergscreen.mjs, ergchecks.mjs (photo reader and its checks: not wired to any page or function yet, see plans/erg-photo-build-plan.md)
 netlify.toml short links: /logworkout goes to the Google Form, /guide to the logging guide (a Google Doc).
              Both are linked from the sign-in page, the menu and the Today card.
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests
