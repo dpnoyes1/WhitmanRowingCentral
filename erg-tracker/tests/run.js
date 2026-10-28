@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -829,6 +829,83 @@ test('ops: alert once on break, daily while broken, once on recovery', () => {
   assert.strictEqual(t.send, null);
   assert.ok(/working again/.test(g.alertText('up', [], '', 'https://x')));
   assert.ok(/• a\n• b/.test(g.alertText('down', ['a', 'b'], '', 'https://x')));
+});
+
+test('plan flags: only recent Full entries short of plan, once, until a coach decides', () => {
+  const today = new Date(2026, 9, 23, 12);
+  const squads = {}; dummy.roster.forEach(r => { squads[r['Athlete ID']] = r.Squad; });
+  const inp = { schedule: dummy.schedule, workouts: dummy.workouts, benchmarks: dummy.benchmarks, settings: dummySettings() };
+  const day = (d) => g.dayKey_(d);
+  const full = dummy.entries.find(e => e['Session type'] === 'Practice' && e.Status === 'Full' && day(e.Date) === '2026-10-21' &&
+    dummy.intervals.filter(iv => iv['Entry ID'] === e['Entry ID']).length > 2);
+  assert.ok(full, 'dummy has a Full practice on Oct 21');
+  const all = dummy.intervals.filter(iv => iv['Entry ID'] === full['Entry ID']);
+  const short = all.slice(0, -1);
+  const pending = (e, ivs, posted) => Array.from(g.pendingPlanFlags([e], ivs, squads, inp, today, posted || []));
+  assert.strictEqual(pending(full, all).length, 0, 'matches the plan: no flag');
+  const hit = pending(full, short);
+  assert.strictEqual(hit.length, 1);
+  assert.ok(/short of plan/.test(hit[0].flag) && hit[0].entryId === full['Entry ID'], hit[0].flag);
+  assert.strictEqual(pending(full, short, [full['Entry ID']]).length, 0, 'posted once');
+  assert.strictEqual(pending(Object.assign({}, full, { 'Review status': 'Reviewed, Full' }), short).length, 0, 'decided');
+  assert.strictEqual(pending(Object.assign({}, full, { Status: 'Modified' }), short).length, 0, 'already Modified');
+  assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 10) }), short).length, 0, 'too old');
+  assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 25) }), short).length, 0, 'in the future');
+  const msg = g.planFlagMessage(hit[0], 'https://sheet.example/#gid=1');
+  assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Logged Full, short of plan/.test(msg.text), msg.text);
+  const ids = msg.blocks[1].elements.map(b => b.action_id);
+  assert.deepStrictEqual(Array.from(ids), ['plan_modified', 'plan_reviewed', 'plan_open']);
+  assert.strictEqual(msg.blocks[1].elements[0].value, full['Entry ID']);
+  assert.strictEqual(msg.blocks[1].elements[2].url, 'https://sheet.example/#gid=1');
+  assert.ok(g.OPS_TRIGGERS.indexOf('sweepPlanFlags') >= 0);
+});
+
+test('plan flag buttons: coaches only, first press wins, what each press writes', () => {
+  const coaches = Array.from(g.slackCoachIds_({ 'slack.coach_ids': 'U1, U2;U3' }));
+  assert.deepStrictEqual(coaches, ['U1', 'U2', 'U3']);
+  assert.deepStrictEqual(Array.from(g.slackCoachIds_({})), []);
+  const row = { 'Entry ID': 'E1', Status: 'Full', 'Review status': '' };
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(row, 'modified', 'U9', coaches)), { status: 'forbidden' }, 'not a coach');
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(row, 'modified', '', coaches)), { status: 'forbidden' });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(row, 'modified', 'U1', [])), { status: 'forbidden' }, 'no coach IDs set');
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(null, 'modified', 'U1', coaches)), { status: 'missing' });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(row, 'modified', 'U1', coaches)),
+    { status: 'ok', set: { Status: 'Modified', 'Review status': 'Reviewed, Modified' } });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(row, 'reviewed', 'U2', coaches)),
+    { status: 'ok', set: { 'Review status': 'Reviewed, Full' } });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(Object.assign({}, row, { 'Review status': 'Reviewed, Full' }), 'modified', 'U3', coaches)),
+    { status: 'already', reviewStatus: 'Reviewed, Full' }, 'first press wins');
+  assert.strictEqual(g.decidePlanFlagAction(row, 'nope', 'U1', coaches).status, 'error');
+  assert.ok(g.SETTINGS_DEFAULTS.some(r => r[0] === 'slack.coach_ids'));
+  assert.strictEqual(g.PLAN_FLAG_ACTION, 'plan-flag-action');
+});
+
+test('Monday list: rowers missing a 2k or a 20\' test', () => {
+  const today = new Date(2026, 9, 26);
+  const row = (id, name, extra) => Object.assign({ 'Athlete ID': id, Name: name, Squad: 'Varsity' }, extra);
+  const roster = [row('A1', 'Fake One'), row('A2', 'Fake Two'), row('A3', 'Fake Three'), row('A4', 'Fake Four'), row('A5', 'Fake Five'), row('A6', 'Fake Six', { Squad: 'Alum' }), row('A7', 'Fake Seven')];
+  const bm = (id, test, extra) => Object.assign({ 'Athlete ID': id, Test: test, Date: new Date(2026, 8, 20), 'Time s': test === '2000m' ? 420 : 1200, Meters: test === '20min' ? 5200 : '', 'Review status': '' }, extra);
+  const benchmarks = [
+    bm('A2', '2000m'),                                                  // has a 2k, no 20'
+    bm('A3', '20min', { Date: new Date(2025, 9, 5) }),                  // 20' last school year still counts
+    bm('A4', '2000m', { 'Review status': 'Rejected' }),                 // rejected rows are ignored
+    bm('A5', '2000m', { Date: new Date(2024, 9, 5) }),                  // two seasons old: no target
+    bm('A7', '2000m'), bm('A7', '20min')                                // both: not listed
+  ];
+  const plain = (l) => JSON.parse(JSON.stringify(l));
+  assert.deepStrictEqual(plain(g.noTargetAthletes(roster, benchmarks, today, '07-01')), [
+    { name: 'Fake One', missing: ['2k', "20'"] },
+    { name: 'Fake Two', missing: ["20'"] },
+    { name: 'Fake Three', missing: ['2k'] },
+    { name: 'Fake Four', missing: ['2k', "20'"] },
+    { name: 'Fake Five', missing: ['2k', "20'"] }
+  ]);
+  assert.deepStrictEqual(plain(g.noTargetAthletes([], benchmarks, today, '07-01')), []);
+  assert.strictEqual(g.noTargetText([]), '', 'silent when nobody is missing');
+  assert.ok(/1 athlete is missing a 2k or 20' test.*\n\u2022 Fake Two \(no 20'\)/.test(g.noTargetText([{ name: 'Fake Two', missing: ["20'"] }])));
+  assert.ok(/2 athletes are[\s\S]*\u2022 A \(no 2k, no 20'\)\n\u2022 B \(no 2k\)/.test(g.noTargetText([{ name: 'A', missing: ['2k', "20'"] }, { name: 'B', missing: ['2k'] }])));
+  assert.ok(g.OPS_TRIGGERS.indexOf('sendNoTargetList') >= 0, 'reinstalled with the other ops triggers');
 });
 
 test('ops: backups keep the newest, never archives', () => {

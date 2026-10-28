@@ -127,7 +127,8 @@ To make it look like your program, change the name in `site/public/index.html` a
 1. Reload the Sheet and click **Erg Tracker > Turn on alerts and backups**. Google asks you to allow a few more things (send email, fetch web pages, create files in Drive): allow them. It shows what the site check sees right now.
    - **Do this right after any update that adds these permissions.** Until you allow them, the Form's submit trigger can't run either.
 2. **Alerts.** Every hour the Sheet checks the team site: the home page loads, the site can read the feed, the data isn't stale, and athletes have sign-in codes. When something breaks you get one alert, a reminder once a day while it stays broken, and one "working again" message. A form submission that can't be saved also alerts you (details stay in the Change log). Alerts go by email to `alerts.email` in Settings (blank: the Sheet's owner), or to Slack once you set that up.
-3. **Backups.** Every Sunday night a values-only copy of every tab goes into the Drive folder **Erg tracker backups**. The newest 12 are kept (`backup.keep`); older ones go to the Drive trash. **Erg Tracker > Back up now** makes one any time. A backup is a plain spreadsheet: to restore a tab, copy its rows back into the live Sheet.
+3. **Monday list.** At 7:00 every Monday (Eastern, the script's time zone) the Sheet sends one message naming active rowers who are missing a 2k or a 20' test this school year or last (each name says which), so some or all of her targets are blank. It sends nothing when everyone has both. It goes to the same place as alerts (Slack or email).
+4. **Backups.** Every Sunday night a values-only copy of every tab goes into the Drive folder **Erg tracker backups**. The newest 12 are kept (`backup.keep`); older ones go to the Drive trash. **Erg Tracker > Back up now** makes one any time. A backup is a plain spreadsheet: to restore a tab, copy its rows back into the live Sheet.
 
 The backups hold everything in the Sheet, weights and birthdays included, so keep the folder private to coaches.
 
@@ -136,6 +137,17 @@ The backups hold everything in the Sheet, weights and birthdays included, so kee
 1. Go to <https://api.slack.com/apps>, **Create New App > From scratch**, name it (e.g. "Erg Tracker") and pick your workspace.
 2. Open **Incoming Webhooks**, turn it on, click **Add New Webhook to Workspace**, and pick where alerts go: your own DM or a private channel such as #erg-alerts.
 3. Copy the webhook URL (starts with `https://hooks.slack.com/`). In the Sheet: **Erg Tracker > Slack alerts webhook**, paste it, OK. A test message arrives in Slack.
+
+### Plan flags with buttons (optional, after the Slack alerts webhook)
+
+Every 15 minutes the Sheet checks the last 3 days of entries. A session logged Full that doesn't match its plan gets one message in the Slack alert channel with three buttons: **Set to Modified**, **Looks right** and **Open in Sheet**. Pressing a button changes the entry (Status, or Review status "Reviewed, Full"), writes a Change log row ("Slack, name"), and replaces the message with who decided. The first press wins.
+
+1. In Settings, set `slack.coach_ids` to the Slack member IDs of the coaches who may press the buttons, separated by commas (in Slack: profile, then Copy member ID). Run **Set up Sheet and Form** once if the row isn't there yet.
+2. In the Slack app: turn **Interactivity** on and set its Request URL to `https://<your site>/.netlify/functions/slack-background`.
+3. In Netlify, set `SLACK_SIGNING_SECRET` (Slack app, Basic Information). `FEED_URL` and `FEED_KEY` are already set for the site.
+4. Reload the Sheet and run **Turn on alerts and backups** so the 15-minute trigger is installed.
+
+Without a webhook or without coach IDs nothing is posted or changed.
 
 The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
 
