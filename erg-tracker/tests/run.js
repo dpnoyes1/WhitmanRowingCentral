@@ -1167,6 +1167,13 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UO2', '').status, 'not_allowed', 'inactive athlete');
   assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UJ1', 'Old Athlete').status, 'not_yourself');
 
+  // FYI DM target: only when a coach logged, a real Slack ID, not the coach herself
+  assert.strictEqual(g.slackFyiTarget_('coach', { 'Slack member ID': ' UJ1 ' }, 'UC1'), 'UJ1');
+  assert.strictEqual(g.slackFyiTarget_('athlete', { 'Slack member ID': 'UJ1' }, 'UJ1'), '', 'no FYI for her own entry');
+  assert.strictEqual(g.slackFyiTarget_('coach', { 'Slack member ID': '' }, 'UC1'), '');
+  assert.strictEqual(g.slackFyiTarget_('coach', { 'Slack member ID': 'jane smith' }, 'UC1'), '', 'not a member ID');
+  assert.strictEqual(g.slackFyiTarget_('coach', { 'Slack member ID': 'UC1' }, 'UC1'), '', 'coach logging for herself');
+
   const p = g.parsePiecesText('10:00.0, 2650, 22, 2:00, 300\n\n 10:00, 2660 \n10:00,2675,,');
   assert.strictEqual(p.length, 3);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(p[0])), { WORK_TIME: '10:00.0', WORK_M: '2650', RATE: '22', REST_TIME: '2:00', REST_M: '300' });

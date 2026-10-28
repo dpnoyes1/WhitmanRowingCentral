@@ -6,7 +6,7 @@
 // (lib/slackphoto.mjs) and the Logbook DM buttons. Needs SLACK_SIGNING_SECRET,
 // SLACK_BOT_TOKEN, FEED_URL, FEED_KEY and, for photos, ANTHROPIC_API_KEY.
 import { signatureValid, callSheet, planOp, planFlagReply, sendReply, dmUser, chatUpdate } from '../lib/slack.mjs';
-import { readLogForm, logReply } from '../lib/slacklog.mjs';
+import { readLogForm, logReply, fyiText } from '../lib/slacklog.mjs';
 import { readChange, changeRequest, confirmRequest, confirmReply } from '../lib/slacklogbook.mjs';
 import { handlePhotoEvent, handlePhotoButton } from '../lib/slackphoto.mjs';
 
@@ -20,7 +20,9 @@ async function handleLogSubmission(payload, envFn, fetchImpl) {
     result = { status: 'error', error: err.message };
   }
   const sent = await dmUser(envFn, fetchImpl, payload.user.id, logReply(result));
-  console.log('slack: /log', result.status, sent ? 'dm sent' : 'dm failed');
+  const fyi = fyiText(result);
+  if (fyi) await dmUser(envFn, fetchImpl, result.notifySlackId, fyi);
+  console.log('slack: /log', result.status, sent ? 'dm sent' : 'dm failed', fyi ? 'fyi sent' : '');
   return { status: result.status, dm: sent };
 }
 

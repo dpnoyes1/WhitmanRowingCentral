@@ -7,7 +7,7 @@
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
-import { todayEastern, NOT_ON_ROSTER } from './slacklog.mjs';
+import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
@@ -189,6 +189,8 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
     result = { status: 'error', error: err.message };
   }
   if (result.status === 'ok') {
+    const fyi = fyiText(result);
+    if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
     await sendReply(envFn, fetchImpl, payload, replace(`:white_check_mark: Saved for ${result.athlete}${rpe ? ` with RPE ${rpe}` : ''}.` + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '')));
   } else if (result.status === 'duplicate') {
     await sendReply(envFn, fetchImpl, payload, replace(':information_source: Already saved. Nothing changed.'));

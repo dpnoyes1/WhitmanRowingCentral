@@ -148,6 +148,17 @@ function processSlackAccess_(body) {
   return access.status === 'ok' ? { status: 'ok', role: access.role, athlete: String(access.athlete.Name).trim() } : { status: access.status };
 }
 
+/**
+ * Who gets the FYI DM when a coach logs for an athlete (David, 2026-10-28):
+ * her Roster Slack member ID, only when a coach did the logging, the ID looks
+ * like one and it isn't the coach's own. Otherwise ''.
+ */
+function slackFyiTarget_(role, athleteRow, coachSlackId) {
+  if (role !== 'coach') return '';
+  var id = String(athleteRow['Slack member ID'] || '').trim();
+  return /^[UW][A-Z0-9]{2,}$/.test(id) && id !== String(coachSlackId || '').trim() ? id : '';
+}
+
 /** Access check (coach or herself), one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers. */
 function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
   var lock = LockService.getScriptLock();
@@ -169,7 +180,8 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
     var flagged = pendingPlanFlags([result.entry], result.intervals, squads, planInputs_(), new Date(), []).length > 0;
     var e = result.entry;
     return { status: 'ok', entryId: e['Entry ID'], athlete: String(athlete.Name).trim(), sessionType: e['Session type'], entryStatus: e.Status,
-      activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged };
+      activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged,
+      notifySlackId: slackFyiTarget_(access.role, athlete, body.slackUserId), by: e['Entered by'] };
   } catch (err) {
     logChange_({ Who: 'slack', Tab: '(slack)', 'Row ID': rid, Note: 'SLACK LOG ERROR: ' + err.message });
     return { status: 'error', error: err.message };
