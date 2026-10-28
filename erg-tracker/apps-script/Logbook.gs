@@ -351,6 +351,21 @@ function processLogbookConfirm_(body) {
   }
 }
 
+/**
+ * doPost action logbook-pending: {athleteId}. Her "Found on Logbook" cards straight from the
+ * Sheet, so a new session shows without waiting for the site's 5-minute feed copy.
+ */
+function processLogbookPending_(body) {
+  var id = String(body.athleteId || '');
+  var entries = readObjects_(TABS.ENTRIES).filter(function (e) { return String(e['Athlete ID']) === id; });
+  var ids = {};
+  entries.forEach(function (e) { ids[e['Entry ID']] = true; });
+  var intervals = readObjects_(TABS.INTERVALS).filter(function (iv) { return ids[iv['Entry ID']]; });
+  var known = {};
+  known[id] = true;
+  return { status: 'ok', pending: feedLogbookPending_({ entries: entries, intervals: intervals }, known) };
+}
+
 /** doPost action logbook-accept-due (the site's poll calls it every 15 minutes). */
 function processLogbookAcceptDue_() {
   var lock = LockService.getScriptLock();

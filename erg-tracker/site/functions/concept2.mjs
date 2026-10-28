@@ -2,7 +2,7 @@
 import { session } from '../lib/auth.mjs';
 import * as C2 from '../lib/concept2.mjs';
 import { getFeed } from '../lib/feed.mjs';
-import { callSheet } from '../lib/logbook-sync.mjs';
+import { callSheet, hasNewSession } from '../lib/logbook-sync.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const DONE_HIDE_MS = 15 * 60 * 1000;   // the feed copy can lag; hide a confirmed session meanwhile
@@ -30,11 +30,17 @@ export async function handleConcept2(req, envFn, deps = {}) {
   }
   if (who.kind !== 'athlete') return json({ error: 'Athletes connect their own Logbook account.' }, 403);
   if (path === '/api/concept2/pending' && req.method === 'GET') {
-    let feed;
-    try { feed = (await getFeed(envFn, deps)).data; } catch { return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502); }
+    let mine = null;
+    if (await hasNewSession(store, who.id)) {   // new session: ask the Sheet, the feed copy can be 5 minutes behind
+      try { mine = (await callSheet(envFn, deps.fetch || fetch, { action: 'logbook-pending', athleteId: who.id })).pending; } catch { mine = null; }
+    }
+    if (!mine) {
+      let feed;
+      try { feed = (await getFeed(envFn, deps)).data; } catch { return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502); }
+      mine = (feed.logbookPending || []).filter((p) => p.athleteId === who.id);
+    }
     const recent = Date.now() - DONE_HIDE_MS;
     const hidden = new Set();
-    const mine = (feed.logbookPending || []).filter((p) => p.athleteId === who.id);
     for (const p of mine) if (Number(await store.get('done/' + p.id)) > recent) hidden.add(p.id);
     return json({ pending: mine.filter((p) => !hidden.has(p.id)) });
   }

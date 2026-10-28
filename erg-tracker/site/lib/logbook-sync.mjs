@@ -67,6 +67,13 @@ export const sendToSheet = (env, fetchImpl, athleteId, result) =>
   callSheet(env, fetchImpl, { action: 'logbook-result', athleteId, result });
 
 const seenKey = (id) => 'seen/' + id;
+const newKey = (athleteId) => 'new/' + athleteId;
+export const NEW_SESSION_MS = 30 * 60 * 1000;
+
+/** True when a session was written for her in the last half hour. */
+export async function hasNewSession(store, athleteId, now = Date.now()) {
+  return now - Number(await store.get(newKey(athleteId))) < NEW_SESSION_MS;
+}
 const fingerprint = (p) => JSON.stringify([p.timeS, p.distanceM, p.localDate, p.localTime, p.intervals.length, p.deleted ? 1 : 0]);
 
 /**
@@ -80,6 +87,7 @@ export async function syncResult(env, store, fetchImpl, athleteId, apiResult) {
   if ((await store.get(seenKey(payload.id))) === fp) return 'same';
   await sendToSheet(env, fetchImpl, athleteId, payload);
   await store.set(seenKey(payload.id), fp);
+  await store.set(newKey(athleteId), String(Date.now()));   // her pending cards are read from the Sheet for a while
   return 'sent';
 }
 
