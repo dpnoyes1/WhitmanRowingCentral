@@ -67,12 +67,12 @@ export async function handle(req, envFn, deps = {}) {
     if (!entry || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No workout with that ID.' }, 404);
     return json({ ...workoutView(data, wk[1], today), meta });
   }
-  // The kept copy of the erg-screen photo for one workout, same access as the workout itself. The Drive folder is private; the
+  // The kept copy of the erg-screen photo for one workout, visible to everyone signed in (David, 2026-10-28: all photos are team-visible). The Drive folder is private; the
   // Sheet's script hands the file to this function, which passes it on to a signed-in person. It is only asked for when a workout is opened.
   const ph = path.match(/^\/api\/photo\/([A-Za-z0-9_-]+)$/);
   if (ph) {
     const entry = data.entries.find((x) => x.id === ph[1]);
-    if (!entry || !entry.hasPhoto || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No photo for that workout.' }, 404);
+    if (!entry || !entry.hasPhoto) return json({ error: 'No photo for that workout.' }, 404);
     let out;
     try { out = await callSheet(envFn, deps.fetchImpl || fetch, { action: 'photo-get', entryId: entry.id }); } catch (err) {
       console.error('photo error:', err.message);

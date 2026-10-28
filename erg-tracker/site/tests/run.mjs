@@ -1154,7 +1154,7 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
   }
 });
 
-test('workout photo: only the owner and coaches get the kept copy, only when the workout has one', async () => {
+test('workout photo: any signed-in person gets the kept copy, only when the workout has one', async () => {
   clearFeedCache();
   const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const mine = feed.entries.find((e) => e.athleteId === 'A901' && e.status !== 'Out');
@@ -1174,11 +1174,11 @@ test('workout photo: only the owner and coaches get the kept copy, only when the
   assert.strictEqual(res.headers.get('content-type'), 'image/jpeg');
   assert.strictEqual(Buffer.from(await res.arrayBuffer()).toString(), 'JPEGBYTES');
   assert.deepStrictEqual(calls[0], { action: 'photo-get', entryId: mine.id, key: 'fake-key' });
-  assert.strictEqual((await get('/api/photo/' + other.id, her)).status, 404, 'a teammate\'s photo is refused');
+  assert.strictEqual((await get('/api/photo/' + other.id, her)).status, 200, 'photos are team-visible');
   assert.strictEqual((await get('/api/photo/' + other.id, coach)).status, 200);
   const noPhoto = feed.entries.find((e) => e.athleteId === 'A901' && e.id !== mine.id && e.status !== 'Out');
   assert.strictEqual((await get('/api/photo/' + noPhoto.id, her)).status, 404, 'no photo, no call to the Sheet');
-  assert.strictEqual(calls.length, 2);
+  assert.strictEqual(calls.length, 3);
   assert.strictEqual((await get('/api/photo/' + mine.id, '')).status, 401, 'sign-in needed');
   // the workout page is told a photo exists (and nothing else about it)
   const wv = await (await get('/api/workout/' + mine.id, her)).json();
