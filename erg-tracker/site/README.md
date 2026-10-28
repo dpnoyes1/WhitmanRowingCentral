@@ -4,7 +4,7 @@ Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their n
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/balance (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me, #/workout/E-ID)
-functions/   concept2.mjs (/api/concept2/connect, /status, /disconnect, /pending, /confirm), concept2-webhook.mjs (/api/concept2/webhook, called by Logbook), concept2-poll.mjs (every 15 minutes, backup), concept2-callback.mjs (the registered redirect URI /.netlify/functions/concept2-callback),
+functions/   slack.mjs (/api/slack: the /log command and Interactivity URL, answers Slack and opens or checks the /log form), slack-background.mjs (the slow half: plan-flag buttons and saving /log), concept2.mjs (/api/concept2/connect, /status, /disconnect, /pending, /confirm), concept2-webhook.mjs (/api/concept2/webhook, called by Logbook), concept2-poll.mjs (every 15 minutes, backup), concept2-callback.mjs (the registered redirect URI /.netlify/functions/concept2-callback),
              refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/balance (coaches only), /api/oyo, /api/week, /api/week/:id, /api/workout/:id)
 lib/         concept2.mjs (Logbook OAuth, encrypted token storage in Blobs store `concept2`), logbook-sync.mjs (result -> Sheet),
              auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),

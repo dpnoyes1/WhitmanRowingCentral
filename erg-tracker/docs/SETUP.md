@@ -143,11 +143,20 @@ The backups hold everything in the Sheet, weights and birthdays included, so kee
 Every 15 minutes the Sheet checks the last 3 days of entries. A session logged Full that doesn't match its plan gets one message in the Slack alert channel with three buttons: **Set to Modified**, **Looks right** and **Open in Sheet**. Pressing a button changes the entry (Status, or Review status "Reviewed, Full"), writes a Change log row ("Slack, name"), and replaces the message with who decided. The first press wins.
 
 1. In Settings, set `slack.coach_ids` to the Slack member IDs of the coaches who may press the buttons, separated by commas (in Slack: profile, then Copy member ID). Run **Set up Sheet and Form** once if the row isn't there yet.
-2. In the Slack app: turn **Interactivity** on and set its Request URL to `https://<your site>/.netlify/functions/slack-background`.
+2. In the Slack app: turn **Interactivity** on and set its Request URL to `https://<your site>/api/slack`.
 3. In Netlify, set `SLACK_SIGNING_SECRET` (Slack app, Basic Information). `FEED_URL` and `FEED_KEY` are already set for the site.
 4. Reload the Sheet and run **Turn on alerts and backups** so the 15-minute trigger is installed.
 
 Without a webhook or without coach IDs nothing is posted or changed.
+
+### /log in Slack (optional, after the plan-flag buttons)
+
+An athlete types `/log` in Slack (a DM with the bot works too), fills in a form with the same questions as the Google Form (date, what she is logging, activity, warmup, main set, zone, RPE, drag factor and so on), and the pieces go in one box, one line each: work time, meters, rate, rest time, rest meters. Slack shows any mistake next to the field. When she presses Save the entry is written through the same parser as the Form (Source = Slack, Entered by = her), and the bot sends her a short "Saved" message. A session that doesn't match the plan also gets the coach's Plan check message. Tests and Benchmarks stay on the Form.
+
+1. In the Roster, fill **Slack member ID** for each athlete (Slack: profile, then Copy member ID). Only active athletes on the Roster can log; anyone else is told to ask a coach.
+2. In the Slack app: **Slash Commands**, `/log`, Request URL `https://<your site>/api/slack`. The Interactivity Request URL is the same address.
+3. Netlify needs `SLACK_SIGNING_SECRET` and `SLACK_BOT_TOKEN` (the bot token is also what opens the form and sends the "Saved" message). The bot scopes are `commands` and `chat:write`.
+4. Push the Apps Script and publish a new feed version (the Slack function calls the Sheet through the same URL and key as the site).
 
 The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
 
@@ -166,5 +175,5 @@ Results, stars, leaderboards and targets already start over on `school_year_star
 ## Part E: Later
 
 - **Concept2 Logbook sync** (planned): register an app at <https://log.concept2.com/developers> under the program's account, read-only, with the callback `https://<your site>/.netlify/functions/concept2-callback`. The client secret goes in Netlify environment variables only.
-- **Slack bot** (planned): `/log` entry from Slack, confirmation cards and coach messages, built on the Slack app from Part C.
+- **Slack bot, later parts** (planned): the 9:00 "not logged" reminder, erg-screen photos and Logbook confirmation cards, built on the Slack app from Part C.
 - **Another program's copy**: everything above, under that program's own Google, GitHub, Netlify, Slack and Concept2 accounts. Nothing is shared between copies.

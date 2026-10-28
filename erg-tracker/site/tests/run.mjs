@@ -12,6 +12,8 @@ import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
+import { handleSlack } from '../functions/slack.mjs';
+import * as SL from '../lib/slacklog.mjs';
 import { createHmac } from 'node:crypto';
 import * as C2 from '../lib/concept2.mjs';
 import { handleConcept2 } from '../functions/concept2.mjs';
@@ -649,6 +651,138 @@ test('slack buttons: signature, coach check by the Sheet, first press wins, mess
   out = await handleSlackAction(press(btn('plan_modified')), env, w.deps);
   assert.strictEqual(out.via, 'chat.update', 'expired response_url falls back to chat.update');
   assert.strictEqual(w.calls[w.calls.length - 1].body.ts, '1.2');
+});
+
+test('slack /log: modal, reading it back, validation, and the same rules as Apps Script', async () => {
+  const vm = require('node:vm');
+  const ctx = vm.createContext({ console });
+  for (const f of ['Config.gs', 'Time.gs', 'SlackLog.gs']) vm.runInContext(fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '..', '..', 'apps-script', f), 'utf8'), ctx);
+  assert.deepStrictEqual(SL.ACTIVITIES, JSON.parse(vm.runInContext('JSON.stringify(ACTIVITIES.map(function (a) { return a[0]; }))', ctx)));
+  assert.deepStrictEqual(SL.ZONES, JSON.parse(vm.runInContext('JSON.stringify(ZONES)', ctx)));
+  assert.strictEqual(SL.MAX_INTERVALS, vm.runInContext('MAX_INTERVALS', ctx));
+  const modal = SL.logModal('2026-10-28');
+  assert.strictEqual(modal.callback_id, 'log_modal');
+  assert.ok(modal.blocks.length <= 100 && modal.blocks.every((b) => b.element.action_id === 'v'));
+  assert.strictEqual(new Set(modal.blocks.map((b) => b.block_id)).size, modal.blocks.length);
+  // pieces rules agree with SlackLog.gs on good and bad boxes
+  for (const box of ['2:00.0, 500, 24, 1:00, 0', '2:00,500', '2:00,500,,1:00', '', '2:00', ',500', '2:75,500', '2:00,abc', '2:00,500,99', '2:00,500,24,1,0', '1:00,1,1,1:00,1,1',
+    Array.from({ length: 11 }, () => '2:00,500').join('\n'), '2:00,500\n\n2:00,500']) {
+    ctx.box = box;
+    const gs = vm.runInContext('(function () { try { parsePiecesText(box); return ""; } catch (e) { return e.message; } })()', ctx);
+    assert.strictEqual(SL.piecesError(box), gs, 'pieces box ' + JSON.stringify(box));
+  }
+  // reading a submitted view
+  const view = { state: { values: {
+    date: { v: { type: 'datepicker', selected_date: '2026-10-28' } },
+    type: { v: { type: 'static_select', selected_option: { value: 'practice' } } },
+    status: { v: { type: 'static_select', selected_option: null } },
+    warmup: { v: { type: 'plain_text_input', value: ' 15:00 ' } },
+    hr: { v: { type: 'plain_text_input', value: null } }
+  } } };
+  assert.deepStrictEqual(SL.readLogForm(view), { date: '2026-10-28', type: 'practice', status: '', warmup: '15:00', hr: '' });
+  const good = { date: '2026-10-28', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', main_set: "3x10' r2'", zone: 'Aerobic', pieces: '10:00, 2400, 20', rpe: '6', drag: '105' };
+  assert.deepStrictEqual(SL.validateLogForm(good, '2026-10-28'), {});
+  assert.deepStrictEqual(SL.validateLogForm({ date: '2026-10-28', type: 'practice', status: 'out' }, '2026-10-28'), {}, 'Out needs nothing else');
+  const bad = SL.validateLogForm({ ...good, date: '2026-10-29', warmup: '15', hr: '300', drag: '20', pieces: '10:00', zone: '', main_set: '' }, '2026-10-28');
+  assert.deepStrictEqual(Object.keys(bad).sort(), ['date', 'drag', 'hr', 'main_set', 'pieces', 'warmup', 'zone']);
+  assert.ok(SL.validateLogForm({ ...good, type: 'makeup' }, '2026-10-28').makeup_for);
+  assert.ok(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-28' }, '2026-10-28').makeup_for, 'missed practice must be earlier');
+  assert.deepStrictEqual(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-27' }, '2026-10-28'), {});
+  assert.strictEqual(SL.todayEastern(new Date('2026-10-28T02:00:00Z')), '2026-10-27');
+  assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
+  assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
+  assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
+  assert.ok(/roster/.test(SL.logReply({ status: 'unknown_athlete' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
+});
+
+test('slack /api/slack: slash command opens the modal, submissions are checked and handed on', async () => {
+  const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key' })[k];
+  const NOW = 1_800_000_000;
+  const signed = (raw, { ts = NOW, secret = 'fake-secret' } = {}) => new Request('https://site.example/api/slack', { method: 'POST', body: raw,
+    headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-slack-request-timestamp': String(ts), 'x-slack-signature': 'v0=' + createHmac('sha256', secret).update(`v0:${ts}:${raw}`).digest('hex') } });
+  const world = (opts = {}) => {
+    const calls = [];
+    return { calls, deps: { nowS: NOW, today: '2026-10-28', fetchImpl: async (url, init) => {
+      calls.push({ url, headers: init.headers, body: init.body });
+      if (url === 'https://slack.com/api/views.open') return Response.json(opts.openFails ? { ok: false, error: 'expired_trigger_id' } : { ok: true });
+      if (url.endsWith('/slack-background')) return new Response('', { status: opts.bgStatus || 202 });
+      return Response.json({ ok: true });
+    } } };
+  };
+  const submit = (values) => new URLSearchParams({ payload: JSON.stringify({ type: 'view_submission', user: { id: 'U1' }, view: { id: 'V1', callback_id: 'log_modal', state: { values } } }) }).toString();
+  const sel = (v) => ({ v: { type: 'static_select', selected_option: { value: v } } });
+  const txt = (v) => ({ v: { type: 'plain_text_input', value: v } });
+  const goodValues = { date: { v: { type: 'datepicker', selected_date: '2026-10-28' } }, type: sel('practice'), status: sel('full'), activity: sel('Erg (RowErg)'),
+    warmup: txt('15:00'), main_set: txt('Steady'), zone: sel('Aerobic'), pieces: txt('20:00, 5000, 20'), rpe: sel('5'), drag: txt('105') };
+
+  let w = world();
+  let res = await handleSlack(signed('command=%2Flog&trigger_id=T1&user_id=U1'), env, w.deps);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(w.calls[0].url, 'https://slack.com/api/views.open');
+  assert.strictEqual(JSON.parse(w.calls[0].body).trigger_id, 'T1');
+  assert.strictEqual(JSON.parse(w.calls[0].body).view.callback_id, 'log_modal');
+  assert.strictEqual(w.calls[0].headers.authorization, 'Bearer xoxb-FAKE');
+
+  w = world({ openFails: true });
+  res = await handleSlack(signed('command=%2Flog&trigger_id=T1'), env, w.deps);
+  assert.ok(/Could not open the log form \(expired_trigger_id\)/.test((await res.json()).text));
+
+  w = world();
+  res = await handleSlack(signed(submit(goodValues)), env, w.deps);
+  assert.deepStrictEqual(await res.json(), { response_action: 'clear' });
+  assert.strictEqual(w.calls.length, 1);
+  assert.strictEqual(w.calls[0].url, 'https://site.example/.netlify/functions/slack-background');
+  assert.strictEqual(w.calls[0].body, submit(goodValues), 'raw signed body passes through untouched');
+  assert.strictEqual(w.calls[0].headers['x-slack-request-timestamp'], String(NOW));
+
+  w = world();
+  res = await handleSlack(signed(submit({ ...goodValues, pieces: txt('20:00') })), env, w.deps);
+  const out = await res.json();
+  assert.strictEqual(out.response_action, 'errors');
+  assert.ok(/Piece 1: work meters are missing/.test(out.errors.pieces));
+  assert.strictEqual(w.calls.length, 0, 'an invalid form is not sent on');
+
+  w = world({ bgStatus: 500 });
+  assert.strictEqual((await (await handleSlack(signed(submit(goodValues)), env, w.deps)).json()).response_action, 'errors', 'handoff failed: she can press Save again');
+
+  w = world();
+  const btnBody = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', actions: [{ action_id: 'plan_modified' }] }) }).toString();
+  assert.strictEqual((await handleSlack(signed(btnBody), env, w.deps)).status, 200);
+  assert.strictEqual(w.calls.length, 1, 'button presses go to the background function');
+  assert.strictEqual((await handleSlack(signed(btnBody, { secret: 'wrong' }), env, w.deps)).status, 401);
+  assert.strictEqual((await handleSlack(signed(btnBody, { ts: NOW - 600 }), env, w.deps)).status, 401);
+  assert.strictEqual(w.calls.length, 1, 'bad signatures do nothing');
+});
+
+test('slack /log background: Sheet call with member ID and view ID, then a DM', async () => {
+  const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key' })[k];
+  const NOW = 1_800_000_000;
+  const raw = new URLSearchParams({ payload: JSON.stringify({ type: 'view_submission', user: { id: 'U1', name: 'fake.athlete' }, view: { id: 'V1', callback_id: 'log_modal',
+    state: { values: { warmup: { v: { type: 'plain_text_input', value: '15:00' } } } } } }) }).toString();
+  const req = () => new Request('https://x/.netlify/functions/slack-background', { method: 'POST', body: raw, headers: { 'x-slack-request-timestamp': String(NOW),
+    'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${NOW}:${raw}`).digest('hex') } });
+  const world = (sheet) => {
+    const calls = [];
+    return { calls, deps: { nowS: NOW, fetchImpl: async (url, init) => {
+      calls.push({ url, body: JSON.parse(init.body) });
+      if (url === 'https://script.example/exec') return sheet instanceof Error ? new Response('x', { status: 500 }) : Response.json(sheet);
+      return Response.json({ ok: true });
+    } } };
+  };
+  let w = world({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 3 });
+  let out = await handleSlackAction(req(), env, w.deps);
+  assert.deepStrictEqual(w.calls[0].body, { action: 'slack-log', slackUserId: 'U1', viewId: 'V1', form: { warmup: '15:00' }, key: 'fake-key' });
+  assert.strictEqual(w.calls[1].url, 'https://slack.com/api/chat.postMessage');
+  assert.strictEqual(w.calls[1].body.channel, 'U1');
+  assert.ok(/Saved \(Practice, Erg \(RowErg\), 3 pieces\)/.test(w.calls[1].body.text));
+  assert.deepStrictEqual(out, { status: 'ok', dm: true });
+  w = world(new Error('down'));
+  out = await handleSlackAction(req(), env, w.deps);
+  assert.strictEqual(out.status, 'error');
+  assert.ok(/Not saved/.test(w.calls[1].body.text), 'Sheet down: she is told, nothing is half saved');
+  w = world({ status: 'unknown_athlete' });
+  await handleSlackAction(req(), env, w.deps);
+  assert.ok(/roster/.test(w.calls[1].body.text));
 });
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {
