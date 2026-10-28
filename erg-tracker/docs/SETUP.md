@@ -140,7 +140,7 @@ The backups hold everything in the Sheet, weights and birthdays included, so kee
 
 ### Plan flags with buttons (optional, after the Slack alerts webhook)
 
-Every 15 minutes the Sheet checks the last 3 days of entries. A session logged Full that doesn't match its plan gets one message in the Slack alert channel with three buttons: **Set to Modified**, **Looks right** and **Open in Sheet**. Pressing a button changes the entry (Status, or Review status "Reviewed, Full"), writes a Change log row ("Slack, name"), and replaces the message with who decided. The first press wins.
+Every 15 minutes the Sheet checks the last 3 days of entries. A session logged Full that doesn't match its plan gets one message in the Slack alert channel that shows the planned workout, what was logged (each piece with time, meters, rate and rest, the totals, RPE, and where it came from: Google Form, Concept2 Logbook or Slack), and three buttons: **Set to Modified**, **Looks right** and **Open in Sheet**. Pressing a button changes the entry (Status, or Review status "Reviewed, Full"), writes a Change log row ("Slack, name"), and replaces the message with who decided. The first press wins.
 
 1. In Settings, set `slack.coach_ids` to the Slack member IDs of the coaches who may press the buttons, separated by commas (in Slack: profile, then Copy member ID). Run **Set up Sheet and Form** once if the row isn't there yet.
 2. In the Slack app: turn **Interactivity** on and set its Request URL to `https://<your site>/api/slack`.
