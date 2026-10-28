@@ -831,22 +831,30 @@ test('ops: alert once on break, daily while broken, once on recovery', () => {
   assert.ok(/• a\n• b/.test(g.alertText('down', ['a', 'b'], '', 'https://x')));
 });
 
-test('Monday list: rowers with neither a 2k nor a 20\' test', () => {
+test('Monday list: rowers missing a 2k or a 20\' test', () => {
   const today = new Date(2026, 9, 26);
   const row = (id, name, extra) => Object.assign({ 'Athlete ID': id, Name: name, Squad: 'Varsity' }, extra);
-  const roster = [row('A1', 'Fake One'), row('A2', 'Fake Two'), row('A3', 'Fake Three'), row('A4', 'Fake Four'), row('A5', 'Fake Five'), row('A6', 'Fake Six', { Squad: 'Alum' })];
+  const roster = [row('A1', 'Fake One'), row('A2', 'Fake Two'), row('A3', 'Fake Three'), row('A4', 'Fake Four'), row('A5', 'Fake Five'), row('A6', 'Fake Six', { Squad: 'Alum' }), row('A7', 'Fake Seven')];
   const bm = (id, test, extra) => Object.assign({ 'Athlete ID': id, Test: test, Date: new Date(2026, 8, 20), 'Time s': test === '2000m' ? 420 : 1200, Meters: test === '20min' ? 5200 : '', 'Review status': '' }, extra);
   const benchmarks = [
-    bm('A2', '2000m'),                                                  // has a 2k
+    bm('A2', '2000m'),                                                  // has a 2k, no 20'
     bm('A3', '20min', { Date: new Date(2025, 9, 5) }),                  // 20' last school year still counts
     bm('A4', '2000m', { 'Review status': 'Rejected' }),                 // rejected rows are ignored
-    bm('A5', '2000m', { Date: new Date(2024, 9, 5) })                   // two seasons old: no target
+    bm('A5', '2000m', { Date: new Date(2024, 9, 5) }),                  // two seasons old: no target
+    bm('A7', '2000m'), bm('A7', '20min')                                // both: not listed
   ];
-  assert.deepStrictEqual(Array.from(g.noTargetAthletes(roster, benchmarks, today, '07-01')), ['Fake One', 'Fake Four', 'Fake Five']);
-  assert.deepStrictEqual(Array.from(g.noTargetAthletes([], benchmarks, today, '07-01')), []);
+  const plain = (l) => JSON.parse(JSON.stringify(l));
+  assert.deepStrictEqual(plain(g.noTargetAthletes(roster, benchmarks, today, '07-01')), [
+    { name: 'Fake One', missing: ['2k', "20'"] },
+    { name: 'Fake Two', missing: ["20'"] },
+    { name: 'Fake Three', missing: ['2k'] },
+    { name: 'Fake Four', missing: ['2k', "20'"] },
+    { name: 'Fake Five', missing: ['2k', "20'"] }
+  ]);
+  assert.deepStrictEqual(plain(g.noTargetAthletes([], benchmarks, today, '07-01')), []);
   assert.strictEqual(g.noTargetText([]), '', 'silent when nobody is missing');
-  assert.ok(/1 athlete has no 2k or 20' test yet.*for her:\n\u2022 Fake One/.test(g.noTargetText(['Fake One'])));
-  assert.ok(/2 athletes have.*for them:\n\u2022 A\n\u2022 B/.test(g.noTargetText(['A', 'B'])));
+  assert.ok(/1 athlete is missing a 2k or 20' test.*\n\u2022 Fake Two \(no 20'\)/.test(g.noTargetText([{ name: 'Fake Two', missing: ["20'"] }])));
+  assert.ok(/2 athletes are[\s\S]*\u2022 A \(no 2k, no 20'\)\n\u2022 B \(no 2k\)/.test(g.noTargetText([{ name: 'A', missing: ['2k', "20'"] }, { name: 'B', missing: ['2k'] }])));
   assert.ok(g.OPS_TRIGGERS.indexOf('sendNoTargetList') >= 0, 'reinstalled with the other ops triggers');
 });
 

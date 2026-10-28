@@ -5,9 +5,9 @@
  *   once a day while it stays broken, and once when it recovers. A form
  *   submission that can't be saved alerts too. With no webhook set, alerts
  *   go by email to alerts.email (blank: the Sheet owner).
- * - Monday list: at 7:00 every Monday a message names the active rowers with no
- *   2k and no 20' test this school year or last, so no target can be worked out
- *   for her. Nothing is sent when everyone has one.
+ * - Monday list: at 7:00 every Monday a message names the active rowers missing a
+ *   2k or a 20' test this school year or last, so some or all of her targets are
+ *   blank. Nothing is sent when everyone has both.
  * - Backups: every Sunday night a values-only copy of every tab goes into the
  *   Drive folder "Erg tracker backups"; the newest backup.keep (12) are kept.
  * - New school year: archives a copy, saves squads, and sets graduated
@@ -101,35 +101,39 @@ function graduatesToRetire(roster, gradYear) {
 // ---- Monday list: athletes with no target ----
 
 /**
- * Active rowers with neither a 2k nor a 20' season best (this school year or
- * last, rejected rows ignored), so every target on her plan is blank. Alumni
- * have no plan and are left out. Names in roster order.
+ * Active rowers missing a 2k or a 20' season best (this school year or last,
+ * rejected rows ignored), so some or all targets on her plan are blank. Alumni
+ * have no plan and are left out. Returns [{ name, missing: ['2k', "20'"] }] in
+ * roster order.
  */
 function noTargetAthletes(roster, benchmarks, today, yearStartMMDD) {
-  return roster.filter(function (a) {
-    if (isAlumSquad_(a.Squad)) return false;
-    return Object.keys(PLAN_BASES).every(function (base) {
+  var out = [];
+  roster.forEach(function (a) {
+    if (isAlumSquad_(a.Squad)) return;
+    var missing = Object.keys(PLAN_BASES).filter(function (base) {
       return !seasonBestWatts(benchmarks, a['Athlete ID'], base, today, yearStartMMDD);
     });
-  }).map(function (a) { return a.Name; });
+    if (missing.length) out.push({ name: a.Name, missing: missing });
+  });
+  return out;
 }
 
 /** The Monday message, or '' when there is nobody to list. */
-function noTargetText(names) {
-  if (!names.length) return '';
-  return ':clipboard: ' + names.length + (names.length === 1 ? ' athlete has' : ' athletes have') +
-    ' no 2k or 20\' test yet, so no targets show for ' + (names.length === 1 ? 'her' : 'them') + ':\n' +
-    names.map(function (n) { return '\u2022 ' + n; }).join('\n') +
+function noTargetText(list) {
+  if (!list.length) return '';
+  return ':clipboard: ' + list.length + (list.length === 1 ? ' athlete is' : ' athletes are') +
+    ' missing a 2k or 20\' test, so some targets are blank:\n' +
+    list.map(function (x) { return '\u2022 ' + x.name + ' (no ' + x.missing.join(', no ') + ')'; }).join('\n') +
     '\nBook a test day and enter the result to switch targets on.';
 }
 
 /** Monday 7:00 trigger. Silent when every active rower has a test. */
 function sendNoTargetList() {
   var settings = getSettings();
-  var names = noTargetAthletes(activeRoster_(false), readObjects_(TABS.BENCHMARKS), new Date(), settings.school_year_start);
-  var text = noTargetText(names);
+  var list = noTargetAthletes(activeRoster_(false), readObjects_(TABS.BENCHMARKS), new Date(), settings.school_year_start);
+  var text = noTargetText(list);
   if (text) sendAlert_(text);
-  return names;
+  return list;
 }
 
 // ---- Alerts ----
@@ -304,7 +308,7 @@ function turnOnAlertsAndBackups() {
   var hook = PropertiesService.getScriptProperties().getProperty(SLACK_WEBHOOK_PROP);
   SpreadsheetApp.getUi().alert('Alerts and backups are on.\n\n' +
     'Site check every hour, alerts to ' + (hook ? 'Slack' : 'email (set a Slack webhook from the menu to use Slack)') + '.\n' +
-    'Monday 7:00: a list of athletes with no 2k or 20\' test, only when there is someone to list.\n' +
+    'Monday 7:00: a list of athletes missing a 2k or 20\' test, only when there is someone to list.\n' +
     'Backup every Sunday night to Drive > Erg tracker backups, keeping ' + (parseInt(getSettings()['backup.keep'], 10) || 12) + '.\n\n' +
     (problems.length ? 'The site check found problems right now:\n' + problems.join('\n') : 'The site check passed.'));
 }
