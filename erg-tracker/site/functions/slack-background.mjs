@@ -1,9 +1,25 @@
-// Slack's Interactivity Request URL: POST /.netlify/functions/slack-background.
-// A "-background" function answers 202 at once and keeps running (Slack accepts
-// that for button presses, tested 2026-10-28), so the Sheet's few seconds don't
-// hit Slack's 3-second limit. Handles the coach buttons on plan-flag messages
-// (apps-script/PlanFlags.gs). Needs SLACK_SIGNING_SECRET, FEED_URL and FEED_KEY.
-import { signatureValid, callSheet, planOp, planFlagReply, sendReply } from '../lib/slack.mjs';
+// The slow half of Slack. slack.mjs (POST /api/slack) checks and answers Slack,
+// then forwards the signed request here. A "-background" function answers 202 at
+// once and keeps running, so the Sheet's few seconds don't hit Slack's 3-second
+// limit. Handles the coach buttons on plan-flag messages (apps-script/PlanFlags.gs)
+// and the saved /log modal (apps-script/SlackLog.gs). Needs SLACK_SIGNING_SECRET,
+// SLACK_BOT_TOKEN, FEED_URL and FEED_KEY.
+import { signatureValid, callSheet, planOp, planFlagReply, sendReply, dmUser } from '../lib/slack.mjs';
+import { readLogForm, logReply } from '../lib/slacklog.mjs';
+
+async function handleLogSubmission(payload, envFn, fetchImpl) {
+  let result;
+  try {
+    result = await callSheet(envFn, fetchImpl, {
+      action: 'slack-log', slackUserId: payload.user.id, slackName: payload.user.name || payload.user.username || payload.user.id, viewId: payload.view.id, form: readLogForm(payload.view)
+    });
+  } catch (err) {
+    result = { status: 'error', error: err.message };
+  }
+  const sent = await dmUser(envFn, fetchImpl, payload.user.id, logReply(result));
+  console.log('slack: /log', result.status, sent ? 'dm sent' : 'dm failed');
+  return { status: result.status, dm: sent };
+}
 
 const env = (k) => Netlify.env.get(k);
 
@@ -16,6 +32,9 @@ export async function handleSlackAction(req, envFn, deps = {}) {
   }
   let payload;
   try { payload = JSON.parse(new URLSearchParams(raw).get('payload')); } catch { return { ignored: 'payload' }; }
+  if (payload && payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'log_modal') {
+    return handleLogSubmission(payload, envFn, fetchImpl);
+  }
   const action = payload && payload.type === 'block_actions' && payload.actions && payload.actions[0];
   const op = action && planOp(action.action_id);
   if (!op) return { ignored: 'not a plan button' };   // e.g. the Open in Sheet link

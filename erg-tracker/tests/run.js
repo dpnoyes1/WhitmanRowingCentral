@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1115,6 +1115,53 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   assert.strictEqual(list[0].pieces.length, 1);
   assert.strictEqual(list[1].possibleMakeup, true);
   assert.ok(!JSON.stringify(list).match(/weight/i));
+});
+
+test('slack /log: coach-only access, pieces box, modal values parse like the Form', () => {
+  const roster = [{ Name: 'Jane Smith', Active: 'Yes' }, { Name: 'Old Athlete', Active: 'No' }];
+  const coaches = ['UC1', 'UC2'];
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', ' jane  SMITH ').athlete.Name, 'Jane Smith');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UA9', 'Jane Smith').status, 'not_allowed', 'athletes cannot use /log yet');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, '', 'Jane Smith').status, 'not_allowed');
+  assert.strictEqual(g.slackLogAccess_(roster, [], 'UC1', 'Jane Smith').status, 'not_allowed', 'no coach IDs set: nobody');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', 'Old Athlete').status, 'unknown_name', 'inactive');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', '').status, 'unknown_name');
+
+  const p = g.parsePiecesText('10:00.0, 2650, 22, 2:00, 300\n\n 10:00, 2660 \n10:00,2675,,');
+  assert.strictEqual(p.length, 3);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(p[0])), { WORK_TIME: '10:00.0', WORK_M: '2650', RATE: '22', REST_TIME: '2:00', REST_M: '300' });
+  assert.strictEqual(p[1].RATE, '');
+  assert.throws(() => g.parsePiecesText(''), /at least one/);
+  assert.throws(() => g.parsePiecesText('10:00'), /Piece 1: work meters are missing/);
+  assert.throws(() => g.parsePiecesText('10:00,2650\n10:99,2650'), /Piece 2: work time "10:99" should look like/);
+  assert.throws(() => g.parsePiecesText(Array(11).fill('1:00,100').join('\n')), /At most 10/);
+
+  const form = { date: '2026-01-12', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', warmup_m: '2000', main_set: "3x10' r2'",
+    zone: 'Aerobic', pieces: '10:00.0, 2650, 22, 2:00, 300\n10:00.0, 2660, , 2:00\n10:00.0, 2675', cooldown: '5:00', cooldown_m: '', rpe: '6', drag: '105', hr: '', note: '' };
+  const viaSlack = g.parseSubmission(g.slackLogAnswers(form, 'Jane Smith', 'Jane Smith'), ctxFor());
+  const Q = g.Q, i1 = g.qInterval(1), i2 = g.qInterval(2), i3 = g.qInterval(3);
+  const viaForm = g.parseSubmission({
+    [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Jane Smith', [Q.DATE]: '2026-01-12', [Q.LOG_TYPE]: g.LOG_TYPES.PRACTICE, [Q.STATUS]: g.STATUSES.FULL,
+    [Q.ACTIVITY]: 'Erg (RowErg)', [Q.WARMUP]: '15:00', [Q.MAIN_SET]: "3x10' r2'", [Q.ZONE]: 'Aerobic',
+    [i1.WORK_TIME]: '10:00.0', [i1.WORK_M]: '2650', [i1.RATE]: '22', [i1.REST_TIME]: '2:00', [i1.REST_M]: '300',
+    [i2.WORK_TIME]: '10:00.0', [i2.WORK_M]: '2660', [i2.REST_TIME]: '2:00',
+    [i3.WORK_TIME]: '10:00.0', [i3.WORK_M]: '2675',
+    [Q.COOLDOWN]: '5:00', [Q.RPE]: '6', [Q.DRAG]: '105', [Q.WARMUP_M]: '2000', [Q.COOLDOWN_M]: ''
+  }, ctxFor());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(viaSlack)), JSON.parse(JSON.stringify(viaForm)), 'same entry and intervals as the Form');
+  assert.strictEqual(viaSlack.entry['Entered by'], 'Jane Smith');
+  assert.strictEqual(g.parseSubmission(g.slackLogAnswers(form, 'Jane Smith', 'Coach Greta'), ctxFor()).entry['Entered by'], 'Coach Greta');
+
+  const out = g.parseSubmission(g.slackLogAnswers({ date: '2026-01-12', type: 'practice', status: 'out', note: 'sick' }, 'Jane Smith'), ctxFor());
+  assert.strictEqual(out.entry.Status, 'Out');
+  assert.strictEqual(out.entry['Coach note'], 'sick');
+  assert.strictEqual(out.intervals.length, 0);
+  const oyo = g.parseSubmission(g.slackLogAnswers({ ...form, type: 'oyo', status: '' }, 'Jane Smith'), ctxFor());
+  assert.strictEqual(oyo.entry['Session type'], 'OYO');
+  const mk = g.parseSubmission(g.slackLogAnswers({ ...form, type: 'makeup', makeup_for: '2026-01-10' }, 'Jane Smith'), ctxFor());
+  assert.strictEqual(mk.entry['Session type'], 'Make-up');
+  assert.strictEqual(mk.entry['Make-up for date'].getDate(), 10);
+  assert.throws(() => g.slackLogAnswers({ ...form, type: 'test' }, 'Jane Smith'), /Pick Practice/);
 });
 
 console.log(`${passed} tests passed`);
