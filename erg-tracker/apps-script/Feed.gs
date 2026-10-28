@@ -18,6 +18,8 @@ function doPost(e) {
   var key = PropertiesService.getScriptProperties().getProperty(FEED_KEY_PROP);
   if (!key || !feedKeyMatches_(key, body.key)) return feedJson_({ error: 'unauthorized' });
   if (body.action === LOGBOOK_ACTION) return feedJson_(processLogbookResult_(body));
+  if (body.action === 'logbook-confirm') return feedJson_(processLogbookConfirm_(body));
+  if (body.action === 'logbook-accept-due') return feedJson_(processLogbookAcceptDue_());
   var inputs = feedInputs_();
   inputs.signLogin = feedLoginSigner_(key);
   return feedJson_(siteFeed(inputs, new Date()));
@@ -134,6 +136,30 @@ function feedRound_(x, places) {
 
 function feedRejected_(row) {
   return /reject/i.test(String(row['Review status'] || ''));
+}
+
+/**
+ * Logbook sessions waiting for the athlete's tap: shown on her page (and to
+ * coaches) as "Found on Logbook". Pieces are raw time and meters, no weight.
+ */
+function feedLogbookPending_(inputs, known) {
+  var ivByEntry = {};
+  (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
+  return inputs.entries.filter(function (e) {
+    return isDate_(e.Date) && known[e['Athlete ID']] && feedPending_(e) && !feedRejected_(e) && String(e.Source) === 'Logbook';
+  }).map(function (e) {
+    var pieces = (ivByEntry[e['Entry ID']] || []).map(function (iv) {
+      return { n: feedNum_(iv['Interval #']), workS: feedNum_(iv['Work s']), workM: feedNum_(iv['Work m']), rate: feedNum_(iv['Avg rate']) };
+    });
+    var shape = logbookBenchmarkShape(e, ivByEntry[e['Entry ID']] || []);
+    return {
+      id: String(e['Entry ID']), athleteId: e['Athlete ID'], date: feedDay_(e.Date),
+      sessionType: String(e['Session type'] || ''), makeupFor: feedDay_(e['Make-up for date']),
+      possibleMakeup: /make-?up/i.test(String(e['Review status'])), activity: String(e.Activity || ''),
+      mainSet: String(e['Main set'] || ''), workS: feedNum_(e['Work s']), workM: feedNum_(e['Work m']),
+      dragFactor: feedNum_(e['Drag factor']), benchmark: shape, pieces: pieces
+    };
+  });
 }
 
 /** Logbook sessions wait for the athlete's tap (or the 20-hour rule) before they count. */
@@ -304,6 +330,7 @@ function siteFeed(inputs, asOf) {
     teamGms: teamGms,
     weeks: weeks,
     logged: feedLogged_(inputs, teamGmsYearStart_(asOf, s.school_year_start), s),
+    logbookPending: feedLogbookPending_(inputs, known),
     logins: logins
   };
 }

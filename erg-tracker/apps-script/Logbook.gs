@@ -202,12 +202,16 @@ function processLogbookResult_(body) {
 
 /** Entries row for a Response ID: {row, entryId, reviewStatus} or null. */
 function findEntryRow_(responseId) {
+  return findEntryBy_('Response ID', responseId);
+}
+
+function findEntryBy_(header, value) {
   var sheet = tab_(TABS.ENTRIES);
   var last = sheet.getLastRow();
   if (last < 2) return null;
   var headers = HEADERS[TABS.ENTRIES];
-  var col = headers.indexOf('Response ID') + 1;
-  var found = sheet.getRange(2, col, last - 1, 1).createTextFinder(responseId).matchEntireCell(true).findNext();
+  var col = headers.indexOf(header) + 1;
+  var found = sheet.getRange(2, col, last - 1, 1).createTextFinder(String(value)).matchEntireCell(true).findNext();
   if (!found) return null;
   var row = found.getRow();
   return {
@@ -227,4 +231,139 @@ function deleteEntry_(found) {
     }
   }
   tab_(TABS.ENTRIES).deleteRow(found.row);
+}
+
+// ---- confirm and auto-accept -------------------------------------------------
+
+var LOGBOOK_AUTO_ACCEPT_HOURS = 20;   // David, 2026-10-25: unchanged labels auto-accept after 20 h
+
+/**
+ * Pure: what a confirm tap changes. entry/interval are Entries/Intervals objects.
+ * opts: {sessionType, makeupFor 'YYYY-MM-DD', rpe, benchmark '2000m' | '20min'}.
+ * Returns {updates: {column: value}, benchmark: row or null} or {error}.
+ */
+function logbookConfirmPlan(entry, intervals, athleteId, opts, ctx) {
+  if (String(entry['Athlete ID']) !== String(athleteId)) return { error: 'not your session' };
+  if (String(entry['Source']) !== 'Logbook' || !/^pending/i.test(String(entry['Review status']))) return { error: 'not waiting for confirmation' };
+  var type = ['Practice', 'OYO', 'Make-up'].indexOf(opts.sessionType) >= 0 ? opts.sessionType : String(entry['Session type']);
+  var updates = {
+    'Session type': type,
+    'Status': type === 'OYO' ? '' : 'Full',
+    'Make-up for date': '',
+    'Review status': ''
+  };
+  if (type === 'Make-up') {
+    var missed = opts.makeupFor || (isDate_(entry['Make-up for date']) ? ctx.formatDay(entry['Make-up for date']) : '');
+    if (!missed) return { error: 'say which missed practice this makes up' };
+    updates['Make-up for date'] = ctx.parseDate(missed);
+  }
+  if (opts.rpe !== undefined && opts.rpe !== null && opts.rpe !== '') {
+    var rpe = Number(opts.rpe);
+    if (!(rpe >= 1 && rpe <= 10)) return { error: 'RPE is 1 to 10' };
+    updates['RPE'] = rpe;
+  }
+  var bench = null;
+  if (opts.benchmark) {
+    var shape = logbookBenchmarkShape(entry, intervals);
+    if (shape !== opts.benchmark) return { error: 'this session does not look like a ' + opts.benchmark + ' test' };
+    var piece = intervals[0];
+    var timed = shape === '2000m';
+    bench = {
+      'Benchmark ID': ctx.newId('B'),
+      'Submitted at': ctx.now,
+      'Date': entry['Date'],
+      'Athlete ID': entry['Athlete ID'],
+      'Athlete': entry['Athlete'],
+      'Entered by': entry['Entered by'],
+      'Test': shape,
+      'Time s': timed ? Number(piece['Work s']) : '',
+      'Meters': timed ? '' : Number(piece['Work m']),
+      'Avg rate': piece['Avg rate'],
+      'Drag factor': entry['Drag factor'],
+      'Splits s': '',
+      'Coach note': 'From Logbook',
+      'Source': 'Logbook',
+      'Review status': '',
+      'Response ID': entry['Response ID'],
+      'Entry ID': entry['Entry ID'],
+      'Drag check': entry['Drag factor'] === '' ? DRAG_FLAG : ''
+    };
+    updates['Benchmark ID'] = bench['Benchmark ID'];
+    updates['Zone'] = timed ? 'Anaerobic' : 'Threshold';
+    updates['Main set'] = shape + ' test';
+  }
+  return { updates: updates, benchmark: bench };
+}
+
+/** '2000m' or '20min' when a Logbook session is one piece of that size on the RowErg, else ''. */
+function logbookBenchmarkShape(entry, intervals) {
+  if (String(entry['Activity']) !== 'Erg (RowErg)' || intervals.length !== 1) return '';
+  var m = Number(intervals[0]['Work m']);
+  var t = Number(intervals[0]['Work s']);
+  if (m >= 1990 && m <= 2010) return '2000m';
+  if (t >= 1195 && t <= 1205) return '20min';
+  return '';
+}
+
+/** Pure: Entry IDs of plain Pending Logbook sessions older than the auto-accept window. */
+function logbookDueIds(entries, now) {
+  var cutoff = now.getTime() - LOGBOOK_AUTO_ACCEPT_HOURS * 3600000;
+  return entries.filter(function (e) {
+    return String(e['Source']) === 'Logbook' && String(e['Review status']) === LOGBOOK_PENDING &&
+      isDate_(e['Submitted at']) && e['Submitted at'].getTime() <= cutoff;
+  }).map(function (e) { return e['Entry ID']; });
+}
+
+function setEntryCells_(row, updates) {
+  var sheet = tab_(TABS.ENTRIES);
+  var headers = HEADERS[TABS.ENTRIES];
+  Object.keys(updates).forEach(function (k) {
+    var col = headers.indexOf(k);
+    if (col < 0) throw new Error('No column "' + k + '" on Entries');
+    sheet.getRange(row, col + 1).setValue(updates[k]);
+  });
+}
+
+/** doPost action logbook-confirm: {athleteId, entryId, sessionType, makeupFor, rpe, benchmark}. */
+function processLogbookConfirm_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var found = findEntryBy_('Entry ID', body.entryId);
+    if (!found) return { status: 'error', error: 'session not found' };
+    var entry = readObjects_(TABS.ENTRIES)[found.row - 2];
+    var intervals = readObjects_(TABS.INTERVALS).filter(function (iv) { return iv['Entry ID'] === entry['Entry ID']; });
+    var tz = ss_().getSpreadsheetTimeZone();
+    var plan = logbookConfirmPlan(entry, intervals, body.athleteId, body, {
+      newId: newId_, now: new Date(), parseDate: parseFormDate_,
+      formatDay: function (d) { return Utilities.formatDate(d, tz, 'yyyy-MM-dd'); }
+    });
+    if (plan.error) return { status: 'error', error: plan.error };
+    if (plan.benchmark) appendObject_(TABS.BENCHMARKS, plan.benchmark);
+    setEntryCells_(found.row, plan.updates);
+    SpreadsheetApp.flush();
+    return { status: 'confirmed', benchmark: !!plan.benchmark };
+  } catch (err) {
+    logChange_({ Who: 'logbook', Tab: '(logbook)', 'Row ID': String(body.entryId), Note: 'LOGBOOK CONFIRM ERROR: ' + err.message });
+    return { status: 'error', error: err.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** doPost action logbook-accept-due (the site's poll calls it every 15 minutes). */
+function processLogbookAcceptDue_() {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var entries = readObjects_(TABS.ENTRIES);
+    var due = logbookDueIds(entries, new Date());
+    entries.forEach(function (e, i) {
+      if (due.indexOf(e['Entry ID']) >= 0) setEntryCells_(i + 2, { 'Review status': '' });
+    });
+    if (due.length) SpreadsheetApp.flush();
+    return { status: 'ok', accepted: due.length };
+  } finally {
+    lock.releaseLock();
+  }
 }

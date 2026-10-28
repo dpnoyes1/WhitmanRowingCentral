@@ -972,6 +972,41 @@ test('logbook sync: poll sends new results, skips repeats, survives one failure'
   assert.strictEqual((await bad.store.get('seen/122191976')), null, 'a failed send is retried next time');
 });
 
+test('logbook confirm: pending list is hers only, confirm goes to the Sheet, auto-accept rides the poll', async () => {
+  clearFeedCache();
+  const store = memStore(), sheet = [];
+  const lbFeed = { ...feed, logbookPending: [
+    { id: 'E1', athleteId: 'A901', date: '2026-10-28', sessionType: 'OYO', pieces: [], benchmark: '2000m', workS: 440, workM: 2000 },
+    { id: 'E2', athleteId: 'A902', date: '2026-10-28', sessionType: 'OYO', pieces: [] }
+  ] };
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url) === 'https://script.example/exec') {
+      const body = init.body ? JSON.parse(init.body) : {};
+      if (body.action) { sheet.push(body); return Response.json(body.action === 'logbook-accept-due' ? { status: 'ok', accepted: 2 } : { status: 'confirmed', benchmark: !!body.benchmark }); }
+      return Response.json(lbFeed);
+    }
+    return new Response('no', { status: 404 });
+  };
+  const env = (k) => ({ ...Object.fromEntries(['TEAM_PASSWORD', 'FEED_KEY', 'CONCEPT2_CLIENT_ID', 'CONCEPT2_CLIENT_SECRET', 'CONCEPT2_TOKEN_KEY'].map((n) => [n, c2env(n)])), FEED_URL: 'https://script.example/exec' })[k];
+  const call = (path, who, init = {}) => handleConcept2(new Request('https://x' + path, { headers: { cookie: c2cookie(who) }, ...init }), env, { store, fetchImpl, fetch: fetchImpl, shared: null });
+  let out = await (await call('/api/concept2/pending', 'A901')).json();
+  assert.deepStrictEqual(out.pending.map((p) => p.id), ['E1']);
+  assert.strictEqual((await call('/api/concept2/pending', 'team')).status, 403);
+  const post = (body, who = 'A901') => call('/api/concept2/confirm', who, { method: 'POST', body: JSON.stringify(body) });
+  assert.strictEqual((await post({ sessionType: 'OYO' })).status, 400);
+  const ok = await post({ entryId: 'E1', sessionType: 'Practice', rpe: '7', benchmark: '2000m', junk: 'x', makeupFor: 'nope' });
+  assert.strictEqual(ok.status, 200);
+  assert.deepStrictEqual(sheet[0], { key: 'fake-key', action: 'logbook-confirm', athleteId: 'A901', entryId: 'E1', sessionType: 'Practice', rpe: 7, benchmark: '2000m' });
+  out = await (await call('/api/concept2/pending', 'A901')).json();
+  assert.deepStrictEqual(out.pending, [], 'a confirmed session disappears even while the feed copy lags');
+  // the poll also asks the Sheet to accept sessions older than 20 hours
+  const w = syncWorld();
+  await connectA901(w);
+  const polled = await LS.pollAll(w.env, w.store, w.fetchImpl);
+  assert.ok(w.sheet.some((c) => c.action === 'logbook-accept-due'), JSON.stringify(polled));
+  clearFeedCache();
+});
+
 photoTests(test);
 
 for (const [name, fn] of tests) {

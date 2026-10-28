@@ -736,6 +736,7 @@ async function loadLogbookCard(id, own) {
         ? '<p class="muted small">Connect your free Concept2 Logbook account once, so erg sessions saved from ErgData can be filled in for you. We only read your results, and you can disconnect any time.</p><p><a class="btn" href="/api/concept2/connect">Connect Logbook</a></p>'
         : '<p class="muted small">Not connected. She connects from her own page.</p>'}
   </div>`;
+  if (own && connected) loadLogbookPending(box);
   const off = document.getElementById('logbook-off');
   if (off) {
     off.onclick = async () => {
@@ -745,6 +746,47 @@ async function loadLogbookCard(id, own) {
       loadLogbookCard(id, own);
     };
   }
+}
+
+/** "Found on Logbook": sessions waiting for her tap. Confirm counts it as shown; she can change the type first. */
+async function loadLogbookPending(box) {
+  let list = [];
+  try { list = (await api('/api/concept2/pending')).pending; } catch (e) { return; }
+  if (!list.length) return;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = list.map((p) => {
+    const pieces = p.pieces.length > 1
+      ? `<p class="muted small">${p.pieces.map((x) => `${fmtTime(x.workS)}${x.workM ? ' · ' + fmtNum(x.workM) + ' m' : ''}${x.rate ? ' · ' + x.rate + ' spm' : ''}`).map(esc).join('<br>')}</p>` : '';
+    const types = ['Practice', 'OYO', 'Make-up'].map((t) => `<option${t === p.sessionType ? ' selected' : ''}>${t}</option>`).join('');
+    return `<div class="card lb-pending" data-id="${esc(p.id)}"><h2>Found on Logbook</h2>
+      <p><b>${esc(fmtDay(p.date))}</b> · ${esc(p.activity)}${p.mainSet ? ' · ' + esc(p.mainSet) : ''}<br>${fmtTime(p.workS)} work · ${fmtNum(p.workM)} m${p.dragFactor ? ' · drag ' + p.dragFactor : ''}</p>${pieces}
+      ${p.possibleMakeup ? `<p class="small">This looks like a make-up for ${esc(p.makeupFor ? fmtDay(p.makeupFor) : 'a missed practice')}. Check the type below.</p>` : ''}
+      <p class="small"><label>Counts as <select class="lb-type">${types}</select></label>
+        <label class="lb-mk"${p.sessionType === 'Make-up' ? '' : ' hidden'}> for the practice on <input type="date" class="lb-mkdate" value="${esc(p.makeupFor || '')}"></label>
+        <label>Effort (1 easy – 10 max) <select class="lb-rpe"><option value="">skip</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<option>${n}</option>`).join('')}</select></label>
+        ${p.benchmark ? `<label><input type="checkbox" class="lb-bench"> This was my ${p.benchmark === '2000m' ? '2k' : "20'"} test</label>` : ''}</p>
+      <p><button class="btn lb-confirm">Confirm</button> <span class="muted small lb-msg">If you do nothing, it counts after 20 hours${p.possibleMakeup ? ' (make-ups wait for you)' : ''}.</span></p></div>`;
+  }).join('');
+  box.prepend(wrap);
+  wrap.querySelectorAll('.lb-pending').forEach((card) => {
+    const type = card.querySelector('.lb-type');
+    type.onchange = () => { card.querySelector('.lb-mk').hidden = type.value !== 'Make-up'; };
+    card.querySelector('.lb-confirm').onclick = async (ev) => {
+      const btn = ev.currentTarget, msg = card.querySelector('.lb-msg');
+      btn.disabled = true;
+      const bench = card.querySelector('.lb-bench');
+      const res = await fetch('/api/concept2/confirm', {
+        method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          entryId: card.dataset.id, sessionType: type.value, makeupFor: card.querySelector('.lb-mkdate').value,
+          rpe: card.querySelector('.lb-rpe').value, benchmark: bench && bench.checked ? list.find((x) => x.id === card.dataset.id).benchmark : ''
+        })
+      });
+      const out = await res.json().catch(() => ({}));
+      if (res.ok) { card.innerHTML = '<h2>Found on Logbook</h2><p>Counted. Thanks!</p>'; setTimeout(() => card.remove(), 2500); }
+      else { msg.textContent = out.error || 'Something went wrong.'; btn.disabled = false; }
+    };
+  });
 }
 
 /** "2:07.0 /500m (171 W)" as pace, with watts underneath. */

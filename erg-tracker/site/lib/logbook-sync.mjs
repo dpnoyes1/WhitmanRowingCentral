@@ -50,18 +50,21 @@ export const fetchResult = (fetchImpl, access, id) => logbookGet(fetchImpl, acce
 export const listRecent = (fetchImpl, access, fromDay) =>
   logbookGet(fetchImpl, access, 'results?from=' + encodeURIComponent(fromDay) + '&number=50');
 
-/** POST to the Apps Script web app (same URL and key as the feed). */
-export async function sendToSheet(env, fetchImpl, athleteId, result) {
+/** POST an action to the Apps Script web app (same URL and key as the feed). */
+export async function callSheet(env, fetchImpl, payload) {
   const url = env('FEED_URL'), key = env('FEED_KEY');
   if (!url || !key) throw new Error('FEED_URL and FEED_KEY must be set in Netlify');
   const res = await fetchImpl(url, {
     method: 'POST', headers: { 'content-type': 'text/plain;charset=utf-8' }, redirect: 'follow',
-    body: JSON.stringify({ key, action: 'logbook-result', athleteId, result })
+    body: JSON.stringify({ key, ...payload })
   });
   const body = await res.json().catch(() => ({}));
   if (!res.ok || body.error || body.status === 'error') throw new Error('Sheet said: ' + (body.error || body.status || res.status));
   return body;
 }
+
+export const sendToSheet = (env, fetchImpl, athleteId, result) =>
+  callSheet(env, fetchImpl, { action: 'logbook-result', athleteId, result });
 
 const seenKey = (id) => 'seen/' + id;
 const fingerprint = (p) => JSON.stringify([p.timeS, p.distanceM, p.localDate, p.localTime, p.intervals.length, p.deleted ? 1 : 0]);
@@ -129,6 +132,11 @@ export async function pollAll(env, store, fetchImpl, { now = Date.now(), days = 
       out.failed++;
       console.error('logbook poll failed for one athlete:', err.message);
     }
+  }
+  try {   // unchanged sessions count after 20 hours (David, 2026-10-25)
+    out.accepted = (await callSheet(env, fetchImpl, { action: 'logbook-accept-due' })).accepted;
+  } catch (err) {
+    console.error('logbook accept-due failed:', err.message);
   }
   return out;
 }
