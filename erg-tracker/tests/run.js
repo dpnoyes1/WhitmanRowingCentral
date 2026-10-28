@@ -872,6 +872,11 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   const noted = g.planFlagDetail({ ...full, Athlete: 'Jane', 'Entered by': 'Coach Greta', Source: 'Logbook', 'Coach note': 'secret note', Activity: 'Run', 'Main set': 'Easy', RPE: 4 }, short, []);
   assert.ok(/Concept2 Logbook, entered by Coach Greta\): Run, "Easy"/.test(noted) && /RPE 4/.test(noted) && !/secret/.test(noted), noted);
   assert.ok(/Planned:\* not found/.test(noted));
+  const mk = (o) => Object.assign({ reps: 1, workType: 'Distance', workS: null, workM: 500, restS: 0, restUndefined: false, startEveryS: null, zone: '', rate: '' }, o);
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 8, restUndefined: true, zone: 'Threshold' })), '8 x 500m, undefined rest, Threshold');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 4, workType: 'Time', workS: 360, workM: null, restS: 120, zone: 'Aerobic', rate: '22' })), '4 x 6:00, rest 2:00, Aerobic, rate 22');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 8, startEveryS: 210, restUndefined: true, zone: 'Anaerobic' })), '8 x 500m, start every 3:30, Anaerobic');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ workType: 'Time', workS: 1200, workM: null, zone: 'Threshold' })), '20:00, Threshold');
   assert.ok(g.planFlagDetail(full, Array(200).fill(all[0]), []).length <= 2400, 'stays inside Slack\'s block limit');
   const ids = msg.blocks[1].elements.map(b => b.action_id);
   assert.deepStrictEqual(Array.from(ids), ['plan_modified', 'plan_reviewed', 'plan_open']);
