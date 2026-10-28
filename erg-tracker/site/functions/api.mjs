@@ -1,7 +1,7 @@
 import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, workoutView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, workoutView, balanceView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -34,6 +34,8 @@ export async function handle(req, envFn, deps = {}) {
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
   if (path === '/api/insights') return who.kind === 'team' ? json({ ...insightsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).
+  if (path === '/api/balance') return who.kind === 'team' ? json({ ...balanceView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
   // Results vs goal: an athlete sees only her own; coaches see everyone's and can look back a week.
   const coach = who.kind === 'team';
@@ -75,4 +77,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };

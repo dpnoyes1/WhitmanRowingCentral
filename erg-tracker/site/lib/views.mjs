@@ -4,8 +4,9 @@
 
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
-  practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, personalBests,
-  resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal
+  practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
+  resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal,
+  balanceGap, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -249,11 +250,26 @@ export function insightsView(feed, today) {
       ...athleteSummary(a), lastWeek: prev, thisWeek: cur,
       splitTrend: trendRow(splitTrend(steadySplits(mine, splitWeeks))),
       projected2k: proj && round(proj.timeS, 1),
-      month: { ...monthConsistency(record, today), streak: practiceStreak(record) }
+      month: { ...monthConsistency(record, today), streak: practiceStreak(record) },
+      missed: missedNotMadeUp(record, today, feed.settings.makeupWindowDays ?? 7)
     };
   });
-  rows.sort((x, y) => (Number(y.thisWeek.flag || y.lastWeek.flag) - Number(x.thisWeek.flag || x.lastWeek.flag)) || x.name.localeCompare(y.name));
-  return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT, rowers: rows };
+  const bad = (r) => Number(r.thisWeek.flag || r.lastWeek.flag) * 2 + Number(r.missed.flag);
+  rows.sort((x, y) => (bad(y) - bad(x)) || x.name.localeCompare(y.name));
+  return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
+    missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, rowers: rows };
+}
+
+/** Missed practices in the last 4 weeks (David, 2026-10-28): 2 or more not made up is flagged. */
+export const MISSED_FLAG_AT = 2;
+export const MISSED_WINDOW_DAYS = 28;
+
+/** Practices missed in the window with no make-up: still inside the make-up window (open) or past it (overdue). */
+export function missedNotMadeUp(record, today, makeupWindowDays) {
+  const from = addDays(today, -(MISSED_WINDOW_DAYS - 1));
+  const missed = record.filter((r) => !r.done && r.date >= from);
+  const open = missed.filter((r) => daysBetween(r.date, today) <= makeupWindowDays).length;
+  return { count: missed.length, open, overdue: missed.length - open, flag: missed.length >= MISSED_FLAG_AT };
 }
 
 function testRow(b) {
@@ -342,12 +358,17 @@ export function teamSplitsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const rowers = activeRowers(feed);
   const best = {};
+  // Each rower's best 2k split (s/500m) and best 20' meters, separately (David, 2026-10-28).
+  const best2k = {}, best20 = {};
   feed.benchmarks.forEach((b) => {
     if (!STAR_TESTS.includes(b.test) || !b.valid || b.date < yearStart || b.date > today) return;
     const s = splitOf(b);
     if (s === null || !(s > 0)) return;
     if (!(b.athleteId in best) || s < best[b.athleteId]) best[b.athleteId] = s;
+    if (b.test === '2000m' && (!(b.athleteId in best2k) || resultValue(b) / 4 < best2k[b.athleteId])) best2k[b.athleteId] = resultValue(b) / 4;
+    if (b.test === '20min' && (!(b.athleteId in best20) || resultValue(b) > best20[b.athleteId])) best20[b.athleteId] = resultValue(b);
   });
+  const mean = (xs) => (xs.length ? xs.reduce((x, y) => x + y, 0) / xs.length : null);
   const rank = {};
   rowers.filter((a) => a.id in best)
     .sort((x, y) => best[x.id] - best[y.id])
@@ -365,7 +386,14 @@ export function teamSplitsView(feed, today) {
     const members = rowers.filter(inGroup[key]);
     const splits = members.filter((a) => a.id in best).map((a) => best[a.id]);
     const avg = splits.length ? splits.reduce((x, y) => x + y, 0) / splits.length : null;
-    return { key, label, avgSplit: round(avg, 1), n: splits.length, rowers: members.length };
+    const k = members.filter((a) => a.id in best2k).map((a) => best2k[a.id]);
+    const m = members.filter((a) => a.id in best20).map((a) => best20[a.id]);
+    const avgM = mean(m);
+    return {
+      key, label, avgSplit: round(avg, 1), n: splits.length, rowers: members.length,
+      twoK: { n: k.length, avgSplit: round(mean(k), 1) },
+      twenty: { n: m.length, avgMeters: round(avgM), avgSplit: avgM ? round((1200 * 500) / avgM, 1) : null }
+    };
   });
   return { today, yearStart, groups };
 }
@@ -532,4 +560,44 @@ function planSession(s, a) {
 export function dayPlan(feed, day, a) {
   const plan = (feed.weeks || []).find((w) => w.weekStart === weekStart(day)) || { sessions: [] };
   return plan.sessions.filter((s) => s.day === day && inSquad(s, a.squad)).map((s) => planSession(s, a));
+}
+
+// ---- balance: 100m vs 2k vs 20' in watts, coaches only (David, 2026-10-27) --------
+
+/**
+ * Per rower, the 100m vs 2k and 2k vs 20' watts ratios from her last 12 months:
+ * the best-weighted pair (results close in time count more) and the weighted
+ * average of all her pairs, beside what Paul's Law and the tracker's own rules
+ * (8.5 s, 0.786) would have predicted from that pair's 2k. No labels or ranges:
+ * the point is to compare the rules with Whitman's results and fit our own model.
+ * Never sent to athletes.
+ */
+export function balanceView(feed, today) {
+  const ratioPct = (x) => round(100 * x, 1);
+  const wattsOfSplit = (s) => wattsFromSplit(s);
+  const gapRow = (g, predicted) => {
+    if (!g) return null;
+    const { best } = g;
+    const twoK = best.hi.test === '2000m' ? best.hi : best.lo;
+    const split2k = twoK.timeS / 4;
+    const rules = Object.fromEntries(Object.entries(predicted(ruleSplits(split2k))).map(([k, s]) => [k, {
+      splitS: round(s, 1), ratioPct: ratioPct(best.hi.test === '2000m' ? wattsOfSplit(split2k) / wattsOfSplit(s) : wattsOfSplit(s) / wattsOfSplit(split2k))
+    }]));
+    return {
+      ratioPct: ratioPct(best.ratio), wattsHi: round(best.wattsHi, 0), wattsLo: round(best.wattsLo, 0),
+      hiDate: best.hi.date, loDate: best.lo.date, daysApart: best.days, recency: round(best.weight, 2), weak: g.weak,
+      avgRatioPct: ratioPct(g.avgRatio), pairs: g.pairs, rules
+    };
+  };
+  const rows = activeRowers(feed).map((a) => ({
+    ...athleteSummary(a),
+    sprint: gapRow(balanceGap(a.id, feed.benchmarks, today, '100m', '2000m'), (r) => ({ paul: r.paul100, tracker: r.rule100 })),
+    endurance: gapRow(balanceGap(a.id, feed.benchmarks, today, '2000m', '20min'), (r) => ({ paul: r.paul20, tracker: r.rule20 }))
+  })).sort((x, y) => x.name.localeCompare(y.name));
+  const mean = (list) => (list.length ? round(list.reduce((s, v) => s + v, 0) / list.length, 1) : null);
+  const summary = (key) => {
+    const g = rows.map((r) => r[key]).filter(Boolean);
+    return { rowers: g.length, ratioPct: mean(g.map((x) => x.ratioPct)), paulPct: mean(g.map((x) => x.rules.paul.ratioPct)), trackerPct: mean(g.map((x) => x.rules.tracker.ratioPct)) };
+  };
+  return { today, windowDays: BALANCE_WINDOW_DAYS, halfLifeDays: BALANCE_HALF_LIFE_DAYS, weakBelow: BALANCE_WEAK_WEIGHT, rowers: rows, sprint: summary('sprint'), endurance: summary('endurance') };
 }

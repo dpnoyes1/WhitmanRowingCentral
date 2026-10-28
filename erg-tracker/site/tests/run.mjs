@@ -5,14 +5,16 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers } from '../lib/views.mjs';
+import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
-import { handleSlackTest, signatureValid } from '../functions/slack-test.mjs';
-import { createHmac } from 'node:crypto';
+import * as C2 from '../lib/concept2.mjs';
+import { handleConcept2 } from '../functions/concept2.mjs';
+import { handleCallback } from '../functions/concept2-callback.mjs';
+import photoTests from './photo.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -117,6 +119,9 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
   assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
   assert.strictEqual(g.freshman.avgSplit, 105);
+  assert.deepStrictEqual(g.all.twoK, { n: 1, avgSplit: 105 }, '2k average counts only 2k tests');
+  assert.deepStrictEqual(g.all.twenty, { n: 1, avgMeters: 5000, avgSplit: 120 }, "20' average is meters and its real split");
+  assert.strictEqual(g.varsity.twenty.avgMeters, null, 'no 20 in the varsity group');
 
   const v = teamSplitsView(feed, TODAY);
   const d = Object.fromEntries(v.groups.map((x) => [x.key, x]));
@@ -125,6 +130,18 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.ok(d.all.n >= d.top16.n && d.all.n <= 30, 'all counts every rower with a result');
   assert.ok(v.groups.every((x) => x.avgSplit === null || (x.avgSplit > 90 && x.avgSplit < 200)), 'splits in a sane range');
   assert.ok(!/A9\d\d|Name/.test(JSON.stringify(v)), 'group averages carry no names or IDs');
+});
+
+test('insights: missed practices not made up in the last 4 weeks', () => {
+  const rec = (date, done) => ({ date, done });
+  const m = missedNotMadeUp([rec('2026-09-01', false), rec('2026-10-05', false), rec('2026-10-19', false), rec('2026-10-21', true), rec('2026-10-22', false)], '2026-10-23', 7);
+  assert.strictEqual(m.count, 3, 'Oct 5 is 18 days ago, inside 28; Sep 1 is outside');
+  assert.strictEqual(m.open, 2, 'Oct 19 and Oct 22 are within the 7-day make-up window');
+  assert.strictEqual(m.overdue, 1);
+  assert.strictEqual(m.flag, true);
+  assert.strictEqual(missedNotMadeUp([rec('2026-10-22', false)], '2026-10-23', 7).flag, false, 'one miss is not flagged');
+  const v = insightsView(feed, TODAY);
+  assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
 });
 
 test('team view: three groups, averages only', () => {
@@ -570,42 +587,6 @@ test('health: key required, counts only, flags a broken feed or missing sign-in 
   clearFeedCache();
 });
 
-test('slack test endpoint: signature, replay window, slash command, buttons, photo download', async () => {
-  const env = (k) => ({ SLACK_TEST_SIGNING_SECRET: 'fake-secret', SLACK_TEST_BOT_TOKEN: 'xoxb-FAKE' })[k];
-  const NOW = 1_800_000_000;
-  const sign = (body, ts = NOW) => ({
-    'x-slack-request-timestamp': String(ts),
-    'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${ts}:${body}`).digest('hex'),
-  });
-  const req = (body, type, ts) => new Request('https://x/api/slack-test', { method: 'POST', body, headers: { 'content-type': type, ...sign(body, ts) } });
-  const sent = [];
-  const deps = { nowS: NOW, fetchImpl: async (url, init) => {
-    if (/chat\.postMessage/.test(url)) { sent.push(JSON.parse(init.body)); return Response.json({ ok: true }); }
-    return new Response('abc', { headers: { 'content-type': 'image/png' } });
-  } };
-  const form = 'application/x-www-form-urlencoded';
-  assert.ok(signatureValid('fake-secret', new Headers(sign('a')), 'a', NOW));
-  assert.ok(!signatureValid('fake-secret', new Headers(sign('a', NOW - 400)), 'a', NOW), 'old timestamp rejected');
-  assert.ok(!signatureValid('fake-secret', new Headers(sign('a')), 'b', NOW), 'changed body rejected');
-  assert.strictEqual((await handleSlackTest(new Request('https://x/api/slack-test', { method: 'POST', body: 'a' }), env, deps)).status, 401);
-  assert.strictEqual((await handleSlackTest(req('a=1', form), () => undefined, deps)).status, 503);
-  const challenge = JSON.stringify({ type: 'url_verification', challenge: 'abc123' });
-  assert.deepStrictEqual(await (await handleSlackTest(req(challenge, 'application/json'), env, deps)).json(), { challenge: 'abc123' });
-  const cmd = new URLSearchParams({ command: '/logtest', channel_name: 'directmessage', channel_id: 'D123', trigger_id: 't', response_url: 'u' }).toString();
-  const slash = await (await handleSlackTest(req(cmd, form), env, deps)).json();
-  assert.ok(/channel_name=directmessage/.test(slash.text) && slash.blocks[1].elements.length === 2);
-  const press = (id) => new URLSearchParams({ payload: JSON.stringify({ user: { id: 'U1' }, actions: [{ action_id: id }] }) }).toString();
-  assert.strictEqual((await handleSlackTest(req(press('ack_200'), form), env, deps)).status, 200);
-  assert.strictEqual((await handleSlackTest(req(press('ack_202'), form), env, deps)).status, 202);
-  assert.strictEqual(sent.length, 2);
-  const photo = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', channel: 'D123', files: [{ id: 'F1', mimetype: 'image/png', size: 3, url_private: 'https://files.example/F1' }] } });
-  assert.strictEqual((await handleSlackTest(req(photo, 'application/json'), env, deps)).status, 200);
-  assert.ok(/download 200 image\/png, got 3 bytes/.test(sent[2].text), sent[2].text);
-  const own = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', bot_id: 'B1', channel: 'D123', files: [] } });
-  await handleSlackTest(req(own, 'application/json'), env, deps);
-  assert.strictEqual(sent.length, 3, 'ignores its own messages');
-});
-
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {
   const st = { ...feed.settings, loadJumpPct: 15 };
   const day = (d, min, rpe = 5) => ({ date: d, status: 'Full', type: 'OYO', activity: 'Run', workS: (min / 1.2) * 60, rpe });
@@ -670,6 +651,49 @@ test('break weeks: 4+ break days use the break OYO goals; blank keeps her own', 
   assert.ok(athleteView(f, 'A901', TODAY).athlete.breakWeek);
 });
 
+test('balance: watts ratios, recency weighting, rule comparison (coaches only)', () => {
+  const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, a + ' vs ' + b);
+  near(S.wattsFromSplit(120), 202.5, 0.1);
+  near(S.benchmarkWatts({ test: '2000m', timeS: 480 }), 202.5, 0.1);
+  near(S.benchmarkWatts({ test: '100m', timeS: 24 }), S.wattsFromSplit(120), 0.01);   // 100m time x 5 = split
+  assert.strictEqual(S.benchmarkWatts({ test: '500m', timeS: 100 }), null);
+  const r = S.ruleSplits(120);
+  near(r.paul20, 126.3, 0.1);
+  assert.strictEqual(r.rule20, 128.5);
+  near(r.rule100, 94.32, 0.01);
+  near(r.paul100, 120 - 5 * Math.log2(20), 0.01);
+  const bm = (test, date, v) => ({ athleteId: 'X', test, date, valid: true, ...(test === '20min' ? { meters: v } : { timeS: v }) });
+  const rows = [bm('2000m', '2026-09-01', 480), bm('2000m', '2026-01-15', 500), bm('20min', '2026-09-08', 4700), bm('2000m', '2025-08-01', 470), { ...bm('20min', '2026-10-01', 4800), valid: false }];
+  const g = S.balanceGap('X', rows, '2026-10-23', '2000m', '20min');
+  assert.strictEqual(g.pairs, 2);                      // the 2025 2k is outside 12 months; the invalid 20' is ignored
+  assert.strictEqual(g.best.hi.date, '2026-09-01');    // a week apart outranks eight months apart
+  near(g.best.weight, Math.pow(0.5, 7 / 56), 1e-9);
+  assert.strictEqual(g.weak, false);
+  assert.ok(g.avgRatio !== g.best.ratio);
+  near(g.best.ratio, S.wattsFromSplit(120) / S.wattsFromSplit(1200 * 500 / 4700), 1e-9);
+  assert.strictEqual(S.balanceGap('X', rows, '2026-10-23', '100m', '2000m'), null);
+  const far = S.balanceGap('X', [bm('2000m', '2026-01-01', 480), bm('20min', '2026-09-30', 4700)], '2026-10-23', '2000m', '20min');
+  assert.strictEqual(far.weak, true);
+  const bv = balanceView(feed, TODAY);
+  assert.strictEqual(bv.rowers.length, 30);
+  assert.ok(bv.rowers.some((x) => x.endurance && x.endurance.rules.paul.ratioPct > 100));
+  const withSprint = { ...feed, benchmarks: [...feed.benchmarks, { athleteId: 'A922', test: '100m', date: '2026-10-21', timeS: 19, valid: true }] };
+  const sp = balanceView(withSprint, TODAY).rowers.find((x) => x.id === 'A922').sprint;
+  assert.strictEqual(sp.daysApart, 1);
+  assert.ok(sp.ratioPct > 150 && sp.rules.tracker.ratioPct > sp.rules.paul.ratioPct);   // 0.786 rule is steeper than Paul's Law
+  assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
+});
+
+test('api routes: every /api path the handler answers is in the function config', () => {
+  // A route missing from config.path 404s on Netlify without ever reaching the handler (the Balance page, 2026-10-27).
+  const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../functions/api.mjs'), 'utf8');
+  const routed = [...src.match(/export const config = \{ path: \[([^\]]*)\]/)[1].matchAll(/'([^']+)'/g)].map((m) => m[1]);
+  const handled = [...new Set([...src.matchAll(/path === '(\/api\/[a-z]+)'/g)].map((m) => m[1]))];
+  assert.ok(handled.length >= 8);
+  handled.forEach((p) => assert.ok(routed.includes(p), p + ' is handled but not routed'));
+  assert.ok(routed.includes('/api/balance'));
+});
+
 test('insights: own page without flags, teammates none, coaches everything', async () => {
   const v = athleteView(feed, 'A901', TODAY);
   assert.strictEqual(v.insights.load.length, 8);
@@ -686,6 +710,8 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
   assert.strictEqual((await get('/api/insights', coach)).status, 200);
   assert.strictEqual((await get('/api/insights', her)).status, 403);
+  assert.strictEqual((await get('/api/balance', coach)).status, 200);
+  assert.strictEqual((await get('/api/balance', her)).status, 403);
   let body = await (await get('/api/athlete/A901', coach)).json();
   assert.ok(body.insights.load.every((l) => 'flag' in l && 'trailing' in l));
   body = await (await get('/api/athlete/A901', her)).json();
@@ -744,6 +770,110 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
   }
   clearFeedCache();
 });
+
+// ---- Concept2 Logbook connect (fake keys, fake Logbook, in-memory store) ----
+const c2env = (k) => ({
+  TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
+  CONCEPT2_CLIENT_SECRET: 'fake-secret', CONCEPT2_TOKEN_KEY: 'ab'.repeat(32)
+})[k];
+const memStore = () => {
+  const m = new Map();
+  return { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); }, delete: async (k) => { m.delete(k); }, list: async (p) => [...m.keys()].filter((k) => k.startsWith(p)), m };
+};
+const c2cookie = (who) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(c2env), who);
+const fakeLogbook = (log = []) => async (url, init = {}) => {
+  log.push({ url: String(url), body: init.body ? String(init.body) : '', auth: init.headers && init.headers.authorization });
+  if (String(url).endsWith('/oauth/access_token')) {
+    const grant = new URLSearchParams(String(init.body)).get('grant_type');
+    return Response.json(grant === 'refresh_token'
+      ? { access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 604800 }
+      : { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 604800 });
+  }
+  if (String(url).endsWith('/api/users/me')) return Response.json({ data: { id: 777, username: 'fake-rower' } });
+  return new Response('no', { status: 404 });
+};
+
+test('concept2: tokens are sealed and the state is signed, tied to her and short-lived', () => {
+  const sealed = C2.seal(c2env, { access: 'a-secret-token' });
+  assert.ok(!sealed.includes('a-secret-token'));
+  assert.deepStrictEqual(C2.unseal(c2env, sealed), { access: 'a-secret-token' });
+  assert.strictEqual(C2.unseal((k) => ({ CONCEPT2_TOKEN_KEY: 'cd'.repeat(32) })[k], sealed), null);
+  const st = C2.makeState(c2env, 'A901', 1_000_000);
+  assert.strictEqual(C2.readState(c2env, st, 1_000_000 + 60_000), 'A901');
+  assert.strictEqual(C2.readState(c2env, st, 1_000_000 + 11 * 60_000), null);
+  assert.strictEqual(C2.readState(c2env, st.replace('A901', 'A902'), 1_000_000), null);
+  assert.strictEqual(C2.readState(c2env, 'junk'), null);
+});
+
+test('concept2: connect redirects an athlete to Logbook with read-only scope', async () => {
+  const store = memStore();
+  let res = await handleConcept2(new Request('https://x/api/concept2/connect'), c2env, { store });
+  assert.strictEqual(res.status, 401);
+  res = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(res.status, 403);
+  res = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('A901') } }), c2env, { store });
+  assert.strictEqual(res.status, 302);
+  const loc = new URL(res.headers.get('location'));
+  assert.strictEqual(loc.origin + loc.pathname, 'https://log.concept2.com/oauth/authorize');
+  assert.strictEqual(loc.searchParams.get('scope'), 'user:read,results:read');
+  assert.strictEqual(loc.searchParams.get('client_id'), 'fake-client');
+  assert.strictEqual(loc.searchParams.get('redirect_uri'), 'https://x/.netlify/functions/concept2-callback');
+  assert.strictEqual(C2.readState(c2env, loc.searchParams.get('state')), 'A901');
+  assert.ok(!loc.search.includes('fake-secret'));
+  const off = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('A901') } }), (k) => (k === 'CONCEPT2_CLIENT_SECRET' ? '' : c2env(k)), { store });
+  assert.strictEqual(off.status, 503);
+});
+
+test('concept2: callback stores sealed tokens, status, refresh and disconnect', async () => {
+  const store = memStore(), log = [];
+  const cb = (qs, who = 'A901') => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?' + qs, { headers: { cookie: c2cookie(who) } }), c2env, { store, fetch: fakeLogbook(log) });
+  const state = C2.makeState(c2env, 'A901');
+  // wrong athlete signed in, denied, bad state: nothing stored
+  assert.ok((await cb('code=c&state=' + state, 'A902')).headers.get('location').startsWith('/?logbook=error'));
+  assert.ok((await cb('error=access_denied&state=' + state)).headers.get('location').startsWith('/?logbook=denied'));
+  assert.ok((await cb('code=c&state=nope')).headers.get('location').startsWith('/?logbook=error'));
+  assert.strictEqual(store.m.size, 0);
+  const ok = await cb('code=the-code&state=' + state);
+  assert.strictEqual(ok.headers.get('location'), '/?logbook=connected#/me');
+  const form = new URLSearchParams(log[0].body);
+  assert.strictEqual(form.get('code'), 'the-code');
+  assert.strictEqual(form.get('grant_type'), 'authorization_code');
+  assert.strictEqual(log[1].auth, 'Bearer access-1');
+  assert.ok(!JSON.stringify([...store.m.values()]).includes('access-1'), 'token never stored in the clear');
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
+  // status: athlete sees her own, coaches see who is connected, other athlete sees false
+  const st = async (who) => (await (await handleConcept2(new Request('https://x/api/concept2/status', { headers: { cookie: c2cookie(who) } }), c2env, { store })).json());
+  assert.deepStrictEqual(await st('A901'), { kind: 'athlete', connected: true, username: 'fake-rower' });
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  assert.deepStrictEqual(await st('team'), { kind: 'team', connected: [{ id: 'A901', username: 'fake-rower' }] });
+  // fresh token is reused, an expiring one is refreshed and the new refresh token kept
+  const fetchImpl = fakeLogbook(log);
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901'), 'access-1');
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901', Date.now() + 7 * 86400_000), 'access-2');
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A902'), null);
+  // a second athlete cannot take the same Logbook account
+  const taken = await cb('code=c2&state=' + C2.makeState(c2env, 'A902'), 'A902');
+  assert.strictEqual(taken.headers.get('location'), '/?logbook=taken#/me');
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  // reconnecting with a different account drops the old link
+  const other = async (url) => (String(url).endsWith('/api/users/me') ? Response.json({ data: { id: 888, username: 'second' } }) : fakeLogbook([])(url, { body: 'grant_type=authorization_code' }));
+  await C2.saveConnection(c2env, store, 'A901', { access: 'x', refresh: 'y', expiresAt: 1 }, await C2.fetchLogbookUser(other, 'x'));
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), null);
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '888'), 'A901');
+  assert.strictEqual((await st('A901')).username, 'second');
+  // a coach disconnects by naming her; an athlete only herself
+  const noName = await handleConcept2(new Request('https://x/api/concept2/disconnect', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(noName.status, 400);
+  const del = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(del.status, 200);
+  assert.strictEqual(store.m.size, 0);
+  await C2.saveConnection(c2env, store, 'A902', { access: 'x', refresh: 'y', expiresAt: 1 }, { id: '999', username: 'u' });
+  const self = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('A902') } }), c2env, { store });
+  assert.strictEqual(self.status, 200);
+  assert.strictEqual(store.m.size, 0, 'an athlete can only disconnect herself, whatever the query says');
+});
+photoTests(test);
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }
