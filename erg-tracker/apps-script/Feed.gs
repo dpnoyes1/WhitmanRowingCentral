@@ -22,7 +22,9 @@ function doPost(e) {
   if (body.action === SLACK_LOG_ACTION) return feedJson_(processSlackLog_(body));
   if (body.action === SLACK_ACCESS_ACTION) return feedJson_(processSlackAccess_(body));
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
+  if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));
   if (body.action === 'logbook-confirm') return feedJson_(processLogbookConfirm_(body));
+  if (body.action === SLACK_LOGBOOK_CONFIRM_ACTION) return feedJson_(processSlackLogbookConfirm_(body));
   if (body.action === 'logbook-accept-due') return feedJson_(processLogbookAcceptDue_());
   var inputs = feedInputs_();
   inputs.signLogin = feedLoginSigner_(key);

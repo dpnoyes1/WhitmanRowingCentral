@@ -1115,6 +1115,27 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   assert.strictEqual(list[0].pieces.length, 1);
   assert.strictEqual(list[1].possibleMakeup, true);
   assert.ok(!JSON.stringify(list).match(/weight/i));
+  // the per-athlete list used by her page: only hers, all pending cards together
+  const two = [entry(), entry({ 'Entry ID': 'E5' }), entry({ 'Entry ID': 'E6', 'Athlete ID': 'A002' }), entry({ 'Entry ID': 'E7', 'Review status': '' })];
+  const mineOnly = g.logbookPendingFor(two, ivs, 'A001');
+  assert.deepStrictEqual(mineOnly.map((x) => x.id), ['E1', 'E5']);
+  assert.deepStrictEqual(g.logbookPendingFor(two, ivs, 'A404'), []);
+});
+
+test('logbook: Slack notice goes only to a valid Roster member ID; Slack confirm finds her by that ID', () => {
+  const entry = { 'Entry ID': 'E9', 'Athlete ID': 'A001', Date: new Date(2026, 9, 28), 'Session type': 'OYO', 'Review status': 'Pending', Source: 'Logbook',
+    Activity: 'Erg (RowErg)', 'Work s': 300, 'Work m': 1200, 'Drag factor': 105, 'Make-up for date': '' };
+  const ivs = [{ 'Entry ID': 'E9', 'Interval #': 1, 'Work s': 300, 'Work m': 1200, 'Avg rate': 22 }];
+  const n = g.logbookSlackNotice(entry, ivs, { 'Slack member ID': ' U0ABC123 ' });
+  assert.strictEqual(n.slackUserId, 'U0ABC123');
+  assert.strictEqual(n.card.id, 'E9');
+  assert.strictEqual(n.card.sessionType, 'OYO');
+  assert.strictEqual(g.logbookSlackNotice(entry, ivs, { 'Slack member ID': '' }), null);
+  assert.strictEqual(g.logbookSlackNotice(entry, ivs, { 'Slack member ID': 'jane smith' }), null, 'not a member ID');
+  const roster = [{ 'Athlete ID': 'A001', 'Slack member ID': 'U1', Active: 'Yes' }, { 'Athlete ID': 'A002', 'Slack member ID': 'U2', Active: 'No' }];
+  assert.strictEqual(g.slackAthleteFor_(roster, 'U1')['Athlete ID'], 'A001');
+  assert.strictEqual(g.slackAthleteFor_(roster, 'U2'), null, 'inactive');
+  assert.strictEqual(g.slackAthleteFor_(roster, ''), null);
 });
 
 test('slack /log: coach-only access, pieces box, modal values parse like the Form', () => {

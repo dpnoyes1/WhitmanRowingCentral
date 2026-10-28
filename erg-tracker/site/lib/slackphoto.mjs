@@ -3,7 +3,7 @@
 // (ergchecks.mjs), asks which athlete, and shows a card whose RPE buttons save it
 // through the Sheet (apps-script/SlackPhoto.gs). Pending photos and cards are kept
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
-import { callSheet, dmUser, sendReply } from './slack.mjs';
+import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
 import { todayEastern } from './slacklog.mjs';
@@ -104,7 +104,7 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
   const today = deps.today || todayEastern();
   const user = event.user;
   if (!user || event.bot_id || (event.subtype && event.subtype !== 'file_share')) return { ignored: 'not a person message' };
-  const say = (text, blocks) => dmUser(envFn, fetchImpl, user, text, blocks);
+  const say = (text, blocks) => dmBlocks(envFn, fetchImpl, user, text, blocks);
 
   const image = (event.files || []).find(isImage);
   if ((event.files || []).length && !image) { await say('I can only read JPEG or PNG photos of the erg screen.'); return { status: 'bad_file' }; }

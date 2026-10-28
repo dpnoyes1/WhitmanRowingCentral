@@ -5,6 +5,7 @@
 // a pending Entries row for her to confirm. Webhook payloads are never trusted
 // for data (retries and signatures are undocumented): they only say "look".
 import { LOGBOOK, accessTokenFor, athleteForLogbookUser } from './concept2.mjs';
+import { notifyLogbook } from './slacklogbook.mjs';
 
 const MACHINES = { rower: 'rower', bike: 'bikerg', skierg: 'skierg' };   // Logbook "bike" is the BikeErg
 const SEEN_DAYS = 30;
@@ -78,8 +79,10 @@ export async function syncResult(env, store, fetchImpl, athleteId, apiResult) {
   if (!payload) return 'skipped';
   const fp = fingerprint(payload);
   if ((await store.get(seenKey(payload.id))) === fp) return 'same';
-  await sendToSheet(env, fetchImpl, athleteId, payload);
+  const out = await sendToSheet(env, fetchImpl, athleteId, payload);
   await store.set(seenKey(payload.id), fp);
+  // A new pending session also goes to her Slack DM (David, 2026-10-28), when the Roster has her member ID.
+  if (out && out.slack) await notifyLogbook(env, fetchImpl, out.slack);
   return 'sent';
 }
 
@@ -114,24 +117,36 @@ export async function handleWebhook(env, store, fetchImpl, body) {
   return { status: await syncResult(env, store, fetchImpl, athleteId, got.data), event };
 }
 
+/**
+ * One athlete's last few days of results, sent to the Sheet if new. Used by the
+ * poll and by her page on load, so a missed webhook never keeps a card waiting.
+ * Returns counts, with failed: 1 if her token or Logbook didn't answer.
+ */
+export async function syncAthlete(env, store, fetchImpl, athleteId, { now = Date.now(), days = 3 } = {}) {
+  const out = { sent: 0, same: 0, skipped: 0, failed: 0 };
+  const from = new Date(now - days * 86400000).toISOString().slice(0, 10);
+  try {
+    const access = await accessTokenFor(env, store, fetchImpl, athleteId, now);
+    if (!access) { out.failed++; return out; }
+    const list = await listRecent(fetchImpl, access, from);
+    if (list.status !== 200 || !Array.isArray(list.data)) { out.failed++; return out; }
+    for (const r of list.data) {
+      try { out[await syncResult(env, store, fetchImpl, athleteId, r)]++; } catch (err) { out.failed++; console.error('logbook sync failed:', err.message); }
+    }
+  } catch (err) {
+    out.failed++;
+    console.error('logbook sync failed for one athlete:', err.message);
+  }
+  return out;
+}
+
 /** The backup poll: every connected athlete's results from the last few days. */
 export async function pollAll(env, store, fetchImpl, { now = Date.now(), days = 3 } = {}) {
-  const from = new Date(now - days * 86400000).toISOString().slice(0, 10);
   const ids = (await store.list('conn/')).map((k) => k.slice(5));
   const out = { athletes: ids.length, sent: 0, same: 0, skipped: 0, failed: 0 };
   for (const id of ids) {
-    try {
-      const access = await accessTokenFor(env, store, fetchImpl, id, now);
-      if (!access) { out.failed++; continue; }
-      const list = await listRecent(fetchImpl, access, from);
-      if (list.status !== 200 || !Array.isArray(list.data)) { out.failed++; continue; }
-      for (const r of list.data) {
-        try { out[await syncResult(env, store, fetchImpl, id, r)]++; } catch (err) { out.failed++; console.error('logbook sync failed:', err.message); }
-      }
-    } catch (err) {
-      out.failed++;
-      console.error('logbook poll failed for one athlete:', err.message);
-    }
+    const one = await syncAthlete(env, store, fetchImpl, id, { now, days });
+    for (const k of ['sent', 'same', 'skipped', 'failed']) out[k] += one[k];
   }
   try {   // unchanged sessions count after 20 hours (David, 2026-10-25)
     out.accepted = (await callSheet(env, fetchImpl, { action: 'logbook-accept-due' })).accepted;

@@ -55,19 +55,28 @@ export async function sendReply(env, fetchImpl, payload, reply) {
     method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify(reply)
   });
   if (res.ok) return 'response_url';
+  if (!reply.replace_original || !payload.channel || !payload.message) return 'failed';
+  return (await chatUpdate(env, fetchImpl, payload.channel.id, payload.message.ts, reply)) ? 'chat.update' : 'failed';
+}
+
+/** Replaces a bot message in place. True when Slack said ok. */
+export async function chatUpdate(env, fetchImpl, channel, ts, reply) {
   const token = env('SLACK_BOT_TOKEN');
-  if (!token || !reply.replace_original || !payload.channel || !payload.message) return 'failed';
+  if (!token) return false;
   const up = await fetchImpl('https://slack.com/api/chat.update', {
     method: 'POST',
     headers: { authorization: `Bearer ${token}`, 'content-type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ channel: payload.channel.id, ts: payload.message.ts, text: reply.text, blocks: reply.blocks })
+    body: JSON.stringify({ channel, ts, text: reply.text, blocks: reply.blocks })
   });
   const data = await up.json().catch(() => ({}));
-  return data.ok ? 'chat.update' : 'failed';
+  return !!data.ok;
 }
 
 /** A direct message from the bot (chat.postMessage to a user ID opens the DM). True when Slack said ok. */
-export async function dmUser(env, fetchImpl, userId, text, blocks) {
+export const dmUser = (env, fetchImpl, userId, text) => dmBlocks(env, fetchImpl, userId, text);
+
+/** The same with Block Kit blocks (text is the notification and fallback). */
+export async function dmBlocks(env, fetchImpl, userId, text, blocks) {
   const token = env('SLACK_BOT_TOKEN');
   if (!token) return false;
   const res = await fetchImpl('https://slack.com/api/chat.postMessage', {
