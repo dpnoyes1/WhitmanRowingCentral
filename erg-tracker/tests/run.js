@@ -1115,6 +1115,11 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   assert.strictEqual(list[0].pieces.length, 1);
   assert.strictEqual(list[1].possibleMakeup, true);
   assert.ok(!JSON.stringify(list).match(/weight/i));
+  // the per-athlete list used by her page: only hers, all pending cards together
+  const two = [entry(), entry({ 'Entry ID': 'E5' }), entry({ 'Entry ID': 'E6', 'Athlete ID': 'A002' }), entry({ 'Entry ID': 'E7', 'Review status': '' })];
+  const mineOnly = g.logbookPendingFor(two, ivs, 'A001');
+  assert.deepStrictEqual(mineOnly.map((x) => x.id), ['E1', 'E5']);
+  assert.deepStrictEqual(g.logbookPendingFor(two, ivs, 'A404'), []);
 });
 
 test('slack /log: coach-only access, pieces box, modal values parse like the Form', () => {
