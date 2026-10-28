@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
+import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -115,6 +115,9 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
   assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
   assert.strictEqual(g.freshman.avgSplit, 105);
+  assert.deepStrictEqual(g.all.twoK, { n: 1, avgSplit: 105 }, '2k average counts only 2k tests');
+  assert.deepStrictEqual(g.all.twenty, { n: 1, avgMeters: 5000, avgSplit: 120 }, "20' average is meters and its real split");
+  assert.strictEqual(g.varsity.twenty.avgMeters, null, 'no 20 in the varsity group');
 
   const v = teamSplitsView(feed, TODAY);
   const d = Object.fromEntries(v.groups.map((x) => [x.key, x]));
@@ -123,6 +126,18 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.ok(d.all.n >= d.top16.n && d.all.n <= 30, 'all counts every rower with a result');
   assert.ok(v.groups.every((x) => x.avgSplit === null || (x.avgSplit > 90 && x.avgSplit < 200)), 'splits in a sane range');
   assert.ok(!/A9\d\d|Name/.test(JSON.stringify(v)), 'group averages carry no names or IDs');
+});
+
+test('insights: missed practices not made up in the last 4 weeks', () => {
+  const rec = (date, done) => ({ date, done });
+  const m = missedNotMadeUp([rec('2026-09-01', false), rec('2026-10-05', false), rec('2026-10-19', false), rec('2026-10-21', true), rec('2026-10-22', false)], '2026-10-23', 7);
+  assert.strictEqual(m.count, 3, 'Oct 5 is 18 days ago, inside 28; Sep 1 is outside');
+  assert.strictEqual(m.open, 2, 'Oct 19 and Oct 22 are within the 7-day make-up window');
+  assert.strictEqual(m.overdue, 1);
+  assert.strictEqual(m.flag, true);
+  assert.strictEqual(missedNotMadeUp([rec('2026-10-22', false)], '2026-10-23', 7).flag, false, 'one miss is not flagged');
+  const v = insightsView(feed, TODAY);
+  assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
 });
 
 test('team view: three groups, averages only', () => {
