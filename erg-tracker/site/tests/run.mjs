@@ -11,6 +11,8 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
+import { handleSlackTest, signatureValid } from '../functions/slack-test.mjs';
+import { createHmac } from 'node:crypto';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -581,6 +583,42 @@ test('health: key required, counts only, flags a broken feed or missing sign-in 
   b = await (await handleHealth(post({ key: 'fake-key' }), noTeam, serve(feed))).json();
   assert.ok(!b.ok && b.checks.env === false);
   clearFeedCache();
+});
+
+test('slack test endpoint: signature, replay window, slash command, buttons, photo download', async () => {
+  const env = (k) => ({ SLACK_TEST_SIGNING_SECRET: 'fake-secret', SLACK_TEST_BOT_TOKEN: 'xoxb-FAKE' })[k];
+  const NOW = 1_800_000_000;
+  const sign = (body, ts = NOW) => ({
+    'x-slack-request-timestamp': String(ts),
+    'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${ts}:${body}`).digest('hex'),
+  });
+  const req = (body, type, ts) => new Request('https://x/api/slack-test', { method: 'POST', body, headers: { 'content-type': type, ...sign(body, ts) } });
+  const sent = [];
+  const deps = { nowS: NOW, fetchImpl: async (url, init) => {
+    if (/chat\.postMessage/.test(url)) { sent.push(JSON.parse(init.body)); return Response.json({ ok: true }); }
+    return new Response('abc', { headers: { 'content-type': 'image/png' } });
+  } };
+  const form = 'application/x-www-form-urlencoded';
+  assert.ok(signatureValid('fake-secret', new Headers(sign('a')), 'a', NOW));
+  assert.ok(!signatureValid('fake-secret', new Headers(sign('a', NOW - 400)), 'a', NOW), 'old timestamp rejected');
+  assert.ok(!signatureValid('fake-secret', new Headers(sign('a')), 'b', NOW), 'changed body rejected');
+  assert.strictEqual((await handleSlackTest(new Request('https://x/api/slack-test', { method: 'POST', body: 'a' }), env, deps)).status, 401);
+  assert.strictEqual((await handleSlackTest(req('a=1', form), () => undefined, deps)).status, 503);
+  const challenge = JSON.stringify({ type: 'url_verification', challenge: 'abc123' });
+  assert.deepStrictEqual(await (await handleSlackTest(req(challenge, 'application/json'), env, deps)).json(), { challenge: 'abc123' });
+  const cmd = new URLSearchParams({ command: '/logtest', channel_name: 'directmessage', channel_id: 'D123', trigger_id: 't', response_url: 'u' }).toString();
+  const slash = await (await handleSlackTest(req(cmd, form), env, deps)).json();
+  assert.ok(/channel_name=directmessage/.test(slash.text) && slash.blocks[1].elements.length === 2);
+  const press = (id) => new URLSearchParams({ payload: JSON.stringify({ user: { id: 'U1' }, actions: [{ action_id: id }] }) }).toString();
+  assert.strictEqual((await handleSlackTest(req(press('ack_200'), form), env, deps)).status, 200);
+  assert.strictEqual((await handleSlackTest(req(press('ack_202'), form), env, deps)).status, 202);
+  assert.strictEqual(sent.length, 2);
+  const photo = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', channel: 'D123', files: [{ id: 'F1', mimetype: 'image/png', size: 3, url_private: 'https://files.example/F1' }] } });
+  assert.strictEqual((await handleSlackTest(req(photo, 'application/json'), env, deps)).status, 200);
+  assert.ok(/download 200 image\/png, got 3 bytes/.test(sent[2].text), sent[2].text);
+  const own = JSON.stringify({ type: 'event_callback', event: { type: 'message', subtype: 'file_share', bot_id: 'B1', channel: 'D123', files: [] } });
+  await handleSlackTest(req(own, 'application/json'), env, deps);
+  assert.strictEqual(sent.length, 3, 'ignores its own messages');
 });
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {
