@@ -1066,4 +1066,55 @@ test('logbook: pending rows stay out of the feed', () => {
   assert.ok(!g.feedPending_({ 'Review status': 'Rejected' }));
 });
 
+test('logbook: confirm plan, benchmark row, auto-accept and the pending list', () => {
+  const day = (y, m, d) => new Date(y, m - 1, d);
+  const entry = (over = {}) => ({
+    'Entry ID': 'E1', 'Athlete ID': 'A001', 'Athlete': 'Jane Smith', 'Entered by': 'Jane Smith', 'Date': day(2026, 10, 29),
+    'Session type': 'OYO', 'Status': '', 'Activity': 'Erg (RowErg)', 'Work s': 440, 'Work m': 2000, 'Drag factor': 98,
+    'Source': 'Logbook', 'Review status': 'Pending', 'Response ID': 'logbook:5', 'Submitted at': new Date(2026, 9, 29, 8, 0), ...over
+  });
+  const ivs = [{ 'Entry ID': 'E1', 'Interval #': 1, 'Work s': 440, 'Work m': 2000, 'Avg rate': 28 }];
+  const cx = { newId: (p) => p + '9', now: new Date(2026, 9, 29, 9, 0), parseDate: (s) => { const [y, m, d] = s.split('-').map(Number); return day(y, m, d); }, formatDay: () => '2026-10-27' };
+  const plain = g.logbookConfirmPlan(entry(), ivs, 'A001', {}, cx);
+  assert.deepStrictEqual(Object.assign({}, plain.updates), { 'Session type': 'OYO', 'Status': '', 'Make-up for date': '', 'Review status': '' });
+  assert.strictEqual(plain.benchmark, null);
+  // change to Practice with RPE; make-up needs a date unless one was suggested
+  const prac = g.logbookConfirmPlan(entry(), ivs, 'A001', { sessionType: 'Practice', rpe: '7' }, cx);
+  assert.deepStrictEqual([prac.updates['Session type'], prac.updates['Status'], prac.updates['RPE']], ['Practice', 'Full', 7]);
+  assert.ok(g.logbookConfirmPlan(entry(), ivs, 'A001', { sessionType: 'Make-up' }, { ...cx, formatDay: () => '' }).error);
+  assert.strictEqual(g.logbookConfirmPlan(entry({ 'Make-up for date': day(2026, 10, 27) }), ivs, 'A001', { sessionType: 'Make-up' }, cx).updates['Make-up for date'].getDate(), 27);
+  assert.ok(g.logbookConfirmPlan(entry(), ivs, 'A001', { rpe: '11' }, cx).error);
+  // only her own, only pending Logbook rows
+  assert.ok(g.logbookConfirmPlan(entry(), ivs, 'A002', {}, cx).error);
+  assert.ok(g.logbookConfirmPlan(entry({ 'Review status': '' }), ivs, 'A001', {}, cx).error);
+  assert.ok(g.logbookConfirmPlan(entry({ Source: 'Form' }), ivs, 'A001', {}, cx).error);
+  // 2k test: also a Benchmarks row, linked both ways
+  const test2k = g.logbookConfirmPlan(entry(), ivs, 'A001', { benchmark: '2000m' }, cx);
+  assert.deepStrictEqual([test2k.benchmark['Test'], test2k.benchmark['Time s'], test2k.benchmark['Meters'], test2k.benchmark['Entry ID'], test2k.updates['Benchmark ID']], ['2000m', 440, '', 'E1', 'B9']);
+  Object.keys(test2k.benchmark).forEach((k) => assert.ok(g.HEADERS[g.TABS.BENCHMARKS].includes(k), 'benchmark column ' + k));
+  Object.keys(test2k.updates).forEach((k) => assert.ok(g.HEADERS[g.TABS.ENTRIES].includes(k), 'entry column ' + k));
+  assert.ok(g.logbookConfirmPlan(entry(), ivs, 'A001', { benchmark: '20min' }, cx).error);
+  const twenty = g.logbookConfirmPlan(entry({ 'Work s': 1200, 'Work m': 5100 }), [{ 'Entry ID': 'E1', 'Interval #': 1, 'Work s': 1200, 'Work m': 5100, 'Avg rate': 22 }], 'A001', { benchmark: '20min' }, cx);
+  assert.deepStrictEqual([twenty.benchmark['Test'], twenty.benchmark['Time s'], twenty.benchmark['Meters']], ['20min', '', 5100]);
+  // auto-accept: plain Pending older than 20 h; possible make-ups and fresh ones wait
+  const now = new Date(2026, 9, 30, 5, 0);
+  assert.deepStrictEqual(Array.from(g.logbookDueIds([
+    entry({ 'Entry ID': 'old' }),
+    entry({ 'Entry ID': 'fresh', 'Submitted at': new Date(2026, 9, 30, 1, 0) }),
+    entry({ 'Entry ID': 'mk', 'Review status': 'Pending: possible make-up' }),
+    entry({ 'Entry ID': 'done', 'Review status': '' }),
+    entry({ 'Entry ID': 'form', Source: 'Form', 'Review status': 'Pending' })
+  ], now)), ['old']);
+  // the pending list for the site: only pending Logbook rows of known athletes
+  const list = g.feedLogbookPending_({
+    entries: [entry(), entry({ 'Entry ID': 'E2', 'Review status': '' }), entry({ 'Entry ID': 'E3', 'Athlete ID': 'A999' }), entry({ 'Entry ID': 'E4', 'Review status': 'Pending: possible make-up', 'Make-up for date': day(2026, 10, 27) })],
+    intervals: ivs
+  }, { A001: true });
+  assert.deepStrictEqual(list.map((x) => x.id), ['E1', 'E4']);
+  assert.strictEqual(list[0].benchmark, '2000m');
+  assert.strictEqual(list[0].pieces.length, 1);
+  assert.strictEqual(list[1].possibleMakeup, true);
+  assert.ok(!JSON.stringify(list).match(/weight/i));
+});
+
 console.log(`${passed} tests passed`);
