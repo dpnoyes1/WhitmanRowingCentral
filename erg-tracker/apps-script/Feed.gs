@@ -22,6 +22,7 @@ function doPost(e) {
   if (body.action === SLACK_LOG_ACTION) return feedJson_(processSlackLog_(body));
   if (body.action === SLACK_ACCESS_ACTION) return feedJson_(processSlackAccess_(body));
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
+  if (body.action === PHOTO_GET_ACTION) return feedJson_(processPhotoGet_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));
   if (body.action === 'logbook-confirm') return feedJson_(processLogbookConfirm_(body));
   if (body.action === SLACK_LOGBOOK_CONFIRM_ACTION) return feedJson_(processSlackLogbookConfirm_(body));
@@ -257,7 +258,8 @@ function siteFeed(inputs, asOf) {
       warmupM: feedNum_(e['Warmup m']), cooldownM: feedNum_(e['Cooldown m']),
       mainSet: String(e['Main set'] || ''), zone: String(e.Zone || ''), rpe: feedNum_(e.RPE),
       dragFactor: feedNum_(e['Drag factor']), intervals: feedNum_(e.Intervals),
-      benchmarkId: String(e['Benchmark ID'] || ''), source: String(e.Source || '')
+      benchmarkId: String(e['Benchmark ID'] || ''), source: String(e.Source || ''),
+      hasPhoto: !!String(e['Photo link'] || '').trim()   // only that a photo exists; the file stays in Drive
     };
   });
 

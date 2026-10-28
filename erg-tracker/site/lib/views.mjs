@@ -183,7 +183,7 @@ export function workoutView(feed, id, today) {
   return {
     today,
     athlete: a ? athleteSummary(a) : null,
-    workout: sessionRow(e, feed.settings),
+    workout: { ...sessionRow(e, feed.settings), photo: !!e.hasPhoto },
     detail: (feed.logged || []).find((x) => x.id === id) || null
   };
 }

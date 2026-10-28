@@ -8,6 +8,7 @@ import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
 import { todayEastern, NOT_ON_ROSTER } from './slacklog.mjs';
+import { makeKeepCopy } from './photocopy.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
@@ -128,7 +129,10 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     const useShown = shown && Math.abs(Math.round((Date.parse(today) - Date.parse(shown)) / 86400000)) <= 3;   // a clock-reset date is flagged, not used
     const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
     if (pieces.length === 1 && read.pieces.length > 1) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
-    await store.set('pending:' + user, { at: Date.now(), summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, note: notes.join(' | ').slice(0, 400) });
+    // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
+    let copy = '';
+    try { copy = (await (deps.makeCopy || makeKeepCopy)(bytes)).bytes.toString('base64'); } catch (err) { notes.push('No photo copy kept (' + err.message + ').'); }
+    await store.set('pending:' + user, { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, note: notes.join(' | ').slice(0, 400) });
     if (who.role === 'athlete') return nameStep(who.athlete, user, event, envFn, fetchImpl, store, say);   // only ever herself
     const caption = String(event.text || '').trim();
     if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with her full name.`); return { status: 'asked' }; }
@@ -150,7 +154,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say) {
   if (who.status === 'unknown_name') { await say(`I can't find "${name}" as an active athlete on the roster. Reply with her full name as it is on the roster.`); return { status: 'unknown_name' }; }
   if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the name again in a minute.'); return { status: 'error' }; }
   const token = randomBytes(9).toString('hex');
-  await store.set('card:' + token, { user, athlete: who.athlete, ...pending });
+  await store.set('card:' + token, { user, athlete: who.athlete, ...pending });   // keeps the photo copy until she saves
   await store.delete('pending:' + user);
   const text = `*For ${who.athlete}:* ${pending.summary}.\nTap the session RPE to save it, or save without one.`;
   await say(text, cardBlocks(text, token));
@@ -184,12 +188,16 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   let result;
   try {
     result = await callSheet(envFn, fetchImpl, { action: 'slack-photo', slackUserId: payload.user.id, slackName: name, token, athlete: card.athlete,
-      photo: { date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe, note: card.note } });
+      photo: { date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe, note: card.note, image: card.image || '' } });
   } catch (err) {
     result = { status: 'error', error: err.message };
   }
   if (result.status === 'ok') {
-    await sendReply(envFn, fetchImpl, payload, replace(`:white_check_mark: Saved for ${result.athlete}${rpe ? ` with RPE ${rpe}` : ''}.` + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '')));
+    await sendReply(envFn, fetchImpl, payload, replace(`:white_check_mark: Saved for ${result.athlete}${rpe ? ` with RPE ${rpe}` : ''}.` + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
+      (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : '')));
+  } else if (result.status === 'merged') {
+    await sendReply(envFn, fetchImpl, payload, replace(':white_check_mark: Concept2 Logbook already has this workout for ' + result.athlete + ', so its entry stands' +
+      (result.photo === 'added' ? ' and your photo is kept with it.' : result.photo === 'failed' ? ' (the photo copy could not be kept).' : '.')));
   } else if (result.status === 'duplicate') {
     await sendReply(envFn, fetchImpl, payload, replace(':information_source: Already saved. Nothing changed.'));
   } else {
