@@ -2,11 +2,13 @@
 // then forwards the signed request here. A "-background" function answers 202 at
 // once and keeps running, so the Sheet's few seconds don't hit Slack's 3-second
 // limit. Handles the coach buttons on plan-flag messages (apps-script/PlanFlags.gs)
-// and the saved /log modal (apps-script/SlackLog.gs). Needs SLACK_SIGNING_SECRET,
-// SLACK_BOT_TOKEN, FEED_URL and FEED_KEY.
+// the saved /log modal (apps-script/SlackLog.gs), erg-screen photos sent to the bot
+// (lib/slackphoto.mjs) and the Logbook DM buttons. Needs SLACK_SIGNING_SECRET,
+// SLACK_BOT_TOKEN, FEED_URL, FEED_KEY and, for photos, ANTHROPIC_API_KEY.
 import { signatureValid, callSheet, planOp, planFlagReply, sendReply, dmUser, chatUpdate } from '../lib/slack.mjs';
 import { readLogForm, logReply } from '../lib/slacklog.mjs';
 import { readChange, changeRequest, confirmRequest, confirmReply } from '../lib/slacklogbook.mjs';
+import { handlePhotoEvent, handlePhotoButton } from '../lib/slackphoto.mjs';
 
 async function handleLogSubmission(payload, envFn, fetchImpl) {
   let result;
@@ -44,7 +46,20 @@ export async function handleSlackAction(req, envFn, deps = {}) {
     return { ignored: 'signature' };
   }
   let payload;
-  try { payload = JSON.parse(new URLSearchParams(raw).get('payload')); } catch { return { ignored: 'payload' }; }
+  try { payload = raw.trimStart().startsWith('{') ? JSON.parse(raw) : JSON.parse(new URLSearchParams(raw).get('payload')); } catch { return { ignored: 'payload' }; }
+  if (payload && payload.type === 'event_callback') {
+    if (payload.event && payload.event.type === 'message' && payload.event.channel_type === 'im') {
+      const out = await handlePhotoEvent(payload.event, envFn, deps);
+      console.log('slack: message', JSON.stringify(out));
+      return out;
+    }
+    return { ignored: 'event' };
+  }
+  if (payload && payload.type === 'block_actions' && payload.actions && payload.actions[0] && /^photo_/.test(payload.actions[0].action_id)) {
+    const out = await handlePhotoButton(payload, envFn, deps);
+    console.log('slack: photo button', out.status || JSON.stringify(out));
+    return out;
+  }
   if (payload && payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'log_modal') {
     return handleLogSubmission(payload, envFn, fetchImpl);
   }

@@ -24,12 +24,12 @@ async function openModal(envFn, fetchImpl, triggerId, view) {
 }
 
 /** Hand the signed request to the background function (it answers 202 at once). */
-async function forward(req, raw, fetchImpl) {
+async function forward(req, raw, fetchImpl, contentType = 'application/x-www-form-urlencoded') {
   const url = new URL('/.netlify/functions/slack-background', req.url).toString();
   const res = await fetchImpl(url, {
     method: 'POST',
     headers: {
-      'content-type': 'application/x-www-form-urlencoded',
+      'content-type': contentType,
       'x-slack-request-timestamp': req.headers.get('x-slack-request-timestamp'),
       'x-slack-signature': req.headers.get('x-slack-signature')
     },
@@ -48,7 +48,11 @@ export async function handleSlack(req, envFn, deps = {}) {
     let body;
     try { body = JSON.parse(raw); } catch { return new Response('bad payload', { status: 400 }); }
     if (body.type === 'url_verification') return new Response(String(body.challenge || ''), { headers: { 'content-type': 'text/plain' } });
-    return empty();   // other events: nothing handles them yet
+    // A photo or a text in the bot's DM: hand on (not Slack's retries, which would repeat the work).
+    const ev = body.event || {};
+    const mine = body.type === 'event_callback' && ev.type === 'message' && ev.channel_type === 'im' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share');
+    if (mine && !req.headers.get('x-slack-retry-num')) await forward(req, raw, fetchImpl, 'application/json').catch(() => false);
+    return empty();
   }
   const form = new URLSearchParams(raw);
 

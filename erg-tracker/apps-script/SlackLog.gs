@@ -114,16 +114,32 @@ function slackLogAnswers(form, athleteName, enteredBy) {
  * Answers { status: 'ok' | 'not_allowed' | 'unknown_name' | 'duplicate' | 'error', ... }.
  */
 function processSlackLog_(body) {
+  var form = body.form || {};
+  return slackSave_(body, 'slack:' + (body.viewId || ''), !!body.viewId, form.athlete, function (name, by) {
+    return slackLogAnswers(form, name, by);
+  });
+}
+
+/** doPost action 'slack-access': may this Slack user log, and is the name on the Roster? Body { slackUserId, athleteName }. */
+function processSlackAccess_(body) {
+  var roster = readObjects_(TABS.ROSTER);
+  var coaches = slackCoachIds_(getSettings());
+  if (!body.athleteName) return { status: coaches.indexOf(String(body.slackUserId || '').trim()) < 0 ? 'not_allowed' : 'ok' };
+  var access = slackLogAccess_(roster, coaches, body.slackUserId, body.athleteName);
+  return access.status === 'ok' ? { status: 'ok', athlete: String(access.athlete.Name).trim() } : { status: access.status };
+}
+
+/** Coach check, name lookup, one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers. */
+function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
-  var rid = 'slack:' + (body.viewId || '');
   try {
     var roster = readObjects_(TABS.ROSTER);
-    var access = slackLogAccess_(roster, slackCoachIds_(getSettings()), body.slackUserId, (body.form || {}).athlete);
+    var access = slackLogAccess_(roster, slackCoachIds_(getSettings()), body.slackUserId, typedName);
     if (access.status !== 'ok') return { status: access.status };
     var athlete = access.athlete;
-    if (body.viewId && alreadyProcessed_(rid)) return { status: 'duplicate' };
-    var result = parseSubmission(slackLogAnswers(body.form || {}, String(athlete.Name).trim(), 'Coach ' + (body.slackName || 'via Slack')), {
+    if (dedupe && alreadyProcessed_(rid)) return { status: 'duplicate' };
+    var result = parseSubmission(makeAnswers(String(athlete.Name).trim(), 'Coach ' + (body.slackName || 'via Slack')), {
       submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_
     });
     result.entry.Source = 'Slack';
