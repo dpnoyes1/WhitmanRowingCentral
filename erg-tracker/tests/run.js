@@ -1147,15 +1147,25 @@ test('logbook: Slack notice goes only to a valid Roster member ID; Slack confirm
   assert.strictEqual(g.slackAthleteFor_(roster, ''), null);
 });
 
-test('slack /log: coach-only access, pieces box, modal values parse like the Form', () => {
-  const roster = [{ Name: 'Jane Smith', Active: 'Yes' }, { Name: 'Old Athlete', Active: 'No' }];
+test('slack /log: coach or own-Roster access, pieces box, modal values parse like the Form', () => {
+  const roster = [{ 'Athlete ID': 'A001', Name: 'Jane Smith', 'Slack member ID': 'UJ1', Active: 'Yes' }, { 'Athlete ID': 'A002', Name: 'Old Athlete', 'Slack member ID': 'UO2', Active: 'No' },
+    { 'Athlete ID': 'A003', Name: 'Kim Lee', 'Slack member ID': 'UK3', Active: 'Yes' }];
   const coaches = ['UC1', 'UC2'];
-  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', ' jane  SMITH ').athlete.Name, 'Jane Smith');
-  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UA9', 'Jane Smith').status, 'not_allowed', 'athletes cannot use /log yet');
+  const co = g.slackLogAccess_(roster, coaches, 'UC1', ' jane  SMITH ');
+  assert.strictEqual(co.athlete.Name, 'Jane Smith');
+  assert.strictEqual(co.role, 'coach');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UA9', 'Jane Smith').status, 'not_allowed', 'unknown Slack account');
   assert.strictEqual(g.slackLogAccess_(roster, coaches, '', 'Jane Smith').status, 'not_allowed');
-  assert.strictEqual(g.slackLogAccess_(roster, [], 'UC1', 'Jane Smith').status, 'not_allowed', 'no coach IDs set: nobody');
+  assert.strictEqual(g.slackLogAccess_(roster, [], 'UC1', 'Jane Smith').status, 'not_allowed', 'no coach IDs set and not on the Roster: nobody');
   assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', 'Old Athlete').status, 'unknown_name', 'inactive');
   assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UC1', '').status, 'unknown_name');
+  // athletes: found by Roster Slack member ID, only herself
+  const self = g.slackLogAccess_(roster, coaches, 'UJ1', '');
+  assert.deepStrictEqual([self.status, self.role, self.athlete.Name], ['ok', 'athlete', 'Jane Smith']);
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UJ1', ' jane smith ').status, 'ok', 'typing her own name is fine');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UJ1', 'Kim Lee').status, 'not_yourself', 'cannot log for a teammate');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UO2', '').status, 'not_allowed', 'inactive athlete');
+  assert.strictEqual(g.slackLogAccess_(roster, coaches, 'UJ1', 'Old Athlete').status, 'not_yourself');
 
   const p = g.parsePiecesText('10:00.0, 2650, 22, 2:00, 300\n\n 10:00, 2660 \n10:00,2675,,');
   assert.strictEqual(p.length, 3);

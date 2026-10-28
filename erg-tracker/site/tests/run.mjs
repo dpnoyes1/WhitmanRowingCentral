@@ -693,7 +693,7 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.deepStrictEqual(SL.validateLogForm({ athlete: 'Fake Athlete', date: '2026-10-28', type: 'practice', status: 'out' }, '2026-10-28'), {}, 'Out needs nothing else');
   const bad = SL.validateLogForm({ ...good, date: '2026-10-29', warmup: '15', hr: '300', drag: '20', pieces: '10:00', zone: '', main_set: '' }, '2026-10-28');
   assert.deepStrictEqual(Object.keys(bad).sort(), ['date', 'drag', 'hr', 'main_set', 'pieces', 'warmup', 'zone']);
-  assert.ok(SL.validateLogForm({ ...good, athlete: '' }, '2026-10-28').athlete);
+  assert.deepStrictEqual(SL.validateLogForm({ ...good, athlete: '' }, '2026-10-28'), {}, 'athlete box is optional: athletes leave it blank');
   assert.ok(SL.validateLogForm({ ...good, type: 'makeup' }, '2026-10-28').makeup_for);
   assert.ok(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-28' }, '2026-10-28').makeup_for, 'missed practice must be earlier');
   assert.deepStrictEqual(SL.validateLogForm({ ...good, type: 'makeup', makeup_for: '2026-10-27' }, '2026-10-28'), {});
@@ -702,7 +702,7 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
-  assert.ok(/coaches for now/.test(SL.logReply({ status: 'not_allowed' })) && /isn't an active athlete/.test(SL.logReply({ status: 'unknown_name' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
+  assert.ok(/Slack member ID/.test(SL.logReply({ status: 'not_allowed' })) && /only log for yourself/.test(SL.logReply({ status: 'not_yourself' })) && /isn't an active athlete/.test(SL.logReply({ status: 'unknown_name' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
 });
 
 test('slack /api/slack: slash command opens the modal, submissions are checked and handed on', async () => {
@@ -801,7 +801,7 @@ test('slack /log background: Sheet call with member ID and view ID, then a DM', 
   assert.ok(/Not saved/.test(w.calls[1].body.text), 'Sheet down: she is told, nothing is half saved');
   w = world({ status: 'not_allowed' });
   await handleSlackAction(req(), env, w.deps);
-  assert.ok(/coaches for now/.test(w.calls[1].body.text));
+  assert.ok(/Slack member ID/.test(w.calls[1].body.text));
 });
 
 test('slack photo: coach sends a screen, bot asks which athlete, card saves with one-tap RPE', async () => {
@@ -911,11 +911,31 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual((await handlePhotoButton(press('photo_rpe_5', tok4), env, w.deps)).status, 'error');
   assert.ok(w.store.has('card:' + tok4), 'card kept for another try');
 
-  // guards: athletes, missing key, unreadable numbers (retried on the stronger model), wrong file type
+  // an athlete on the Roster sends a photo: no name question, the card is for herself, and she cannot type another name
+  const athleteAccess = (b) => (b.slackUserId !== 'UA1' ? { status: 'not_allowed' }
+    : b.athleteName && !/^olivia/i.test(b.athleteName) ? { status: 'not_yourself' } : { status: 'ok', role: 'athlete', athlete: 'Olivia Fake' });
+  w = world({ sheet: { access: athleteAccess } });
+  out = await handlePhotoEvent(photoMsg({ user: 'UA1', text: 'Someone Else' }), env, w.deps);
+  assert.strictEqual(out.status, 'card');
+  assert.strictEqual(out.athlete, 'Olivia Fake', 'a caption cannot redirect an athlete\'s photo');
+  const aCard = w.dms()[0];
+  assert.ok(/For Olivia Fake/.test(aCard.text) && !/Which athlete/.test(aCard.text));
+  const aTok = aCard.blocks[1].elements[0].value;
+  out = await handlePhotoButton(press('photo_rpe_6', aTok, { id: 'UA1', name: 'olivia.fake' }), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  const aSave = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body;
+  assert.strictEqual(aSave.athlete, 'Olivia Fake');
+  assert.strictEqual(aSave.slackUserId, 'UA1');
+  assert.ok(/Logged from an erg photo\./.test(aSave.photo.note) && !/by a coach/.test(aSave.photo.note));
+  w = world({ sheet: { access: athleteAccess } });
+  assert.strictEqual((await handlePhotoEvent(textMsg('Someone Else', 'UA1'), env, w.deps)).ignored, 'nothing pending');
+
+  // guards: Slack accounts not on the Roster, missing key, unreadable numbers (retried on the stronger model), wrong file type
   w = world();
   out = await handlePhotoEvent(photoMsg({ user: 'UA9' }), env, w.deps);
   assert.strictEqual(out.status, 'not_allowed');
-  assert.ok(!w.calls.some((c) => c.url.includes('anthropic')), 'no model spend for non-coaches');
+  assert.ok(!w.calls.some((c) => c.url.includes('anthropic')), 'no model spend for unknown accounts');
+  assert.ok(/Slack member ID/.test(w.dms()[0].text));
   w = world();
   assert.strictEqual((await handlePhotoEvent(photoMsg(), (k) => (k === 'ANTHROPIC_API_KEY' ? '' : env(k)), w.deps)).status, 'no_key');
   w = world({ answers: [bad] });
