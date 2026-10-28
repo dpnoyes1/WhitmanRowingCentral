@@ -124,9 +124,10 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     const pieces = entryPieces(read);
     if (pieces.length > MAX_PIECES) { await say(`:warning: That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { status: 'too_many' }; }
     const shown = parseScreenDate(read.date, today);
+    const useShown = shown && Math.abs(Math.round((Date.parse(today) - Date.parse(shown)) / 86400000)) <= 3;   // a clock-reset date is flagged, not used
     const notes = [`Logged from an erg photo by a coach.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
     if (pieces.length === 1 && read.pieces.length > 1) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
-    await store.set('pending:' + user, { at: Date.now(), summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: shown || today, pieces, note: notes.join(' | ').slice(0, 400) });
+    await store.set('pending:' + user, { at: Date.now(), summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, note: notes.join(' | ').slice(0, 400) });
     const caption = String(event.text || '').trim();
     if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with her full name.`); return { status: 'asked' }; }
     return nameStep(caption, user, event, envFn, fetchImpl, store, say);

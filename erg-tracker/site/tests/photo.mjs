@@ -286,12 +286,39 @@ export default function photoTests(test) {
     assert.deepStrictEqual(at('Oct 28 2026').issues, []);
     assert.deepStrictEqual(at('Oct 25 2026').issues, [], 'exactly 3 days is fine');
     const old = at('Oct 24 2026');
-    assert.strictEqual(old.status, 'ask');
-    assert.ok(/This screen says 2026-10-24\. Is that right\?/.test(old.issues[0].athlete));
-    assert.ok(/4 days before/.test(old.issues[0].coach));
-    assert.strictEqual(at('Nov 2 2026').status, 'ask', 'a future date too');
+    assert.strictEqual(old.status, 'clean', 'a flag for coaches, never a block: monitor clocks reset');
+    assert.deepStrictEqual(old.issues.map((i) => [i.code, i.level]), [['date_off', 'flag']]);
+    assert.ok(/4 days before/.test(old.issues[0].coach) && /logged on the day sent/.test(old.issues[0].coach));
+    assert.strictEqual(at('Nov 2 2026').issues[0].code, 'date_off', 'a future date too');
     assert.deepStrictEqual(at('Mar 15 2105').issues, [], 'an unreadable year is ignored');
     assert.deepStrictEqual(at('').issues, []);
+  });
+
+  test('photo: summary row above the line is not a piece, and Total Time with rest is not working time', () => {
+    // David's screen, 2026-10-28: 2 x 2000 m. The 4000 m row above the line is the sum of the two rows under it,
+    // and the header Total Time (22:45.0) includes rest. The reader had put both in as data.
+    const screen = read({
+      title: '2x2000m/1:13.5r', date: '2015-11-16', meters_column: 'per_piece',
+      total: { time: '22:45.0', meters: 4000, avg_split: '2:32.2', avg_rate: 22 },
+      pieces: [piece('20:18.0', 4000, '2:32.2', 22), piece('10:09.0', 2000, '2:32.2', 22), piece('10:09.0', 2000, '2:32.2', 22)],
+    });
+    const res = C.runChecks(screen, { today: TODAY });
+    assert.strictEqual(res.status, 'clean', JSON.stringify(res.issues));
+    assert.strictEqual(res.read.pieces.length, 2, 'the subtotal row is gone');
+    assert.strictEqual(res.read.totalTimeS, 1218, 'working time, not Total Time');
+    assert.strictEqual(res.read.totalTimeInclRestS, 1365);
+    assert.deepStrictEqual(codes(res).sort(), ['date_off', 'subtotal_dropped', 'working_time']);
+    assert.ok(res.issues.every((i) => i.level === 'note' || i.level === 'flag'));
+    // a real mismatch still holds
+    const bad = read({ title: '2x2000m/2:00r', meters_column: 'per_piece', total: { time: '19:00.0', meters: 4000, avg_split: '2:32.2', avg_rate: 22 },
+      pieces: [piece('10:09.0', 2000, '2:32.2'), piece('10:09.0', 2000, '2:32.2')] });
+    assert.strictEqual(C.runChecks(bad, { today: TODAY }).status, 'hold');
+    // a single piece with splits is never mistaken for a subtotal
+    assert.strictEqual(C.dropSubtotal(read()).dropped, null);
+    // and a three-interval screen that merely has a repeated size keeps all its pieces
+    assert.strictEqual(C.dropSubtotal(read({ pieces: [piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 500, '2:00.0')] })).dropped, null);
+    // the prompt says the same
+    assert.ok(/summary row above the line/.test(R.PROMPT) && /WORKING time/.test(R.PROMPT));
   });
 
   test('photo: repeated totals are flagged to coaches only', () => {
