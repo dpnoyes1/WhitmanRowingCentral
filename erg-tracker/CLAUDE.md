@@ -103,6 +103,8 @@ Compares erg standards with racing, e.g. the Stotesbury V8 year to year (decided
 
 Even/odd is the calendar date. No winter weekend practice. Practices tab is generated from Settings (`generatePracticeSchedule`); canceled days are marked by hand.
 
+Logbook write action (`apps-script/Logbook.gs`, POST `action: logbook-result` with the feed key): Netlify sends a normalized result in seconds/meters; Apps Script writes a pending Entries row (Source = Logbook, Review status Pending or "Pending: possible make-up", Response ID `logbook:<id>`) plus Intervals; no Benchmarks row until the athlete confirms. The feed skips Pending rows. Connect, webhook and confirm card are not built yet.
+
 Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg set from machine; unchanged labels auto-accept after 20 h (David, 2026-10-25).
 
 ## Weekly plan and targets
