@@ -24,7 +24,7 @@ var ALERT_STATE_PROP = 'ALERT_STATE';
 var ALERT_REPEAT_MS = 24 * 60 * 60 * 1000;
 var BACKUP_PREFIX = 'Erg tracker backup ';
 var ARCHIVE_PREFIX = 'Erg tracker archive ';
-var OPS_TRIGGERS = ['checkSiteHealth', 'backupSheet', 'sendNoTargetList'];
+var OPS_TRIGGERS = ['checkSiteHealth', 'backupSheet', 'sendNoTargetList', 'sweepPlanFlags'];
 
 // ---- Pure parts (tested in Node) ----
 
@@ -297,6 +297,7 @@ function installOpsTriggers_() {
   });
   ScriptApp.newTrigger('checkSiteHealth').timeBased().everyHours(1).create();
   ScriptApp.newTrigger('backupSheet').timeBased().onWeekDay(ScriptApp.WeekDay.SUNDAY).atHour(23).create();
+  ScriptApp.newTrigger('sweepPlanFlags').timeBased().everyMinutes(15).create();
   ScriptApp.newTrigger('sendNoTargetList').timeBased().onWeekDay(ScriptApp.WeekDay.MONDAY).atHour(7).create();
 }
 
@@ -308,6 +309,7 @@ function turnOnAlertsAndBackups() {
   var hook = PropertiesService.getScriptProperties().getProperty(SLACK_WEBHOOK_PROP);
   SpreadsheetApp.getUi().alert('Alerts and backups are on.\n\n' +
     'Site check every hour, alerts to ' + (hook ? 'Slack' : 'email (set a Slack webhook from the menu to use Slack)') + '.\n' +
+    'Every 15 minutes: plan flags go to Slack with buttons (needs the Slack webhook and slack.coach_ids in Settings).\n' +
     'Monday 7:00: a list of athletes missing a 2k or 20\' test, only when there is someone to list.\n' +
     'Backup every Sunday night to Drive > Erg tracker backups, keeping ' + (parseInt(getSettings()['backup.keep'], 10) || 12) + '.\n\n' +
     (problems.length ? 'The site check found problems right now:\n' + problems.join('\n') : 'The site check passed.'));

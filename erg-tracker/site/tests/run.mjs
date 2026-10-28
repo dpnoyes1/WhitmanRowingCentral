@@ -11,6 +11,8 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
+import { handleSlackAction } from '../functions/slack-background.mjs';
+import { createHmac } from 'node:crypto';
 import * as C2 from '../lib/concept2.mjs';
 import { handleConcept2 } from '../functions/concept2.mjs';
 import { handleCallback } from '../functions/concept2-callback.mjs';
@@ -585,6 +587,66 @@ test('health: key required, counts only, flags a broken feed or missing sign-in 
   b = await (await handleHealth(post({ key: 'fake-key' }), noTeam, serve(feed))).json();
   assert.ok(!b.ok && b.checks.env === false);
   clearFeedCache();
+});
+
+test('slack buttons: signature, coach check by the Sheet, first press wins, message update', async () => {
+  const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key' })[k];
+  const NOW = 1_800_000_000;
+  const press = (action, { ts = NOW, secret = 'fake-secret', user = { id: 'U1', name: 'coach.one' } } = {}) => {
+    const payload = { type: 'block_actions', user, response_url: 'https://hooks.slack.example/r', channel: { id: 'C1' },
+      message: { ts: '1.2', text: ':warning: Plan check: Fake Athlete, Wed Oct 21, Practice. Logged Full, short of plan (3 of 4): Modified?' },
+      actions: [action] };
+    const raw = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+    const sig = 'v0=' + createHmac('sha256', secret).update(`v0:${ts}:${raw}`).digest('hex');
+    return new Request('https://x/.netlify/functions/slack-background', { method: 'POST', body: raw,
+      headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-slack-request-timestamp': String(ts), 'x-slack-signature': sig } });
+  };
+  const world = (sheetAnswer, { responseOk = true } = {}) => {
+    const calls = [];
+    return { calls, deps: { nowS: NOW, fetchImpl: async (url, init) => {
+      calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+      if (url === 'https://script.example/exec') return Response.json(sheetAnswer);
+      if (url === 'https://hooks.slack.example/r') return new Response('ok', { status: responseOk ? 200 : 404 });
+      return Response.json({ ok: true });
+    } } };
+  };
+  const btn = (id) => ({ action_id: id, value: 'E0007' });
+
+  let w = world({ status: 'ok', op: 'modified' });
+  let out = await handleSlackAction(press(btn('plan_modified')), env, w.deps);
+  assert.deepStrictEqual(out, { status: 'ok', via: 'response_url' });
+  assert.deepStrictEqual(w.calls[0].body, { action: 'plan-flag-action', entryId: 'E0007', op: 'modified', slackUserId: 'U1', slackName: 'coach.one', key: 'fake-key' });
+  assert.ok(/Set to Modified by coach\.one/.test(w.calls[1].body.text) && w.calls[1].body.replace_original === true);
+  assert.ok(!JSON.stringify(w.calls[1].body.blocks).includes('"actions"'), 'buttons removed after a decision');
+
+  w = world({ status: 'ok' });
+  await handleSlackAction(press(btn('plan_reviewed')), env, w.deps);
+  assert.strictEqual(w.calls[0].body.op, 'reviewed');
+  assert.ok(/Looks right, marked by coach\.one/.test(w.calls[1].body.text));
+
+  w = world({ status: 'already', reviewStatus: 'Reviewed, Full' });
+  await handleSlackAction(press(btn('plan_modified')), env, w.deps);
+  assert.ok(/Already decided \(Reviewed, Full\)/.test(w.calls[1].body.text) && w.calls[1].body.replace_original);
+
+  w = world({ status: 'forbidden' });
+  await handleSlackAction(press(btn('plan_modified'), { user: { id: 'U9', name: 'someone' } }), env, w.deps);
+  assert.strictEqual(w.calls[1].body.response_type, 'ephemeral');
+  assert.ok(/Only the coaches/.test(w.calls[1].body.text) && w.calls[1].body.replace_original === false);
+
+  assert.deepStrictEqual(await handleSlackAction(press({ action_id: 'plan_open' }), env, world({}).deps), { ignored: 'not a plan button' });
+  w = world({});
+  assert.deepStrictEqual(await handleSlackAction(press(btn('plan_modified'), { secret: 'wrong' }), env, w.deps), { ignored: 'signature' });
+  assert.deepStrictEqual(await handleSlackAction(press(btn('plan_modified'), { ts: NOW - 600 }), env, w.deps), { ignored: 'signature' }, 'replayed request');
+  assert.strictEqual(w.calls.length, 0, 'nothing reaches the Sheet without a good signature');
+
+  w = { calls: [], deps: { nowS: NOW, fetchImpl: async () => new Response('x', { status: 500 }) } };
+  out = await handleSlackAction(press(btn('plan_modified')), env, w.deps);
+  assert.strictEqual(out.status, 'error', 'Sheet down: the coach is told');
+
+  w = world({ status: 'ok' }, { responseOk: false });
+  out = await handleSlackAction(press(btn('plan_modified')), env, w.deps);
+  assert.strictEqual(out.via, 'chat.update', 'expired response_url falls back to chat.update');
+  assert.strictEqual(w.calls[w.calls.length - 1].body.ts, '1.2');
 });
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {

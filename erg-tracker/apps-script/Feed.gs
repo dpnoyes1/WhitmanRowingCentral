@@ -18,6 +18,7 @@ function doPost(e) {
   var key = PropertiesService.getScriptProperties().getProperty(FEED_KEY_PROP);
   if (!key || !feedKeyMatches_(key, body.key)) return feedJson_({ error: 'unauthorized' });
   if (body.action === LOGBOOK_ACTION) return feedJson_(processLogbookResult_(body));
+  if (body.action === PLAN_FLAG_ACTION) return feedJson_(applyPlanFlagAction_(body));
   var inputs = feedInputs_();
   inputs.signLogin = feedLoginSigner_(key);
   return feedJson_(siteFeed(inputs, new Date()));

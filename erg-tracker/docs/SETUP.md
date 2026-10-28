@@ -138,6 +138,17 @@ The backups hold everything in the Sheet, weights and birthdays included, so kee
 2. Open **Incoming Webhooks**, turn it on, click **Add New Webhook to Workspace**, and pick where alerts go: your own DM or a private channel such as #erg-alerts.
 3. Copy the webhook URL (starts with `https://hooks.slack.com/`). In the Sheet: **Erg Tracker > Slack alerts webhook**, paste it, OK. A test message arrives in Slack.
 
+### Plan flags with buttons (optional, after the Slack alerts webhook)
+
+Every 15 minutes the Sheet checks the last 3 days of entries. A session logged Full that doesn't match its plan gets one message in the Slack alert channel with three buttons: **Set to Modified**, **Looks right** and **Open in Sheet**. Pressing a button changes the entry (Status, or Review status "Reviewed, Full"), writes a Change log row ("Slack, name"), and replaces the message with who decided. The first press wins.
+
+1. In Settings, set `slack.coach_ids` to the Slack member IDs of the coaches who may press the buttons, separated by commas (in Slack: profile, then Copy member ID). Run **Set up Sheet and Form** once if the row isn't there yet.
+2. In the Slack app: turn **Interactivity** on and set its Request URL to `https://<your site>/.netlify/functions/slack-background`.
+3. In Netlify, set `SLACK_SIGNING_SECRET` (Slack app, Basic Information). `FEED_URL` and `FEED_KEY` are already set for the site.
+4. Reload the Sheet and run **Turn on alerts and backups** so the 15-minute trigger is installed.
+
+Without a webhook or without coach IDs nothing is posted or changed.
+
 The URL is a secret: it's saved in the script's properties, never in a cell or the repo. Leaving the box empty turns Slack off and alerts go back to email. The same Slack app can later grow into the logging bot.
 
 ## Part D: Each new school year

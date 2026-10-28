@@ -128,6 +128,7 @@ var SETTINGS_DEFAULTS = [
   ['makeup_window_days', '7', 'Make-ups must be within this many days'],
   ['site.test_password', '', 'MM/DD/YYYY. While set, every athlete signs in to the team site with this date instead of her birthday'],
   ['site.coaches', '', 'Coach sign-ins for the team site: "First Last MM/DD/YYYY", separated by ;. Coaches see everything, GMS % included'],
+  ['slack.coach_ids', '', 'Slack member IDs of the coaches who may press the plan-flag buttons, separated by commas (Slack profile > Copy member ID)'],
   ['site.url', 'https://whitmanrowingcentral.netlify.app', 'Team site address, checked every hour for alerts'],
   ['alerts.email', '', 'Where alerts go when no Slack webhook is set. Blank: the Sheet owner'],
   ['backup.keep', '12', 'Weekly backups kept in Drive > Erg tracker backups (archives are always kept)'],
