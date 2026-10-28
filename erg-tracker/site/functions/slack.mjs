@@ -1,7 +1,8 @@
 // Slack's front door: POST /api/slack. Slash command URL and Interactivity URL.
 // A normal (synchronous) function because Slack needs an answer in 3 seconds and
 // view_submission errors have to come back in the response body. It checks the
-// signature, opens the /log modal, validates a submitted modal, and hands anything
+// signature, answers Slack's Event Subscriptions handshake (url_verification),
+// opens the /log modal, validates a submitted modal, and hands anything
 // slow (Sheet writes, button presses) to slack-background with the original
 // signed request. Needs SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN.
 import { signatureValid } from '../lib/slack.mjs';
@@ -41,6 +42,12 @@ export async function handleSlack(req, envFn, deps = {}) {
   const raw = await req.text();
   if (!signatureValid(envFn('SLACK_SIGNING_SECRET'), req.headers, raw, deps.nowS)) {
     return new Response('bad signature', { status: 401 });
+  }
+  if (raw.trimStart().startsWith('{')) {   // Events API: JSON, not a form
+    let body;
+    try { body = JSON.parse(raw); } catch { return new Response('bad payload', { status: 400 }); }
+    if (body.type === 'url_verification') return new Response(String(body.challenge || ''), { headers: { 'content-type': 'text/plain' } });
+    return empty();   // other events: nothing handles them yet
   }
   const form = new URLSearchParams(raw);
 

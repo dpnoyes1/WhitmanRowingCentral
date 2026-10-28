@@ -747,6 +747,15 @@ test('slack /api/slack: slash command opens the modal, submissions are checked a
   w = world({ bgStatus: 500 });
   assert.strictEqual((await (await handleSlack(signed(submit(goodValues)), env, w.deps)).json()).response_action, 'errors', 'handoff failed: she can press Save again');
 
+  const hello = JSON.stringify({ type: 'url_verification', challenge: 'fake-challenge-123', token: 'x' });
+  w = world();
+  res = await handleSlack(signed(hello), env, w.deps);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(await res.text(), 'fake-challenge-123', 'Slack\'s URL check gets its challenge back');
+  assert.strictEqual((await handleSlack(signed(hello, { secret: 'wrong' }), env, w.deps)).status, 401, 'handshake needs a good signature too');
+  assert.strictEqual((await handleSlack(signed(JSON.stringify({ type: 'event_callback', event: { type: 'message' } })), env, w.deps)).status, 200);
+  assert.strictEqual(w.calls.length, 0);
+
   w = world();
   const btnBody = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', actions: [{ action_id: 'plan_modified' }] }) }).toString();
   assert.strictEqual((await handleSlack(signed(btnBody), env, w.deps)).status, 200);
