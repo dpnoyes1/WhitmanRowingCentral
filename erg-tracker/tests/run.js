@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -895,6 +895,98 @@ test('refreshFormQuestions_ resets the Activity choices from ACTIVITIES', () => 
   delete ctx.FormApp;
   assert.deepStrictEqual(Array.from(choices), Array.from(g.ACTIVITIES, (a) => a[0]));
   assert.ok(!choices.includes('Hike') && !choices.includes('Walk'));
+});
+
+// Logbook sync: normalized Netlify payload -> pending Entries/Intervals rows
+const lbPractices = [
+  { date: '2026-10-26', squad: 'Girls', canceled: false, windowStart: '15:00', windowEnd: '18:00' },
+  { date: '2026-10-27', squad: 'Girls', canceled: false, windowStart: '16:30', windowEnd: '19:30' },
+  { date: '2026-10-28', squad: 'Girls', canceled: true, windowStart: '15:00', windowEnd: '18:00' },
+  { date: '2026-10-29', squad: 'Girls', canceled: false, windowStart: '16:30', windowEnd: '19:30' }
+];
+const lbCtx = (entries = []) => {
+  let i = 0;
+  return {
+    athlete: { id: 'A001', name: 'Jane Smith', squad: 'Girls' }, practices: lbPractices, entries,
+    now: new Date(2026, 9, 29, 20, 0), newId: p => p + (++i),
+    parseDate: s => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); }
+  };
+};
+const lbResult = (over = {}) => ({
+  id: 122191976, localDate: '2026-10-29', localTime: '17:15', machine: 'rower', name: '3x0:30/0:30r',
+  workoutType: 'VariableInterval', timeS: 90, distanceM: 290, dragFactor: 98,
+  intervals: [
+    { timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48 },
+    { timeS: 30, distanceM: 101, rate: 22, restTimeS: 30, restDistanceM: 47 },
+    { timeS: 30, distanceM: 101, rate: 22, restTimeS: '', restDistanceM: '' }
+  ], ...over
+});
+
+test('logbook: classify practice, OYO and possible make-up', () => {
+  const c = (d, t, e = []) => g.classifyLogbook('Girls', d, t, lbPractices, e);
+  assert.strictEqual(c('2026-10-29', '17:15').type, 'Practice');
+  assert.strictEqual(c('2026-10-29', '16:30').type, 'Practice');
+  // after the window: no missed practice in the last 7 days if all are logged
+  const logged = [{ date: '2026-10-26', type: 'Practice', status: 'Full' }, { date: '2026-10-27', type: 'Practice', status: 'Full' }];
+  assert.strictEqual(c('2026-10-29', '21:00', logged).type, 'OYO');
+  // missed Oct 27 (Out on Oct 26 counts as missed), canceled Oct 28 never counts
+  const m = c('2026-10-29', '21:00', [{ date: '2026-10-26', type: 'Practice', status: 'Out' }]);
+  assert.deepStrictEqual([m.type, m.makeupFor, m.possible], ['Make-up', '2026-10-27', true]);
+  // already covered by a make-up
+  const covered = c('2026-10-29', '21:00', [{ date: '2026-10-26', type: 'Practice', status: 'Full' }, { date: '2026-10-27', type: 'Make-up', makeupFor: '2026-10-27' }]);
+  assert.strictEqual(covered.type, 'OYO');
+  // older than 7 days or a canceled day never match; no practice that day is OYO
+  assert.strictEqual(g.classifyLogbook('Girls', '2026-11-06', '17:00', lbPractices, logged).type, 'OYO');
+  assert.strictEqual(c('2026-10-28', '16:00', logged).type, 'OYO');
+  assert.strictEqual(g.classifyLogbook('Boys', '2026-10-29', '17:15', lbPractices, []).type, 'OYO');
+});
+
+test('logbook: interval result becomes a pending entry with pieces', () => {
+  const r = g.logbookRows(lbResult(), lbCtx());
+  assert.strictEqual(r.entry['Source'], 'Logbook');
+  assert.strictEqual(r.entry['Review status'], 'Pending');
+  assert.strictEqual(r.entry['Response ID'], 'logbook:122191976');
+  assert.strictEqual(r.entry['Session type'], 'Practice');
+  assert.strictEqual(r.entry['Status'], 'Full');
+  assert.strictEqual(r.entry['Activity'], 'Erg (RowErg)');
+  assert.strictEqual(r.entry['Work s'], 90);
+  assert.strictEqual(r.entry['Work m'], 289);
+  assert.strictEqual(r.entry['Rest s'], 60);
+  assert.strictEqual(r.entry['Rest m'], 95);
+  assert.strictEqual(r.entry['Intervals'], 3);
+  assert.strictEqual(r.entry['Drag factor'], 98);
+  assert.strictEqual(r.intervals.length, 3);
+  assert.strictEqual(r.intervals[2]['Rest s'], '');
+  const headers = g.HEADERS[g.TABS.ENTRIES];
+  Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
+  Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
+  assert.ok(!JSON.stringify(r).match(/weight/i));
+});
+
+test('logbook: totals only, just row, possible make-up, benchmark shape, unsupported machine', () => {
+  const totals = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, workoutType: 'JustRow', name: '' }), lbCtx());
+  assert.strictEqual(totals.intervals.length, 1);
+  assert.strictEqual(totals.entry['Work s'], 64.8);
+  assert.strictEqual(totals.entry['Work m'], 222);
+  const makeup = g.logbookRows(lbResult({ localTime: '21:00' }), lbCtx([{ date: '2026-10-26', type: 'Practice', status: 'Out' }]));
+  assert.deepStrictEqual([makeup.entry['Session type'], makeup.entry['Review status']], ['Make-up', 'Pending: possible make-up']);
+  assert.strictEqual(makeup.entry['Make-up for date'].getDate(), 27);
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  assert.ok(/possible benchmark/.test(twoK.entry['Coach note']));
+  assert.strictEqual(twoK.benchmark, undefined);
+  const bike = g.logbookRows(lbResult({ machine: 'bikerg' }), lbCtx());
+  assert.strictEqual(bike.entry['Activity'], 'BikeErg');
+  assert.ok(g.logbookRows(lbResult({ machine: 'skierg' }), lbCtx()).skip);
+  const many = g.logbookRows(lbResult({ intervals: Array.from({ length: 14 }, () => ({ timeS: 60, distanceM: 200, rate: 24, restTimeS: 30, restDistanceM: 50 })) }), lbCtx());
+  assert.strictEqual(many.intervals.length, g.MAX_INTERVALS);
+  assert.strictEqual(many.entry['Work s'], 840);
+});
+
+test('logbook: pending rows stay out of the feed', () => {
+  assert.ok(g.feedPending_({ 'Review status': 'Pending' }));
+  assert.ok(g.feedPending_({ 'Review status': 'Pending: possible make-up' }));
+  assert.ok(!g.feedPending_({ 'Review status': '' }));
+  assert.ok(!g.feedPending_({ 'Review status': 'Rejected' }));
 });
 
 console.log(`${passed} tests passed`);

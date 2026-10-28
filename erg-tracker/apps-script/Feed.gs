@@ -17,6 +17,7 @@ function doPost(e) {
   try { body = JSON.parse(e.postData.contents); } catch (err) { body = {}; }
   var key = PropertiesService.getScriptProperties().getProperty(FEED_KEY_PROP);
   if (!key || !feedKeyMatches_(key, body.key)) return feedJson_({ error: 'unauthorized' });
+  if (body.action === LOGBOOK_ACTION) return feedJson_(processLogbookResult_(body));
   var inputs = feedInputs_();
   inputs.signLogin = feedLoginSigner_(key);
   return feedJson_(siteFeed(inputs, new Date()));
@@ -135,6 +136,11 @@ function feedRejected_(row) {
   return /reject/i.test(String(row['Review status'] || ''));
 }
 
+/** Logbook sessions wait for the athlete's tap (or the 20-hour rule) before they count. */
+function feedPending_(row) {
+  return /^pending/i.test(String(row['Review status'] || ''));
+}
+
 /** Monday on or before `date`, at midnight. */
 function feedMonday_(date) {
   var d = new Date(date.getFullYear(), date.getMonth(), date.getDate());
@@ -204,7 +210,7 @@ function siteFeed(inputs, asOf) {
   });
 
   var entries = inputs.entries.filter(function (e) {
-    return isDate_(e.Date) && known[e['Athlete ID']] && !feedRejected_(e);
+    return isDate_(e.Date) && known[e['Athlete ID']] && !feedRejected_(e) && !feedPending_(e);
   }).map(function (e) {
     return {
       id: String(e['Entry ID']), date: feedDay_(e.Date), athleteId: e['Athlete ID'],
@@ -317,7 +323,7 @@ function feedWeekResults_(sessions, inputs, start) {
   (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
   sessions.forEach(function (sn) { sn.results = []; });
   inputs.entries.forEach(function (e) {
-    if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || String(e.Status) === 'Out') return;
+    if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
     var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
     if (!planned || planned.Date < start || planned.Date >= end) return;
     var sn = sessions.filter(function (x) {
@@ -365,7 +371,7 @@ function feedLogged_(inputs, yearStart, s) {
   (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
   var out = [];
   inputs.entries.forEach(function (e) {
-    if (!isDate_(e.Date) || e.Date < yearStart || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || String(e.Status) === 'Out') return;
+    if (!isDate_(e.Date) || e.Date < yearStart || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
     var activity = String(e.Activity || '');
     var rowErg = activity === '' || /rowerg|bikeerg/i.test(activity);
     var test = String(e['Benchmark ID'] || '') !== '';

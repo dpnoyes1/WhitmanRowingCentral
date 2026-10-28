@@ -11,6 +11,9 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
+import * as C2 from '../lib/concept2.mjs';
+import { handleConcept2 } from '../functions/concept2.mjs';
+import { handleCallback } from '../functions/concept2-callback.mjs';
 import photoTests from './photo.mjs';
 import { handleSlackTest, signatureValid } from '../functions/slack-test.mjs';
 import { createHmac } from 'node:crypto';
@@ -806,6 +809,108 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
   clearFeedCache();
 });
 
+// ---- Concept2 Logbook connect (fake keys, fake Logbook, in-memory store) ----
+const c2env = (k) => ({
+  TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
+  CONCEPT2_CLIENT_SECRET: 'fake-secret', CONCEPT2_TOKEN_KEY: 'ab'.repeat(32)
+})[k];
+const memStore = () => {
+  const m = new Map();
+  return { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); }, delete: async (k) => { m.delete(k); }, list: async (p) => [...m.keys()].filter((k) => k.startsWith(p)), m };
+};
+const c2cookie = (who) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(c2env), who);
+const fakeLogbook = (log = []) => async (url, init = {}) => {
+  log.push({ url: String(url), body: init.body ? String(init.body) : '', auth: init.headers && init.headers.authorization });
+  if (String(url).endsWith('/oauth/access_token')) {
+    const grant = new URLSearchParams(String(init.body)).get('grant_type');
+    return Response.json(grant === 'refresh_token'
+      ? { access_token: 'access-2', refresh_token: 'refresh-2', expires_in: 604800 }
+      : { access_token: 'access-1', refresh_token: 'refresh-1', expires_in: 604800 });
+  }
+  if (String(url).endsWith('/api/users/me')) return Response.json({ data: { id: 777, username: 'fake-rower' } });
+  return new Response('no', { status: 404 });
+};
+
+test('concept2: tokens are sealed and the state is signed, tied to her and short-lived', () => {
+  const sealed = C2.seal(c2env, { access: 'a-secret-token' });
+  assert.ok(!sealed.includes('a-secret-token'));
+  assert.deepStrictEqual(C2.unseal(c2env, sealed), { access: 'a-secret-token' });
+  assert.strictEqual(C2.unseal((k) => ({ CONCEPT2_TOKEN_KEY: 'cd'.repeat(32) })[k], sealed), null);
+  const st = C2.makeState(c2env, 'A901', 1_000_000);
+  assert.strictEqual(C2.readState(c2env, st, 1_000_000 + 60_000), 'A901');
+  assert.strictEqual(C2.readState(c2env, st, 1_000_000 + 11 * 60_000), null);
+  assert.strictEqual(C2.readState(c2env, st.replace('A901', 'A902'), 1_000_000), null);
+  assert.strictEqual(C2.readState(c2env, 'junk'), null);
+});
+
+test('concept2: connect redirects an athlete to Logbook with read-only scope', async () => {
+  const store = memStore();
+  let res = await handleConcept2(new Request('https://x/api/concept2/connect'), c2env, { store });
+  assert.strictEqual(res.status, 401);
+  res = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(res.status, 403);
+  res = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('A901') } }), c2env, { store });
+  assert.strictEqual(res.status, 302);
+  const loc = new URL(res.headers.get('location'));
+  assert.strictEqual(loc.origin + loc.pathname, 'https://log.concept2.com/oauth/authorize');
+  assert.strictEqual(loc.searchParams.get('scope'), 'user:read,results:read');
+  assert.strictEqual(loc.searchParams.get('client_id'), 'fake-client');
+  assert.strictEqual(loc.searchParams.get('redirect_uri'), 'https://x/.netlify/functions/concept2-callback');
+  assert.strictEqual(C2.readState(c2env, loc.searchParams.get('state')), 'A901');
+  assert.ok(!loc.search.includes('fake-secret'));
+  const off = await handleConcept2(new Request('https://x/api/concept2/connect', { headers: { cookie: c2cookie('A901') } }), (k) => (k === 'CONCEPT2_CLIENT_SECRET' ? '' : c2env(k)), { store });
+  assert.strictEqual(off.status, 503);
+});
+
+test('concept2: callback stores sealed tokens, status, refresh and disconnect', async () => {
+  const store = memStore(), log = [];
+  const cb = (qs, who = 'A901') => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?' + qs, { headers: { cookie: c2cookie(who) } }), c2env, { store, fetch: fakeLogbook(log) });
+  const state = C2.makeState(c2env, 'A901');
+  // wrong athlete signed in, denied, bad state: nothing stored
+  assert.ok((await cb('code=c&state=' + state, 'A902')).headers.get('location').startsWith('/?logbook=error'));
+  assert.ok((await cb('error=access_denied&state=' + state)).headers.get('location').startsWith('/?logbook=denied'));
+  assert.ok((await cb('code=c&state=nope')).headers.get('location').startsWith('/?logbook=error'));
+  assert.strictEqual(store.m.size, 0);
+  const ok = await cb('code=the-code&state=' + state);
+  assert.strictEqual(ok.headers.get('location'), '/?logbook=connected#/me');
+  const form = new URLSearchParams(log[0].body);
+  assert.strictEqual(form.get('code'), 'the-code');
+  assert.strictEqual(form.get('grant_type'), 'authorization_code');
+  assert.strictEqual(log[1].auth, 'Bearer access-1');
+  assert.ok(!JSON.stringify([...store.m.values()]).includes('access-1'), 'token never stored in the clear');
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
+  // status: athlete sees her own, coaches see who is connected, other athlete sees false
+  const st = async (who) => (await (await handleConcept2(new Request('https://x/api/concept2/status', { headers: { cookie: c2cookie(who) } }), c2env, { store })).json());
+  assert.deepStrictEqual(await st('A901'), { kind: 'athlete', connected: true, username: 'fake-rower' });
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  assert.deepStrictEqual(await st('team'), { kind: 'team', connected: [{ id: 'A901', username: 'fake-rower' }] });
+  // fresh token is reused, an expiring one is refreshed and the new refresh token kept
+  const fetchImpl = fakeLogbook(log);
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901'), 'access-1');
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A901', Date.now() + 7 * 86400_000), 'access-2');
+  assert.strictEqual(await C2.accessTokenFor(c2env, store, fetchImpl, 'A902'), null);
+  // a second athlete cannot take the same Logbook account
+  const taken = await cb('code=c2&state=' + C2.makeState(c2env, 'A902'), 'A902');
+  assert.strictEqual(taken.headers.get('location'), '/?logbook=taken#/me');
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), 'A901');
+  assert.deepStrictEqual(await st('A902'), { kind: 'athlete', connected: false, username: '' });
+  // reconnecting with a different account drops the old link
+  const other = async (url) => (String(url).endsWith('/api/users/me') ? Response.json({ data: { id: 888, username: 'second' } }) : fakeLogbook([])(url, { body: 'grant_type=authorization_code' }));
+  await C2.saveConnection(c2env, store, 'A901', { access: 'x', refresh: 'y', expiresAt: 1 }, await C2.fetchLogbookUser(other, 'x'));
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '777'), null);
+  assert.strictEqual(await C2.athleteForLogbookUser(store, '888'), 'A901');
+  assert.strictEqual((await st('A901')).username, 'second');
+  // a coach disconnects by naming her; an athlete only herself
+  const noName = await handleConcept2(new Request('https://x/api/concept2/disconnect', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(noName.status, 400);
+  const del = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('team') } }), c2env, { store });
+  assert.strictEqual(del.status, 200);
+  assert.strictEqual(store.m.size, 0);
+  await C2.saveConnection(c2env, store, 'A902', { access: 'x', refresh: 'y', expiresAt: 1 }, { id: '999', username: 'u' });
+  const self = await handleConcept2(new Request('https://x/api/concept2/disconnect?athlete=A901', { method: 'POST', headers: { cookie: c2cookie('A902') } }), c2env, { store });
+  assert.strictEqual(self.status, 200);
+  assert.strictEqual(store.m.size, 0, 'an athlete can only disconnect herself, whatever the query says');
+});
 photoTests(test);
 
 for (const [name, fn] of tests) {
