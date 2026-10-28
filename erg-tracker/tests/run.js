@@ -734,9 +734,18 @@ test('site feed: sign-in codes are keyed HMACs of the birthday, never the date',
   inputs.settings['site.test_password'] = 'Fri Jan 01 2010 00:00:00 GMT-0500 (Eastern Standard Time)';
   inputs.settings['site.coaches'] = 'Pat Example 02/03/1980; Sam  O\'Test 1975-12-31; no date here';
   const t = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12))));
-  withBirthday.forEach(r => assert.strictEqual(t.logins.find(l => l.id === r['Athlete ID']).code, sign(r['Athlete ID'], '2010-01-01')));
+  withBirthday.forEach(r => {
+    const codes = t.logins.filter(l => l.id === r['Athlete ID']).map(l => l.code);
+    assert.ok(codes.includes(sign(r['Athlete ID'], '2010-01-01')), 'test date signs in');
+    assert.ok(codes.includes(sign(r['Athlete ID'], g.dayKey_(r.Birthday))), 'her birthday still signs in while the test date is set');
+  });
+  // A birthday typed as text in the Roster still gets a code.
+  const textB = Object.assign(dummyFeedInputs(), { signLogin: sign });
+  textB.roster[0].Birthday = '3/14/2010';
+  const tb = JSON.parse(JSON.stringify(g.siteFeed(textB, new Date(2026, 9, 23, 12))));
+  assert.ok(tb.logins.some(l => l.id === textB.roster[0]['Athlete ID'] && l.code === sign(textB.roster[0]['Athlete ID'], '2010-03-14')));
   assert.deepStrictEqual(t.logins.filter(l => l.coach).map(l => l.code), [sign('coach:pat example', '1980-02-03'), sign('coach:sam otest', '1975-12-31')]);
-  assert.ok(!/Pat|1980|1975/.test(JSON.stringify(t.logins)), 'coach names and dates stay out');
+  assert.ok(!/Pat|Sam|1980-|1975-/.test(JSON.stringify(t.logins)), 'coach names and dates stay out');
   assert.strictEqual(g.feedParseDay_('1/1/2010'), '2010-01-01');
   assert.strictEqual(g.feedParseDay_(''), '');
   // Same bytes as Apps Script's signer (Utilities returns signed bytes).

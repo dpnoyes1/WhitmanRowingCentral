@@ -95,8 +95,9 @@ function siteFeedKey() {
     '\n\nKeep it private. Anyone with it and the feed URL can read team data (never weight or birthdays).', ui.ButtonSet.OK);
 }
 
+/** A Roster birthday as YYYY-MM-DD, or ''. A cell typed as text ("3/14/2010") counts too. */
 function feedDay_(d) {
-  return isDate_(d) ? dayKey_(d) : '';
+  return isDate_(d) ? dayKey_(d) : feedParseDay_(d);
 }
 
 /** A date typed in a Settings cell (a Date, M/D/YYYY or YYYY-MM-DD) as YYYY-MM-DD, or ''. */
@@ -217,15 +218,18 @@ function siteFeed(inputs, asOf) {
   var known = {};
   athletes.forEach(function (a) { known[a.id] = true; });
 
-  // One sign-in code per active athlete with a birthday, or with the shared
-  // Settings test password while it is set, plus one per coach in
+  // Sign-in codes for each active athlete: one for her birthday and, while
+  // Settings site.test_password is set, one for that shared date too, so a
+  // real birthday still works during testing. Plus one per coach in
   // site.coaches (keyed by name). See feedLoginSigner_.
   var logins = [];
   if (inputs.signLogin) {
     var testDay = feedParseDay_(s['site.test_password']);
     inputs.roster.forEach(function (r) {
-      var id = String(r['Athlete ID'] || '').trim(), day = testDay || feedDay_(r.Birthday);
-      if (id && day && String(r.Name || '').trim() && isActive_(r.Active)) logins.push({ id: id, code: inputs.signLogin(id, day) });
+      var id = String(r['Athlete ID'] || '').trim(), day = feedDay_(r.Birthday);
+      if (!id || !String(r.Name || '').trim() || !isActive_(r.Active)) return;
+      if (day) logins.push({ id: id, code: inputs.signLogin(id, day) });
+      if (testDay && testDay !== day) logins.push({ id: id, code: inputs.signLogin(id, testDay) });
     });
     String(s['site.coaches'] || '').split(/[;\n]/).forEach(function (part) {
       var m = part.trim().match(/^(.*\S)\s+(\S+)$/);

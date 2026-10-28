@@ -562,6 +562,12 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   clearFeedCache();
   assert.deepStrictEqual(who(await handleLogin(post({ name: 'Pat Example', password: '2/3/1980' }), env, cdeps)), { kind: 'team' });
   assert.strictEqual((await handleLogin(post({ name: 'Pat Example', password: '2/4/1980' }), env, cdeps)).status, 401);
+  // An athlete with two codes (her birthday and the shared test date) signs in with either.
+  const two = { ...feed, logins: [...feed.logins, { id: a.id, code: sign(a.id, '2010-01-01') }] };
+  const tdeps = { ...deps, fetchImpl: async () => new Response(JSON.stringify(two)) };
+  clearFeedCache();
+  assert.strictEqual(who(await handleLogin(post({ name: a.name, password: '1/1/2010' }), env, tdeps)).id, a.id);
+  assert.strictEqual(who(await handleLogin(post({ name: a.name, password: day }), env, tdeps)).id, a.id);
   // The coach password works with or without a name.
   assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
   assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });

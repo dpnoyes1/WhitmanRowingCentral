@@ -93,8 +93,9 @@ export function athleteFor(env, feed, name, password) {
   if ((feed.logins || []).some((l) => l.coach && sameText(l.code, coachCode))) return 'team';
   const matches = feed.athletes.filter((a) => a.active && nameKey(a.name) === key);
   for (const a of matches) {
-    const l = (feed.logins || []).find((x) => !x.coach && x.id === a.id);
-    if (l && sameText(l.code, loginCode(env, a.id, day))) return a;
+    // An athlete can have two codes: her birthday and the shared test date.
+    const code = loginCode(env, a.id, day);
+    if ((feed.logins || []).some((x) => !x.coach && x.id === a.id && sameText(x.code, code))) return a;
   }
   return null;
 }
