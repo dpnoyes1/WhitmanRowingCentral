@@ -191,7 +191,10 @@ function processLogbookResult_(body) {
     appendObject_(TABS.ENTRIES, rows.entry);
     appendObjects_(TABS.INTERVALS, rows.intervals);
     SpreadsheetApp.flush();
-    return { status: existing ? 'updated' : 'created', entryId: rows.entry['Entry ID'] };
+    var out = { status: existing ? 'updated' : 'created', entryId: rows.entry['Entry ID'] };
+    var slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);
+    if (slack) out.slack = slack;
+    return out;
   } catch (err) {
     logChange_({ Who: 'logbook', Tab: '(logbook)', 'Row ID': 'logbook:' + result.id, Note: 'LOGBOOK ERROR: ' + err.message });
     return { status: 'error', error: err.message };
@@ -349,6 +352,45 @@ function processLogbookConfirm_(body) {
   } finally {
     lock.releaseLock();
   }
+}
+
+var SLACK_LOGBOOK_CONFIRM_ACTION = 'slack-logbook-confirm';
+
+/**
+ * Pure: what the site needs to DM a new pending session to the athlete in Slack
+ * (David, 2026-10-28): her Slack member ID from the Roster plus the same card
+ * the site shows. Null when she has no valid ID on the Roster. The ID goes
+ * back only to the site's server (same key check as the rest), never in the feed.
+ */
+function logbookSlackNotice(entry, intervals, rosterRow) {
+  var id = String(rosterRow['Slack member ID'] || '').trim();
+  if (!/^[UW][A-Z0-9]{2,}$/.test(id)) return null;
+  var card = logbookPendingFor([entry], intervals, entry['Athlete ID'])[0];
+  return card ? { slackUserId: id, card: card } : null;
+}
+
+/** Pure: the active Roster row with this Slack member ID, or null. */
+function slackAthleteFor_(roster, slackUserId) {
+  var id = String(slackUserId || '').trim();
+  if (!id) return null;
+  return roster.filter(function (r) {
+    return String(r['Slack member ID'] || '').trim() === id && isActive_(r.Active) && String(r['Athlete ID'] || '').trim() !== '';
+  })[0] || null;
+}
+
+/**
+ * doPost action slack-logbook-confirm: {slackUserId, entryId, sessionType, makeupFor, rpe, benchmark}.
+ * The Slack buttons' version of logbook-confirm: the athlete is found by her Slack
+ * member ID on the Roster, then the same confirm plan runs (so it can only ever
+ * confirm her own session).
+ */
+function processSlackLogbookConfirm_(body) {
+  var athlete = slackAthleteFor_(readObjects_(TABS.ROSTER), body.slackUserId);
+  if (!athlete) return { status: 'error', error: 'Your Slack account is not on the Roster, so use the team site to confirm.' };
+  var payload = {};
+  Object.keys(body).forEach(function (k) { payload[k] = body[k]; });
+  payload.athleteId = String(athlete['Athlete ID']);
+  return processLogbookConfirm_(payload);
 }
 
 /** doPost action logbook-accept-due (the site's poll calls it every 15 minutes). */

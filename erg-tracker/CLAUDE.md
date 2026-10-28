@@ -107,6 +107,8 @@ Logbook write action (`apps-script/Logbook.gs`, POST `action: logbook-result` wi
 
 Auto-classification (phase 2, Logbook sync): no practice that day -> OYO; practice day inside window -> Practice; outside -> OYO; matches a missed practice within 7 days -> Possible make-up (stays pending until tapped); BikeErg set from machine; unchanged labels auto-accept after 20 h (David, 2026-10-25).
 
+Slack confirm for Logbook (David, 2026-10-28): when `logbook-result` creates a new pending row and the athlete's Roster `Slack member ID` is a valid ID, the Sheet's answer carries `slack` (her ID + the pending card) and the site DMs her from ErgBot with an optional effort pick and Confirm / Confirm as test / Change buttons (`site/lib/slacklogbook.mjs`; Change opens a modal in `/api/slack`; saves go through Apps Script action `slack-logbook-confirm`, which finds her by Slack ID and runs the same confirm plan). The site card stays and works too; whichever is first wins, and a later tap says "Already counted". Possible make-ups wait for a tap; plain Pending rows auto-accept after 20 h. A DM failure never blocks the sync. The Slack ID is never in the feed.
+
 ## Weekly plan and targets
 
 - Coaches build workouts in the **Workouts** tab (one row per piece; Reps for repeats; one row per piece for variable intervals; `Start every` or Rest = Undefined for common-start sets) and assign them by date and squad in **Schedule**. Only Published rows reach athletes.

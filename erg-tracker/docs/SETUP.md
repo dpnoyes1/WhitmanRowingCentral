@@ -175,5 +175,6 @@ Results, stars, leaderboards and targets already start over on `school_year_star
 ## Part E: Later
 
 - **Concept2 Logbook sync** (planned): register an app at <https://log.concept2.com/developers> under the program's account, read-only, with the callback `https://<your site>/.netlify/functions/concept2-callback`. The client secret goes in Netlify environment variables only.
-- **Slack bot, later parts** (planned): the 9:00 "not logged" reminder, erg-screen photos and Logbook confirmation cards, built on the Slack app from Part C.
+- **Logbook confirmation in Slack** (built, off until Logbook sync is on): when a Logbook session lands, an athlete whose Roster row has her Slack member ID gets a DM from the bot with an optional effort pick and **Confirm** / **Change** buttons (and **Confirm as 2k/20' test** when it looks like one). The team-site card still works; the first tap wins. Make-ups wait for a tap, other sessions count after 20 hours. Needs the Slack app's Interactivity on, `SLACK_BOT_TOKEN` and `SLACK_SIGNING_SECRET` in Netlify, and a Sheet push plus a new feed version.
+- **Slack bot, later parts** (planned): the 9:00 "not logged" reminder and erg-screen photos, built on the Slack app from Part C.
 - **Another program's copy**: everything above, under that program's own Google, GitHub, Netlify, Slack and Concept2 accounts. Nothing is shared between copies.

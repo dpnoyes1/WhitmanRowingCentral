@@ -7,16 +7,17 @@
 // signed request. Needs SLACK_SIGNING_SECRET and SLACK_BOT_TOKEN.
 import { signatureValid } from '../lib/slack.mjs';
 import { logModal, readLogForm, validateLogForm } from '../lib/slacklog.mjs';
+import { changeModal, readChange, readChangeValue, validateChange } from '../lib/slacklogbook.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const empty = () => new Response('', { status: 200 });
 const json = (obj) => Response.json(obj);
 
-async function openModal(envFn, fetchImpl, triggerId, today) {
+async function openModal(envFn, fetchImpl, triggerId, view) {
   const res = await fetchImpl('https://slack.com/api/views.open', {
     method: 'POST',
     headers: { authorization: `Bearer ${envFn('SLACK_BOT_TOKEN')}`, 'content-type': 'application/json; charset=utf-8' },
-    body: JSON.stringify({ trigger_id: triggerId, view: logModal(today) })
+    body: JSON.stringify({ trigger_id: triggerId, view })
   });
   const data = await res.json().catch(() => ({}));
   return data.ok ? '' : (data.error || 'unknown');
@@ -52,7 +53,7 @@ export async function handleSlack(req, envFn, deps = {}) {
   const form = new URLSearchParams(raw);
 
   if (form.get('command')) {   // the /log slash command
-    const err = await openModal(envFn, fetchImpl, form.get('trigger_id'), deps.today);
+    const err = await openModal(envFn, fetchImpl, form.get('trigger_id'), logModal(deps.today));
     if (err) {
       console.log('slack: views.open failed', err);
       return json({ response_type: 'ephemeral', text: 'Could not open the log form (' + err + '). Try /log again, or use the Form.' });
@@ -71,7 +72,23 @@ export async function handleSlack(req, envFn, deps = {}) {
     return json({ response_action: 'clear' });
   }
 
+  if (payload.type === 'view_submission' && payload.view && payload.view.callback_id === 'lb_change_modal') {
+    const change = readChange(payload.view);
+    const errors = validateChange(change);
+    if (Object.keys(errors).length) return json({ response_action: 'errors', errors });
+    const sent = await forward(req, raw, fetchImpl).catch(() => false);
+    if (!sent) return json({ response_action: 'errors', errors: { type: 'Could not save right now. Press Confirm again in a moment.' } });
+    return json({ response_action: 'clear' });
+  }
+
   if (payload.type === 'block_actions') {
+    const action = (payload.actions || [])[0];
+    if (action && action.action_id === 'lb_change') {   // needs the trigger_id within 3 s, so it opens here
+      const info = readChangeValue(action.value);
+      const err = info ? await openModal(envFn, fetchImpl, payload.trigger_id, changeModal(info, { channel: payload.channel && payload.channel.id, ts: payload.message && payload.message.ts })) : 'unreadable button';
+      if (err) console.log('slack: change modal failed', err);
+      return empty();
+    }
     await forward(req, raw, fetchImpl).catch(() => false);
   }
   return empty();

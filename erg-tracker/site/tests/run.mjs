@@ -14,6 +14,7 @@ import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
 import * as SL from '../lib/slacklog.mjs';
+import * as SLB from '../lib/slacklogbook.mjs';
 import { createHmac } from 'node:crypto';
 import * as C2 from '../lib/concept2.mjs';
 import { handleConcept2 } from '../functions/concept2.mjs';
@@ -1219,6 +1220,101 @@ test('logbook confirm: pending list is read fresh from the Sheet after a sync, c
   // the poll still asks the Sheet to accept sessions older than 20 hours
   const polled = await LS.pollAll(w.env, w.store, w.fetchImpl);
   assert.ok(w.sheet.some((c) => c.action === 'logbook-accept-due'), JSON.stringify(polled));
+});
+
+test('logbook in Slack: a new pending session is DMed with Confirm/Change, buttons and the modal confirm through the Sheet', async () => {
+  const card = { id: 'E77', athleteId: 'A901', date: '2026-10-27', sessionType: 'OYO', makeupFor: '', possibleMakeup: false, activity: 'Erg (RowErg)',
+    mainSet: '4x5:00 r2:00', workS: 1200, workM: 5100, dragFactor: 105, benchmark: '', pieces: [{ n: 1, workS: 300, workM: 1275, rate: 22 }, { n: 2, workS: 300, workM: 1270, rate: 22 }] };
+  const w = syncWorld();
+  const slackEnv = (k) => ({ SLACK_BOT_TOKEN: 'xoxb-FAKE', SLACK_SIGNING_SECRET: 'fake-secret' })[k] || w.env(k);
+  const posted = [];
+  let notice = { slackUserId: 'U901', card };
+  const fetchImpl = async (url, init = {}) => {
+    if (String(url) === 'https://slack.com/api/chat.postMessage') { posted.push(JSON.parse(init.body)); return Response.json({ ok: true }); }
+    if (String(url) === 'https://sheet.example/exec') { const out = await w.fetchImpl(url, init); const b = await out.json(); return Response.json(notice ? { ...b, slack: notice } : b); }
+    return w.fetchImpl(url, init);
+  };
+  await connectA901(w);
+  assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'sent');
+  assert.strictEqual(posted.length, 1);
+  assert.strictEqual(posted[0].channel, 'U901', 'DM by member ID');
+  assert.ok(/Found on Logbook/.test(posted[0].text));
+  const acts = posted[0].blocks.find((b) => b.type === 'actions').elements;
+  assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_change']);
+  assert.ok(/after about 20 hours/.test(JSON.stringify(posted[0].blocks)));
+  assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'same');
+  assert.strictEqual(posted.length, 1, 'an unchanged result is not DMed twice');
+  // no Slack ID on the Roster, or Slack failing: the sync still works
+  notice = null;
+  assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi({ id: 5 })), 'sent');
+  assert.strictEqual(posted.length, 1);
+  notice = { slackUserId: 'U901', card };
+  const boom = async (url, init) => { if (String(url).includes('slack.com')) throw new Error('down'); return fetchImpl(url, init); };
+  assert.strictEqual(await LS.syncResult(slackEnv, w.store, boom, 'A901', lbApi({ id: 6 })), 'sent', 'Slack down never blocks the sync');
+
+  // possible make-up and a 2k shape
+  const mk = SLB.logbookMessage({ ...card, sessionType: 'Make-up', makeupFor: '2026-10-26', possibleMakeup: true, benchmark: '2000m' });
+  const mkActs = mk.blocks.find((b) => b.type === 'actions').elements;
+  assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_confirm_test', 'lb_change']);
+  assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/20 hours/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
+
+  // buttons
+  const NOW = 1_800_000_000;
+  const signed = (url, payload) => { const raw = new URLSearchParams({ payload: JSON.stringify(payload) }).toString();
+    return new Request(url, { method: 'POST', body: raw, headers: { 'content-type': 'application/x-www-form-urlencoded', 'x-slack-request-timestamp': String(NOW),
+      'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${NOW}:${raw}`).digest('hex') } }); };
+  const env2 = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key' })[k];
+  const world = (answer) => { const calls = []; return { calls, deps: { nowS: NOW, fetchImpl: async (url, init) => {
+    calls.push({ url, body: init && init.body ? JSON.parse(init.body) : null });
+    if (url === 'https://script.example/exec') return Response.json(answer);
+    return new Response('ok', { status: 200 });
+  } } }; };
+  const press = (action, state) => ({ type: 'block_actions', user: { id: 'U901', name: 'fake.rower' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' },
+    message: { ts: '1.2', text: SLB.summaryLine(card) }, state: { values: state || {} }, actions: [action] });
+  let x = world({ status: 'confirmed', benchmark: false });
+  let out = await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' }, { lb_actions: { lb_rpe: { selected_option: { value: '7' } } } })), env2, x.deps);
+  assert.deepStrictEqual(x.calls[0].body, { action: 'slack-logbook-confirm', slackUserId: 'U901', entryId: 'E77', rpe: 7, key: 'fake-key' });
+  assert.ok(/Counted/.test(x.calls[1].body.text) && x.calls[1].body.replace_original && !JSON.stringify(x.calls[1].body.blocks).includes('"actions"'));
+  x = world({ status: 'confirmed', benchmark: true });
+  await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm_test', value: 'E77|2000m' })), env2, x.deps);
+  assert.deepStrictEqual([x.calls[0].body.benchmark, x.calls[0].body.rpe], ['2000m', undefined]);
+  x = world({ status: 'error', error: 'not waiting for confirmation' });
+  await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' })), env2, x.deps);
+  assert.ok(/Already counted/.test(x.calls[1].body.text), 'confirmed on the site or auto-accepted first');
+  x = world({ status: 'error', error: 'session not found' });
+  await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' })), env2, x.deps);
+  assert.ok(/changed on Logbook/.test(x.calls[1].body.text));
+  x = world({ status: 'error', error: 'say which missed practice this makes up' });
+  await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' })), env2, x.deps);
+  assert.strictEqual(x.calls[1].body.response_type, 'ephemeral');
+
+  // Change: opens at /api/slack with the trigger id, validates, then saves in the background and updates her DM
+  const changeBtn = { action_id: 'lb_change', value: acts[2].value };
+  assert.ok(acts[2].value.length < 2000);
+  const open = [];
+  const front = { nowS: NOW, fetchImpl: async (url, init) => { open.push({ url, body: JSON.parse(init.body) }); return Response.json({ ok: true }); } };
+  const res = await handleSlack(signed('https://x/api/slack', { ...press(changeBtn), trigger_id: 'T9' }), env2, front);
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(open[0].url, 'https://slack.com/api/views.open');
+  assert.strictEqual(open[0].body.trigger_id, 'T9');
+  const view = open[0].body.view;
+  assert.strictEqual(view.callback_id, 'lb_change_modal');
+  assert.deepStrictEqual(JSON.parse(view.private_metadata).e, 'E77');
+  assert.strictEqual(view.blocks.find((b) => b.block_id === 'type').element.initial_option.value, 'OYO');
+  const submitView = (vals) => ({ type: 'view_submission', user: { id: 'U901', name: 'fake.rower' }, view: { id: 'V2', callback_id: 'lb_change_modal', private_metadata: view.private_metadata, state: { values: vals } } });
+  const v = (type, extra = {}) => ({ type: { v: { selected_option: { value: type } } }, makeup_for: { v: { selected_date: extra.date || null } }, rpe: { v: { selected_option: extra.rpe ? { value: extra.rpe } : null } }, bench: { v: { selected_options: [] } } });
+  const bad = await (await handleSlack(signed('https://x/api/slack', submitView(v('Make-up'))), env2, front)).json();
+  assert.ok(bad.errors && bad.errors.makeup_for, 'make-up needs the missed practice date');
+  const late = await (await handleSlack(signed('https://x/api/slack', submitView(v('Make-up', { date: '2026-10-27' }))), env2, front)).json();
+  assert.ok(late.errors && late.errors.makeup_for, 'the missed practice is before the session');
+  const fwd = { nowS: NOW, fetchImpl: async () => new Response('', { status: 202 }) };
+  assert.deepStrictEqual(await (await handleSlack(signed('https://x/api/slack', submitView(v('Make-up', { date: '2026-10-26' }))), env2, fwd)).json(), { response_action: 'clear' });
+  x = world({ status: 'confirmed' });
+  await handleSlackAction(signed('https://x/bg', submitView(v('Make-up', { date: '2026-10-26', rpe: '6' }))), env2, x.deps);
+  assert.deepStrictEqual(x.calls[0].body, { action: 'slack-logbook-confirm', slackUserId: 'U901', entryId: 'E77', sessionType: 'Make-up', makeupFor: '2026-10-26', rpe: 6, key: 'fake-key' });
+  assert.strictEqual(x.calls[1].url, 'https://slack.com/api/chat.update');
+  assert.deepStrictEqual([x.calls[1].body.channel, x.calls[1].body.ts], ['D1', '1.2']);
+  assert.ok(/Counted/.test(x.calls[1].body.text));
 });
 
 photoTests(test);
