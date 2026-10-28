@@ -1179,6 +1179,25 @@ test('logbook sync: poll sends new results, skips repeats, survives one failure'
   assert.strictEqual((await bad.store.get('seen/122191976')), null, 'a failed send is retried next time');
 });
 
+test('logbook pending: a session written in the last half hour is read from the Sheet, not the lagging feed copy', async () => {
+  clearFeedCache();
+  const store = memStore(), asked = [];
+  const fetchImpl = async (url, init = {}) => {
+    const body = init.body ? JSON.parse(init.body) : {};
+    asked.push(body.action || 'feed');
+    if (body.action === 'logbook-pending') return Response.json({ status: 'ok', pending: [{ id: 'E7', athleteId: body.athleteId, pieces: [] }, { id: 'E8', athleteId: body.athleteId, pieces: [] }] });
+    return Response.json({ ...feed, logbookPending: [{ id: 'E7', athleteId: 'A901', pieces: [] }] });
+  };
+  const env = (k) => ({ ...Object.fromEntries(['TEAM_PASSWORD', 'FEED_KEY', 'CONCEPT2_CLIENT_ID', 'CONCEPT2_CLIENT_SECRET', 'CONCEPT2_TOKEN_KEY'].map((n) => [n, c2env(n)])), FEED_URL: 'https://script.example/exec' })[k];
+  const pending = async () => (await (await handleConcept2(new Request('https://x/api/concept2/pending', { headers: { cookie: c2cookie('A901') } }), env, { store, fetchImpl, fetch: fetchImpl, shared: null })).json()).pending.map((p) => p.id);
+  assert.deepStrictEqual(await pending(), ['E7'], 'no new session: the feed copy answers');
+  await store.set('new/A901', String(Date.now()));
+  assert.deepStrictEqual(await pending(), ['E7', 'E8'], 'new session: both cards come from the Sheet together');
+  await store.set('new/A901', String(Date.now() - 31 * 60 * 1000));
+  assert.deepStrictEqual(await pending(), ['E7'], 'after half an hour the feed copy is used again');
+  clearFeedCache();
+});
+
 test('logbook confirm: pending list is hers only, confirm goes to the Sheet, auto-accept rides the poll', async () => {
   clearFeedCache();
   const store = memStore(), sheet = [];
