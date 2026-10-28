@@ -45,7 +45,8 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       });
       var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[id] || [], e.Activity), pieces, bases, inp.settings);
       var flag = planFlag(e, c);
-      if (flag) out.push({ entryId: id, athlete: e.Athlete, date: e.Date, sessionType: e['Session type'], flag: flag });
+      if (flag) out.push({ entryId: id, athlete: e.Athlete, date: e.Date, sessionType: e['Session type'], flag: flag,
+        detail: planFlagDetail(e, byEntry[id] || [], pieces) });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
@@ -59,9 +60,42 @@ function planFlagDay_(d) {
     ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'][d.getMonth()] + ' ' + d.getDate();
 }
 
+var PLAN_FLAG_SOURCES = { Form: 'Google Form', Logbook: 'Concept2 Logbook', Slack: 'Slack' };
+
+/**
+ * What the coach needs to decide: the planned workout and what was logged
+ * (pieces, totals, source). Athlete and coach notes, Out notes and weights are
+ * left out, as everywhere in Slack. `pieces` are the planned workout pieces.
+ */
+function planFlagDetail(entry, intervals, pieces) {
+  var time = function (s) { return formatTime(Number(s)); };
+  var lines = [];
+  lines.push('*Planned:* ' + (pieces.map(pieceLabel).join('; ') || 'not found'));
+  var source = PLAN_FLAG_SOURCES[String(entry.Source)] || String(entry.Source || 'unknown');
+  var by = String(entry['Entered by'] || '').trim();
+  var head = '*Logged* (' + source + (by && by !== String(entry.Athlete) ? ', entered by ' + by : '') + '): ' + (entry.Activity || 'activity not given');
+  if (entry['Main set']) head += ', "' + entry['Main set'] + '"';
+  if (entry.Zone) head += ', ' + entry.Zone;
+  lines.push(head);
+  intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }).forEach(function (iv) {
+    var bits = [time(iv['Work s']), (Number(iv['Work m']) || 0) + ' m'];
+    if (Number(iv['Avg rate']) > 0) bits.push(iv['Avg rate'] + ' spm');
+    if (Number(iv['Rest s']) > 0) bits.push('rest ' + time(iv['Rest s']));
+    lines.push(iv['Interval #'] + '. ' + bits.join(', '));
+  });
+  lines.push('Total: ' + intervals.length + ' piece' + (intervals.length === 1 ? '' : 's') + ', ' + (Number(entry['Work m']) || 0) + ' m in ' + time(entry['Work s']));
+  var extra = [];
+  if (Number(entry.RPE) > 0) extra.push('RPE ' + entry.RPE);
+  if (Number(entry['Warmup s']) > 0) extra.push('warmup ' + time(entry['Warmup s']));
+  if (Number(entry['Cooldown s']) > 0) extra.push('cooldown ' + time(entry['Cooldown s']));
+  if (extra.length) lines.push(extra.join(', '));
+  return lines.join('\n').slice(0, 2400);
+}
+
 /** The Slack message for one flagged entry: text plus Block Kit buttons. */
 function planFlagMessage(item, sheetUrl) {
-  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' + item.flag;
+  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' + item.flag +
+    (item.detail ? '\n' + item.detail : '');
   return {
     text: text,
     blocks: [
