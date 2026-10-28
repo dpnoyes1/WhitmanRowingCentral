@@ -11,6 +11,7 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleHealth } from '../functions/health.mjs';
+import photoTests from './photo.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -751,6 +752,8 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
   }
   clearFeedCache();
 });
+
+photoTests(test);
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }
