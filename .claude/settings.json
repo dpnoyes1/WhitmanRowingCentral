@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(npx @google/clasp push:*)",
+      "Bash(npx @google/clasp status:*)"
+    ]
+  }
+}
