@@ -119,6 +119,7 @@ Follow `site/README.md` (One-time setup). In short:
 2. In Netlify: **Add new project > Import from Git**, pick your copy of this repo. `netlify.toml` at the repo root sets everything else.
 3. Add the environment variables `TEAM_PASSWORD`, `FEED_KEY` and `FEED_URL` (secret values ticked), then deploy.
 4. In the Sheet's Settings, set `site.url` to the site's address, and add the coaches' sign-ins to `site.coaches`. Athletes sign in with their name and birthday (or `site.test_password` while you're testing).
+5. **Before real athletes sign in:** clear `site.test_password` in Settings. While it is set, anyone who knows an athlete's name and that date can sign in as her.
 
 To make it look like your program, change the name in `site/public/index.html` and `site/public/app.js` ("Whitman Rowing"), the colors in `site/public/style.css`, the Form title in `apps-script/Form.gs`, and the short links in `netlify.toml` (`/logworkout` points at your Form's share link).
 

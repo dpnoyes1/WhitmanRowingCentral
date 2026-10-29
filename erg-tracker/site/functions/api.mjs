@@ -22,10 +22,11 @@ export async function handle(req, envFn, deps = {}) {
   const data = feed.data;
   const today = deps.today || todayIn(data.settings.timezone || 'America/New_York');
   const meta = { generatedAt: data.generatedAt, stale: feed.stale };
+  // A cookie lasts a year; an athlete dropped from the Roster or set inactive is signed out of every route, not just the page.
+  if (who.kind === 'athlete' && !data.athletes.some((x) => x.id === who.id && x.active)) return json({ error: 'signin' }, 401);
 
   if (path === '/api/session') {
     const a = who.kind === 'athlete' && data.athletes.find((x) => x.id === who.id);
-    if (who.kind === 'athlete' && !a) return json({ error: 'signin' }, 401);   // dropped from the Roster
     return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).

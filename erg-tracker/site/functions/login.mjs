@@ -52,5 +52,5 @@ export default (req) => handleLogin(req, env);
 export const config = {
   path: ['/api/login', '/api/logout'],
   method: 'POST',
-  rateLimit: { windowLimit: 20, windowSize: 60, aggregateBy: ['ip', 'domain'] }
+  rateLimit: { windowLimit: 60, windowSize: 60, aggregateBy: ['ip', 'domain'] }
 };
