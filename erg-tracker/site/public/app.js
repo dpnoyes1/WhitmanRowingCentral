@@ -318,7 +318,6 @@ async function showTeam() {
 /** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
 function splitsCard(s) {
   return `<div class="card"><h2>Average season-best results</h2>
-    <p class="muted small">Groups are ranked team-wide by each rower's fastest result this school year (20' at 2k pace, minus 8.5 s).</p>
     <div class="table-wrap"><table><tr><th>Group</th><th class="r">2k Time</th><th class="r">2k Split</th><th class="r">20' Meters</th><th class="r">20' Split</th><th class="r">Average Stars</th></tr>
     ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td>
       <td class="r">${g.twoK.avgTime === null ? '–' : fmtTime(g.twoK.avgTime)}</td>
@@ -326,7 +325,7 @@ function splitsCard(s) {
       <td class="r">${g.twenty.avgMeters === null ? '–' : fmtNum(g.twenty.avgMeters)}</td>
       <td class="r">${g.twenty.avgSplit === null ? '–' : fmtTime(g.twenty.avgSplit)}</td>
       <td class="r">${g.avgStars === null ? '–' : g.avgStars.toFixed(1)}</td></tr>`).join('')}
-    </table></div><p class="muted small">Each is the average, across rowers, of her best result this school year. Splits are per 500m (20' is its real pace, not adjusted).</p></div>`;
+    </table></div></div>`;
 }
 
 /**
