@@ -145,3 +145,12 @@ export function logReply(result) {
   if (result.status === 'unknown_name') return ':warning: Not saved: that name isn\'t an active athlete on the Roster. Coaches: check the spelling and run /log again.';
   return `:warning: Not saved: ${result.error || 'unknown problem'}. Run /log again, or use the Form.`;
 }
+
+/** The FYI DM to an athlete when a coach logged for her, or '' when none is due. */
+export function fyiText(result) {
+  if (!result || result.status !== 'ok' || !result.notifySlackId) return '';
+  const by = result.by || 'A coach';
+  if (result.entryStatus === 'Out') return `:information_source: FYI: ${by} marked you Out. If that's wrong, tell a coach.`;
+  const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
+  return `:information_source: FYI: ${by} logged a workout for you (${bits}). If that's wrong, tell a coach.`;
+}

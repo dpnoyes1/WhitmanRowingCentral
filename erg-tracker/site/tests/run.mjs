@@ -702,6 +702,10 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
+  assert.ok(/Coach greta logged a workout for you \(Practice, Run, 1 piece\)/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', by: 'Coach greta', sessionType: 'Practice', activity: 'Run', pieces: 1 })));
+  assert.ok(/marked you Out/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', entryStatus: 'Out' })));
+  assert.strictEqual(SL.fyiText({ status: 'ok', pieces: 1 }), '', 'no target, no FYI');
+  assert.strictEqual(SL.fyiText({ status: 'duplicate', notifySlackId: 'UJ1' }), '');
   assert.ok(/Slack member ID/.test(SL.logReply({ status: 'not_allowed' })) && /only log for yourself/.test(SL.logReply({ status: 'not_yourself' })) && /isn't an active athlete/.test(SL.logReply({ status: 'unknown_name' })) && /already saved/.test(SL.logReply({ status: 'duplicate' })) && /Not saved: boom/.test(SL.logReply({ status: 'error', error: 'boom' })));
 });
 
@@ -879,6 +883,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual(save.photo.image, Buffer.from('small-copy').toString('base64'), 'the small copy goes with the save, not the original');
   const sent = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
   assert.ok(/Saved for Olivia Fake with RPE 7/.test(sent.text) && sent.replace_original);
+  assert.ok(!w.dms().some((d) => d.channel === 'UO9'), 'no FYI when the Sheet names nobody');
   out = await handlePhotoButton(press('photo_rpe_7', token), env, w.deps);
   assert.strictEqual(out.status, 'gone', 'second press does nothing');
   assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-photo').length, 1);
@@ -929,6 +934,13 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   const tok4 = w.dms()[0].blocks[1].elements[0].value;
   assert.strictEqual((await handlePhotoButton(press('photo_rpe_5', tok4), env, w.deps)).status, 'error');
   assert.ok(w.store.has('card:' + tok4), 'card kept for another try');
+
+  // a coach's photo save with a Roster Slack ID on the athlete: she gets an FYI DM, then the coach is told
+  w = world({ sheet: { save: { status: 'ok', athlete: 'Olivia Fake', flagged: false, notifySlackId: 'UO9', by: 'Coach coach.one', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 1 } } });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  await handlePhotoButton(press('photo_norpe', w.dms()[0].blocks[1].elements[0].value), env, w.deps);
+  const fyi = w.dms().find((d) => d.channel === 'UO9');
+  assert.ok(fyi && /Coach coach\.one logged a workout for you/.test(fyi.text));
 
   // an athlete on the Roster sends a photo: no name question, the card is for herself, and she cannot type another name
   const athleteAccess = (b) => (b.slackUserId !== 'UA1' ? { status: 'not_allowed' }
