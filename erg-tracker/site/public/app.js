@@ -275,6 +275,7 @@ function showLogin() {
       });
       body = await res.json().catch(() => ({}));
     } catch { return done('Could not reach the site. Check your connection and try again.'); }
+    if (res.status === 429) return done('Too many sign-ins from this network right now. Wait a minute and try again.');
     if (!res.ok) return done(body.error || 'Could not sign in.');
     store.set(OLD_ME_KEY, null);
     setSession(null);
