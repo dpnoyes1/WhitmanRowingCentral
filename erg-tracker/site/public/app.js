@@ -507,7 +507,10 @@ async function showWorkout(id) {
         ${tile('Meters', w.meters ? fmtNum(w.meters) : '–', w.zone ? `Zone ${w.zone}` : 'No zone')}
         ${tile('RPE', w.rpe ?? '–', '')}
       </div>
-      ${body}</div>${footer(v.meta)}`;
+      ${body}</div>
+    ${w.photo ? `<div class="card"><h2>Erg screen</h2>
+      <a href="/api/photo/${encodeURIComponent(id)}" target="_blank" rel="noopener"><img class="erg-photo" loading="lazy" alt="Photo of the erg screen for this workout" src="/api/photo/${encodeURIComponent(id)}"></a>
+      <p class="muted small">Tap the photo to open it larger.</p></div>` : ''}${footer(v.meta)}`;
   wireFooter();
 }
 

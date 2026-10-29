@@ -31,7 +31,7 @@ HEADERS[TABS.ENTRIES] = [
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
   'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID',
-  'Warmup m', 'Cooldown m'
+  'Warmup m', 'Cooldown m', 'Photo link'
 ];
 HEADERS[TABS.INTERVALS] = [
   'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'

@@ -188,6 +188,7 @@ function processLogbookResult_(body) {
     });
     if (rows.skip) return { status: 'skipped', reason: rows.skip };
     if (existing) deleteEntry_(existing);
+    photoTakeOverFromSlack_(rows);   // a Slack photo of this same workout moves onto the Logbook entry
     appendObject_(TABS.ENTRIES, rows.entry);
     appendObjects_(TABS.INTERVALS, rows.intervals);
     SpreadsheetApp.flush();

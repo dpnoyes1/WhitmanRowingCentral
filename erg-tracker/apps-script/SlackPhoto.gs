@@ -3,8 +3,8 @@
  * athletes (herself only). The Slack function (site/lib/slackphoto.mjs) reads
  * the photo, a coach names the athlete (an athlete is herself) and presses an
  * RPE button, and these actions save it through the same parseSubmission as
- * the Form. Source = Slack. The photo itself is not
- * stored yet (photo plan step 6).
+ * the Form. Source = Slack. The shrunk photo copy comes with the save and goes
+ * to Drive (Photos.gs); the Entries row keeps only the link.
  */
 
 var SLACK_ACCESS_ACTION = 'slack-access';
@@ -42,7 +42,26 @@ function slackPhotoAnswers(photo, athleteName, enteredBy) {
 
 /** doPost action 'slack-photo': body { slackUserId, slackName, token, athlete, photo }. */
 function processSlackPhoto_(body) {
-  return slackSave_(body, 'slack-photo:' + (body.token || ''), !!body.token, body.athlete, function (name, by) {
+  var image = (body.photo || {}).image || '';
+  var saved = { photo: 'none' };
+  var out = slackSave_(body, 'slack-photo:' + (body.token || ''), !!body.token, body.athlete, function (name, by) {
     return slackPhotoAnswers(body.photo || {}, name, by);
+  }, {
+    beforeWrite: function (result, athlete) {
+      var early = photoBeforeWrite_(image)(result, athlete);   // Logbook already has this workout: it wins
+      if (early) return early;
+      if (image) {
+        try {
+          result.entry['Photo link'] = savePhotoCopy_(image, result.entry['Entry ID']);
+          saved.photo = 'saved';
+        } catch (err) {
+          saved.photo = 'failed';   // the workout still saves; the coach can ask for the photo again
+          logChange_({ Who: 'slack', Tab: '(photo)', 'Row ID': result.entry['Entry ID'], Note: 'PHOTO SAVE ERROR: ' + err.message });
+        }
+      }
+      return null;
+    }
   });
+  if (out.status === 'ok') out.photo = saved.photo;
+  return out;
 }

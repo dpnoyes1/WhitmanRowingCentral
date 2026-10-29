@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'SlackPhoto.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -116,7 +116,7 @@ test('parse practice with intervals', () => {
   assert.strictEqual(r.intervals[2]['Rest s'], '');
   const headers = g.HEADERS[g.TABS.ENTRIES];
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
-  assert.strictEqual(headers.slice(-2).join(), 'Warmup m,Cooldown m');
+  assert.strictEqual(headers.slice(-3).join(), 'Warmup m,Cooldown m,Photo link');
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
 });
 
@@ -862,6 +862,22 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 25) }), short).length, 0, 'in the future');
   const msg = g.planFlagMessage(hit[0], 'https://sheet.example/#gid=1');
   assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Logged Full, short of plan/.test(msg.text), msg.text);
+  // The coach sees the plan and what was logged, so the decision can be made from Slack.
+  const lines = msg.text.split('\n');
+  assert.ok(/^\*Planned:\* \S/.test(lines[1]) && !/not found/.test(lines[1]), lines[1]);
+  assert.ok(/^\*Logged\* \((Google Form|Concept2 Logbook|Slack|Dummy)/.test(lines[2]), lines[2]);
+  assert.strictEqual(lines.filter(l => /^\d+\. \d+:\d\d\.\d, \d+ m/.test(l)).length, short.length, 'one line per logged piece');
+  assert.ok(lines.some(l => /^Total: \d+ pieces?, \d+ m in \d+:\d\d\.\d$/.test(l)), msg.text);
+  assert.strictEqual(msg.blocks[0].text.text, msg.text);
+  const noted = g.planFlagDetail({ ...full, Athlete: 'Jane', 'Entered by': 'Coach Greta', Source: 'Logbook', 'Coach note': 'secret note', Activity: 'Run', 'Main set': 'Easy', RPE: 4 }, short, []);
+  assert.ok(/Concept2 Logbook, entered by Coach Greta\): Run, "Easy"/.test(noted) && /RPE 4/.test(noted) && !/secret/.test(noted), noted);
+  assert.ok(/Planned:\* not found/.test(noted));
+  const mk = (o) => Object.assign({ reps: 1, workType: 'Distance', workS: null, workM: 500, restS: 0, restUndefined: false, startEveryS: null, zone: '', rate: '' }, o);
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 8, restUndefined: true, zone: 'Threshold' })), '8 x 500m, undefined rest, Threshold');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 4, workType: 'Time', workS: 360, workM: null, restS: 120, zone: 'Aerobic', rate: '22' })), '4 x 6:00, rest 2:00, Aerobic, rate 22');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ reps: 8, startEveryS: 210, restUndefined: true, zone: 'Anaerobic' })), '8 x 500m, start every 3:30, Anaerobic');
+  assert.strictEqual(g.planFlagPieceLabel_(mk({ workType: 'Time', workS: 1200, workM: null, zone: 'Threshold' })), '20:00, Threshold');
+  assert.ok(g.planFlagDetail(full, Array(200).fill(all[0]), []).length <= 2400, 'stays inside Slack\'s block limit');
   const ids = msg.blocks[1].elements.map(b => b.action_id);
   assert.deepStrictEqual(Array.from(ids), ['plan_modified', 'plan_reviewed', 'plan_open']);
   assert.strictEqual(msg.blocks[1].elements[0].value, full['Entry ID']);
@@ -1233,6 +1249,30 @@ test('slack photo: saved read becomes the same entry the Form would make', () =>
   assert.strictEqual(bike.entry['Main set'], 'Erg screen photo');
   assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: [] }, 'Jane Smith'), /No pieces/);
   assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: Array(11).fill(photo.pieces[0]) }, 'Jane Smith'), /More than 10/);
+});
+
+test('photos: Drive link, same-workout match, Logbook wins, feed says only that a photo exists', () => {
+  assert.strictEqual(g.photoFileId_('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp-_/view?usp=drivesdk'), '1AbCdEfGhIjKlMnOp-_');
+  assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');
+  assert.strictEqual(g.photoFileId_(''), '');
+  assert.strictEqual(g.photoFileId_('hello'), '');
+  assert.ok(g.HEADERS['Entries'].slice(-1)[0] === 'Photo link', 'the new column is last');
+  const mine = { athleteId: 'A001', date: '2026-10-28', workS: 480, workM: 2000 };
+  const twin = (over) => g.photoSameWorkout_(mine, { ...mine, ...over });
+  assert.ok(twin({}) && twin({ workS: 482.3, workM: 2008 }), 'close totals match');
+  assert.ok(!twin({ workM: 2060 }) && !twin({ workS: 490 }) && !twin({ date: '2026-10-27' }) && !twin({ athleteId: 'A002' }), 'different meters, time, day or athlete');
+  assert.ok(!twin({ workM: 0 }) && !twin({ workM: '' }), 'blank totals never match');
+  const row = (over) => ({ 'Entry ID': 'E1', 'Athlete ID': 'A001', Date: new Date(2026, 9, 28), 'Work s': 480.4, 'Work m': 2000, Source: 'Logbook', 'Review status': '', 'Photo link': '', ...over });
+  assert.strictEqual(g.photoFindLogbookTwin_(mine, [row({ Source: 'Form' }), row({ 'Review status': 'Rejected' })]), null, 'only live Logbook entries');
+  assert.strictEqual(g.photoFindLogbookTwin_(mine, [row({ 'Entry ID': 'E2' }), row({ 'Entry ID': 'E3' })])['Entry ID'], 'E2');
+  assert.strictEqual(g.photoFindSlackTwins_(mine, [row({ Source: 'Slack' })]).length, 0, 'a Slack entry with no photo is left alone');
+  assert.strictEqual(g.photoFindSlackTwins_(mine, [row({ Source: 'Slack', 'Photo link': 'https://drive.google.com/file/d/xyz/view' }), row({ Source: 'Form', 'Photo link': 'x' })]).length, 1);
+  // the feed carries a yes/no, never the link
+  const inputs = dummyFeedInputs();
+  inputs.entries.slice(0, 2).forEach((e, i) => { e['Photo link'] = i ? '' : 'https://drive.google.com/file/d/SECRETFILEID123456/view'; });
+  const feed = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12))));
+  assert.ok(feed.entries.some((e) => e.hasPhoto === true) && feed.entries.some((e) => e.hasPhoto === false));
+  assert.ok(!JSON.stringify(feed).includes('SECRETFILEID'), 'no Drive link in the feed');
 });
 
 console.log(`${passed} tests passed`);

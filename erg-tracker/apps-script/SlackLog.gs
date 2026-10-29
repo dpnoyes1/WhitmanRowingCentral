@@ -149,6 +149,7 @@ function processSlackAccess_(body) {
 }
 
 /**
+/**
  * Who gets the FYI DM when a coach logs for an athlete (David, 2026-10-28):
  * her Roster Slack member ID, only when a coach did the logging, the ID looks
  * like one and it isn't the coach's own. Otherwise ''.
@@ -159,8 +160,11 @@ function slackFyiTarget_(role, athleteRow, coachSlackId) {
   return /^[UW][A-Z0-9]{2,}$/.test(id) && id !== String(coachSlackId || '').trim() ? id : '';
 }
 
-/** Access check (coach or herself), one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers. */
-function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
+/**
+ * Access check (coach or herself), one write under the script lock. makeAnswers(athleteName, enteredBy) gives the Form answers.
+ * hooks.beforeWrite(result, athlete) may return a response to stop before anything is written.
+ */
+function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
@@ -173,6 +177,10 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers) {
       submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_
     });
     result.entry.Source = 'Slack';
+    if (hooks && hooks.beforeWrite) {
+      var early = hooks.beforeWrite(result, athlete);
+      if (early) return early;
+    }
     writeResult_(result);
     SpreadsheetApp.flush();
     var squads = {};
