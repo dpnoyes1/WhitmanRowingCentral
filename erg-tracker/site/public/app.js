@@ -319,12 +319,12 @@ async function showTeam() {
 function splitsCard(s) {
   return `<div class="card"><h2>Average season-best results</h2>
     <p class="muted small">Each rower's best 2k or 20' this school year as a split per 500m (20' at 2k pace, minus 8.5 s). Ranked fastest first, team-wide.</p>
-    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">2k split</th><th class="r">20' meters</th><th class="r">Combined</th></tr>
+    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">2k split</th><th class="r">20' split</th><th class="r">Combined</th></tr>
     ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td>
       <td class="r">${g.twoK.avgSplit === null ? '–' : `${fmtTime(g.twoK.avgSplit)}<div class="muted small">${g.twoK.n} tested</div>`}</td>
-      <td class="r">${g.twenty.avgMeters === null ? '–' : `${fmtNum(g.twenty.avgMeters)} m<div class="muted small">${fmtTime(g.twenty.avgSplit)} /500m · ${g.twenty.n} tested</div>`}</td>
+      <td class="r">${g.twenty.avgMeters === null ? '–' : `${fmtTime(g.twenty.avgSplit)}<div class="muted small">${fmtNum(g.twenty.avgMeters)} m avg · ${g.twenty.n} tested</div>`}</td>
       <td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
-    </table></div><p class="muted small">2k split is the average best 2k per 500m. 20' is the average best distance and its real split. Combined is the old number (each rower's best of the two).</p></div>`;
+    </table></div><p class="muted small">2k and 20' splits are each the average, across rowers, of her best result this school year as a split per 500m (20' is the real pace of the piece, not adjusted). Combined is the old number (each rower's best of the two).</p></div>`;
 }
 
 /**
