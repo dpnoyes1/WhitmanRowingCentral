@@ -389,11 +389,13 @@ export function teamSplitsView(feed, today) {
     const k = members.filter((a) => a.id in best2k).map((a) => best2k[a.id]);
     const m = members.filter((a) => a.id in best20).map((a) => best20[a.id]);
     const avgM = mean(m);
+    const stars = mean(members.map((a) => seasonStars(feed, a.id, yearStart, today).stars).filter((x) => x !== null));
     const avgS20 = mean(m.map((x) => (1200 * 500) / x)); // average of each rower's real 20' split
     return {
       key, label, avgSplit: round(avg, 1), n: splits.length, rowers: members.length,
-      twoK: { n: k.length, avgSplit: round(mean(k), 1) },
-      twenty: { n: m.length, avgMeters: round(avgM), avgSplit: round(avgS20, 1) }
+      twoK: { n: k.length, avgSplit: round(mean(k), 1), avgTime: round(mean(k) === null ? null : mean(k) * 4, 1) },
+      twenty: { n: m.length, avgMeters: round(avgM), avgSplit: round(avgS20, 1) },
+      avgStars: round(stars, 1)
     };
   });
   return { today, yearStart, groups };

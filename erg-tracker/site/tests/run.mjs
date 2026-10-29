@@ -127,7 +127,7 @@ test('coach split averages: 2k and 20\' as split per 500m, ranked, groups add up
   assert.strictEqual(g.varsity.avgSplit, 105, 'varsity is the squad, not the rank');
   assert.strictEqual(g.freshman.rowers, 1, 'freshman is 9th grade');
   assert.strictEqual(g.freshman.avgSplit, 105);
-  assert.deepStrictEqual(g.all.twoK, { n: 1, avgSplit: 105 }, '2k average counts only 2k tests');
+  assert.deepStrictEqual(g.all.twoK, { n: 1, avgSplit: 105, avgTime: 420 }, '2k average counts only 2k tests');
   assert.deepStrictEqual(g.all.twenty, { n: 1, avgMeters: 5000, avgSplit: 120 }, "20' average is the mean of real splits, plus average meters");
   assert.strictEqual(g.varsity.twenty.avgMeters, null, 'no 20 in the varsity group');
 
