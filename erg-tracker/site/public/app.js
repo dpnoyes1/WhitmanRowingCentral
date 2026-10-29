@@ -318,13 +318,14 @@ async function showTeam() {
 /** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
 function splitsCard(s) {
   return `<div class="card"><h2>Average season-best results</h2>
-    <p class="muted small">Each rower's best 2k or 20' this school year as a split per 500m (20' at 2k pace, minus 8.5 s). Ranked fastest first, team-wide.</p>
-    <div class="table-wrap"><table><tr><th>Group</th><th class="r">Rowers</th><th class="r">2k split</th><th class="r">20' meters</th><th class="r">Combined</th></tr>
-    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td><td class="r">${g.n} of ${g.rowers}</td>
-      <td class="r">${g.twoK.avgSplit === null ? '–' : `${fmtTime(g.twoK.avgSplit)}<div class="muted small">${g.twoK.n} tested</div>`}</td>
-      <td class="r">${g.twenty.avgMeters === null ? '–' : `${fmtNum(g.twenty.avgMeters)} m<div class="muted small">${fmtTime(g.twenty.avgSplit)} /500m · ${g.twenty.n} tested</div>`}</td>
-      <td class="r">${g.avgSplit === null ? '–' : fmtTime(g.avgSplit) + ' /500m'}</td></tr>`).join('')}
-    </table></div><p class="muted small">2k split is the average best 2k per 500m. 20' is the average best distance and its real split. Combined is the old number (each rower's best of the two).</p></div>`;
+    <div class="table-wrap"><table><tr><th>Group</th><th class="r">2k Time</th><th class="r">2k Split</th><th class="r">20' Meters</th><th class="r">20' Split</th><th class="r">Average Stars</th></tr>
+    ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td>
+      <td class="r">${g.twoK.avgTime === null ? '–' : fmtTime(g.twoK.avgTime)}</td>
+      <td class="r">${g.twoK.avgSplit === null ? '–' : fmtTime(g.twoK.avgSplit)}</td>
+      <td class="r">${g.twenty.avgMeters === null ? '–' : fmtNum(g.twenty.avgMeters)}</td>
+      <td class="r">${g.twenty.avgSplit === null ? '–' : fmtTime(g.twenty.avgSplit)}</td>
+      <td class="r">${g.avgStars === null ? '–' : g.avgStars.toFixed(1)}</td></tr>`).join('')}
+    </table></div></div>`;
 }
 
 /**
