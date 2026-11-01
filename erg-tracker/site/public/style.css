@@ -254,3 +254,13 @@ td .small, td .muted.small { white-space: normal; }
 .pace-bar .slow i { background: var(--series-2); }
 .pace-delta { text-align: right; }
 @media (max-width: 480px) { .pace-row { grid-template-columns: 6.2em 3em minmax(0, 1fr) 3em; gap: 6px; } .pace-row .muted { white-space: nowrap; } }
+
+/* Coach Settings page */
+.settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); align-items: start; }
+.settings-grid .card { margin-bottom: 0; display: grid; gap: 10px; }
+.settings-grid h2 { margin: 0; }
+.setting { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 2px 12px; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; }
+.setting.wide { grid-template-columns: 1fr; }
+.setting input { font: inherit; padding: 6px 10px; min-height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
+.setting.wide input { width: 100%; }
+.setting .muted, .setting .error { grid-column: 1 / -1; }

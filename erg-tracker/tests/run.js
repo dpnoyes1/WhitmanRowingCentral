@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -514,16 +514,20 @@ test('profile: school year rolls over July 1', () => {
 
 test('profile: roster columns appended and formulas reference them', () => {
   const h = g.HEADERS[g.TABS.ROSTER];
-  assert.strictEqual(h.slice(0, 10).join(), 'Athlete ID,Name,Slack member ID,Squad,Role,OYO group,OYO required min,OYO elite min,Active,Notes');
-  assert.strictEqual(h.slice(10).join(), 'Birthday,Grad year,Age group,School year');
+  assert.strictEqual(h.slice(0, 7).join(), 'Athlete ID,Name,Slack member ID,Squad,Role,Active,Notes');
+  assert.strictEqual(h.slice(7).join(), 'Birthday,Grad year,Age group,School year');
+  // a live Sheet that still has the retired OYO columns loses exactly those, last first
+  const live = JSON.parse(JSON.stringify(g.retiredColumnsIn_(['Athlete ID', 'Name', 'Slack member ID', 'Squad', 'Role', 'OYO group', 'OYO required min', 'OYO elite min', 'Active', 'Notes'], g.RETIRED_ROSTER_COLUMNS)));
+  assert.deepStrictEqual(live, [8, 7, 6]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredColumnsIn_(h, g.RETIRED_ROSTER_COLUMNS))), [], 'already migrated: nothing to drop');
   const letters = {}; h.forEach((x, i) => { letters[x] = g.columnLetter_(i + 1); });
-  assert.strictEqual(letters['Birthday'], 'K');
-  assert.strictEqual(letters['Grad year'], 'L');
+  assert.strictEqual(letters['Birthday'], 'H');
+  assert.strictEqual(letters['Grad year'], 'I');
   assert.strictEqual(g.columnLetter_(27), 'AA');
   const ag = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['Age group'](letters);
   const sy = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['School year'](letters);
-  assert.ok(ag.startsWith('={"Age group";') && ag.includes('K2:K') && ag.includes('DATE(YEAR(TODAY()),1,1)'), ag);
-  assert.ok(sy.startsWith('={"School year";') && sy.includes('L2:L') && sy.includes('MONTH(TODAY())>=7'), sy);
+  assert.ok(ag.startsWith('={"Age group";') && ag.includes('H2:H') && ag.includes('DATE(YEAR(TODAY()),1,1)'), ag);
+  assert.ok(sy.startsWith('={"School year";') && sy.includes('I2:I') && sy.includes('MONTH(TODAY())>=7'), sy);
   for (const f of [ag, sy]) {
     let depth = 0; for (const c of f) { if (c === '(') depth++; if (c === ')') depth--; assert.ok(depth >= 0, f); }
     assert.strictEqual(depth, 0, 'balanced parens: ' + f);
@@ -1273,6 +1277,78 @@ test('photos: Drive link, same-workout match, Logbook wins, feed says only that 
   const feed = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12))));
   assert.ok(feed.entries.some((e) => e.hasPhoto === true) && feed.entries.some((e) => e.hasPhoto === false));
   assert.ok(!JSON.stringify(feed).includes('SECRETFILEID'), 'no Drive link in the feed');
+});
+
+test('settings page: values are checked and stored the way the Sheet code reads them', () => {
+  const field = (k) => g.settingsPageField_(k);
+  const parse = (k, v) => JSON.parse(JSON.stringify(g.settingsParse_(field(k), v)));
+  assert.deepStrictEqual(parse('multiplier.Run', ' 1.2 '), { value: '1.2' });
+  assert.deepStrictEqual(parse('multiplier.Lifting', '0'), { value: '0' });
+  assert.ok(parse('multiplier.Run', '-1').error && parse('multiplier.Run', 'abc').error && parse('multiplier.Run', '9').error);
+  assert.deepStrictEqual(parse('oyo.standard.required', '60'), { value: '60' });
+  assert.ok(parse('oyo.standard.required', '60.5').error, 'whole minutes only');
+  assert.ok(parse('oyo.standard.required', '').error, 'a needed setting is never blanked');
+  assert.deepStrictEqual(parse('oyo.break.required', ''), { value: '' });
+  assert.deepStrictEqual(parse('gms.standard_s', '5:00.0'), { value: '300' });
+  assert.deepStrictEqual(parse('gms.standard_s', '4:58.5'), { value: '298.5' });
+  assert.ok(parse('gms.standard_s', '25:00').error && parse('gms.standard_s', 'fast').error);
+  assert.deepStrictEqual(parse('shift.early.start', '3:30 pm'), { value: '15:30' });
+  assert.deepStrictEqual(parse('shift.early.end', '17:30'), { value: '17:30' });
+  assert.deepStrictEqual(parse('shift.late.start', '5:00PM'), { value: '17:00' });
+  assert.ok(parse('shift.early.start', '3:30').error, 'a bare 3:30 could be morning or afternoon');
+  assert.ok(parse('shift.early.start', '25:00').error && parse('shift.early.start', '3:75 pm').error);
+  assert.deepStrictEqual(parse('shift.early.days', 'Mon, Wed,Fri-even'), { value: 'Mon,Wed,Fri-even' });
+  assert.ok(parse('shift.early.days', 'Monday').error && parse('shift.early.days', '').error);
+  assert.deepStrictEqual(parse('school_year_start', '7-1'), { value: '07-01' });
+  assert.ok(parse('school_year_start', '02-30').error && parse('school_year_start', 'July').error);
+  assert.deepStrictEqual(parse('season.winter_start', '2026-11-30'), { value: '2026-11-30' });
+  assert.ok(parse('season.winter_start', '11/30/2026').error);
+  assert.deepStrictEqual(parse('oyo.break.dates', '12/23/2026 - 1/3/2027 ; '), { value: '12/23/2026-1/3/2027' });
+  assert.ok(parse('oyo.break.dates', '12/23/2026').error && parse('oyo.break.dates', '1/3/2027-12/23/2026').error);
+  // what is stored reads back through the existing feed code
+  const r = g.feedBreakRanges_(parse('oyo.break.dates', '12/23/2026-1/3/2027').value);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(r)), [{ from: '2026-12-23', to: '2027-01-03' }]);
+  assert.strictEqual(g.settingsDisplay_(field('gms.standard_s'), '300'), '5:00.0');
+  assert.strictEqual(g.settingsDisplay_(field('shift.late.start'), '17:00'), '5:00 pm');
+  assert.strictEqual(g.settingsDisplay_(field('shift.early.end'), '15:30'), '3:30 pm');
+  assert.strictEqual(g.settingsDisplay_(field('shift.early.start'), '0:15'), '12:15 am');
+});
+
+test('settings page: only listed keys change, errors block everything, unchanged values are skipped', () => {
+  const settings = {}; g.SETTINGS_DEFAULTS.forEach((d) => { settings[d[0]] = d[1]; });
+  settings['site.coaches'] = 'Fake Coach 01/01/1980';
+  const plan = (changes) => JSON.parse(JSON.stringify(g.settingsPlanSave_(settings, changes)));
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.2' }), { updates: [], errors: {} }, 'same value is not a change');
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.1' }).updates, [{ key: 'multiplier.Run', old: '1.2', value: '1.1' }]);
+  // keys that carry sign-in dates, Slack IDs, addresses and ids are refused
+  ['site.coaches', 'site.test_password', 'slack.coach_ids', 'alerts.email', 'form.id', 'backup.folder_id', 'gms.exponent', 'nope'].forEach((k) => {
+    assert.deepStrictEqual(plan({ [k]: 'x' }).errors, { [k]: 'Not a setting you can change here.' }, k);
+  });
+  const bad = plan({ 'multiplier.Run': '1.1', 'load.jump_pct': 'lots' });
+  assert.ok(bad.errors['load.jump_pct'] && !bad.errors['multiplier.Run']);
+  // star bands must rise, judged on the values as they will be
+  assert.ok(plan({ 'gms.star3_pct': '94' }).errors['gms.star3_pct'], '3 stars below 2 stars');
+  assert.deepStrictEqual(plan({ 'gms.star2_pct': '90', 'gms.star3_pct': '93' }).errors, {});
+  // the page lists every field with a value, and none of the withheld keys
+  const view = JSON.parse(JSON.stringify(g.settingsPageView_({ 'multiplier.Run': '1.3' })));
+  const keys = view.reduce((a, s) => a.concat(s.fields.map((f) => f.key)), []);
+  assert.strictEqual(keys.length, new Set(keys).size);
+  assert.ok(keys.includes('multiplier.BikeErg') && keys.includes('oyo.standard.elite') && keys.includes('shift.late.days'));
+  assert.ok(!keys.some((k) => /^(site|slack|alerts|form|backup)\./.test(k)));
+  assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Run').value, '1.3');
+  assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Swim').value, '0.8', 'a missing row shows its default');
+  // every listed key exists in the defaults, so setup() always creates its row
+  const known = g.SETTINGS_DEFAULTS.map((d) => d[0]);
+  keys.forEach((k) => assert.ok(known.includes(k), k + ' has no default row'));
+});
+
+test('setup: retired Settings rows are found, last first, and no live setting is among them', () => {
+  const keys = ['Key', 'timezone', 'default_warmup', 'oyo.standard.required', 'oyo.performance.elite', 'gms.star2_s', 'gms.star2_pct', 'target.UT2.20min', 'target.Aerobic.20min', 'multiplier.Run'];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredRowsIn_(keys, g.RETIRED_SETTING_KEYS))), [8, 6, 5, 3]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredRowsIn_(['Key'], g.RETIRED_SETTING_KEYS))), []);
+  // a retired key must never be one the code still defaults or the Settings page edits
+  const live = g.SETTINGS_DEFAULTS.map((d) => d[0]);
+  g.RETIRED_SETTING_KEYS.forEach((k) => assert.ok(!live.includes(k) && !g.settingsPageField_(k), k + ' is still used'));
 });
 
 console.log(`${passed} tests passed`);

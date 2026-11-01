@@ -21,8 +21,7 @@ var TABS = {
 
 var HEADERS = {};
 HEADERS[TABS.ROSTER] = [
-  'Athlete ID', 'Name', 'Slack member ID', 'Squad', 'Role', 'OYO group',
-  'OYO required min', 'OYO elite min', 'Active', 'Notes',
+  'Athlete ID', 'Name', 'Slack member ID', 'Squad', 'Role', 'Active', 'Notes',
   'Birthday', 'Grad year', 'Age group', 'School year'
 ];
 HEADERS[TABS.ENTRIES] = [
