@@ -92,6 +92,8 @@ function ensureTab_(name) {
   var ss = ss_();
   var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   var headers = HEADERS[name];
+  if (name === TABS.ROSTER) dropRetiredRosterColumns_(sheet);
+  if (name === TABS.SETTINGS) dropRetiredSettingRows_(sheet);
   if (sheet.getMaxColumns() < headers.length) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
   }
@@ -118,6 +120,51 @@ function ensureTab_(name) {
   if (name === TABS.RACES) addRaceValidation_(sheet);
   if (name === TABS.WORKOUTS || name === TABS.SCHEDULE) addPlanValidation_(sheet, name);
   return sheet;
+}
+
+/** Roster columns retired 2026-11-01 (separate OYO groups were dropped); a live Sheet still has them until setup runs. */
+var RETIRED_ROSTER_COLUMNS = ['OYO group', 'OYO required min', 'OYO elite min'];
+
+/** Pure: 1-based columns of retired headers in a header row, last first, so deleting them one by one stays correct. */
+function retiredColumnsIn_(headerRow, retired) {
+  var out = [];
+  headerRow.forEach(function (h, i) { if (retired.indexOf(String(h)) >= 0) out.push(i + 1); });
+  return out.reverse();
+}
+
+/** Deletes the retired Roster columns from the live tab (a no-op once they are gone). */
+function dropRetiredRosterColumns_(sheet) {
+  if (sheet.getLastColumn() < 1) return;
+  var row = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  retiredColumnsIn_(row, RETIRED_ROSTER_COLUMNS).forEach(function (c) { sheet.deleteColumn(c); });
+}
+
+/**
+ * Settings rows nothing reads any more (cleanup 2026-11-01): the old OYO
+ * Performance group, the pre-star-band GMS seconds, the UT2/UT1/AT/AN target
+ * names (now Aerobic/Threshold/Anaerobic), and settings dropped earlier.
+ */
+var RETIRED_SETTING_KEYS = [
+  'default_warmup', 'spike_threshold_pct', 'modified_multiplier',
+  'oyo.performance.required', 'oyo.performance.elite',
+  'gms.star1_s', 'gms.star2_s', 'gms.star3_s',
+  'target.UT2.2000m', 'target.UT1.2000m', 'target.AT.2000m', 'target.AN.2000m',
+  'target.UT2.20min', 'target.UT1.20min', 'target.AT.20min', 'target.AN.20min'
+];
+
+/** Pure: 1-based rows (header is row 1) whose key is retired, last first, so deleting them one by one stays correct. */
+function retiredRowsIn_(keys, retired) {
+  var out = [];
+  keys.forEach(function (k, i) { if (i > 0 && retired.indexOf(String(k).trim()) >= 0) out.push(i + 1); });
+  return out.reverse();
+}
+
+/** Deletes the retired rows from the live Settings tab (a no-op once they are gone). */
+function dropRetiredSettingRows_(sheet) {
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+  var keys = sheet.getRange(1, 1, last, 1).getValues().map(function (r) { return r[0]; });
+  retiredRowsIn_(keys, RETIRED_SETTING_KEYS).forEach(function (r) { sheet.deleteRow(r); });
 }
 
 /** Writes the header-cell array formulas for computed columns and warns on manual edits. */

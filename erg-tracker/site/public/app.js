@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/insights, #/completion, #/balance, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
+// #/team, #/week, #/boards, #/stars, #/insights, #/completion, #/balance, #/settings, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -85,6 +85,7 @@ function setNav(active) {
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
   document.getElementById('nav-completion').hidden = !isCoach();
+  document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
 
@@ -1061,6 +1062,56 @@ function sessionsTable(rows) {
   </table></div>`;
 }
 
+// ---- coach settings (coaches only) ------------------------------------------
+// Replaces editing the Settings tab in the Sheet (David, 2026-11-01). The Sheet sends the
+// field list; only fields that changed are sent back, and the Sheet checks every value.
+
+async function showSettings() {
+  const v = await api('/api/settings');
+  setNav('settings');
+  const draw = (sections, saved) => {
+    app.innerHTML = `<div class="head"><div><h1>Settings</h1>
+      <p class="muted">Coaches only. Changes recalculate all history: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p></div>
+      <button class="btn" id="save" type="button" disabled>Save changes</button></div>
+      <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
+      <div class="settings-grid">${sections.map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
+        ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
+        ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
+          <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
+          ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
+        <section class="card"><h2>Access</h2>
+          <p class="small">The team password and the Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
+      </div>${footer(v.meta)}`;
+    wireFooter();
+    const save = document.getElementById('save');
+    const inputs = [...app.querySelectorAll('input[data-key]')];
+    const changed = () => inputs.filter((i) => i.value.trim() !== i.dataset.was);
+    inputs.forEach((i) => i.addEventListener('input', () => { save.disabled = !changed().length; }));
+    save.onclick = async () => {
+      const changes = Object.fromEntries(changed().map((i) => [i.dataset.key, i.value]));
+      const msg = document.getElementById('settings-msg');
+      app.querySelectorAll('[id^="e-"]').forEach((e) => { e.hidden = true; });
+      msg.hidden = true;
+      save.disabled = true; save.classList.add('busy');
+      try {
+        const res = await fetch('/api/settings', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes }) });
+        if (res.status === 401) { setSession(null); showLogin(); return; }
+        const body = await res.json().catch(() => ({}));
+        if (res.ok) return draw(body.sections, body.changed ? `Saved ${body.changed} change${body.changed === 1 ? '' : 's'}.` : 'Nothing was different.');
+        Object.entries(body.errors || {}).forEach(([k, m]) => {
+          const e = document.getElementById('e-' + k);
+          if (e) { e.textContent = m; e.hidden = false; }
+        });
+        msg.className = 'error'; msg.textContent = body.error || 'Something went wrong.'; msg.hidden = false;
+      } catch {
+        msg.className = 'error'; msg.textContent = 'Could not reach the site. Nothing was saved.'; msg.hidden = false;
+      }
+      save.classList.remove('busy'); save.disabled = false;
+    };
+  };
+  draw(v.sections, '');
+}
+
 // ---- router --------------------------------------------------------------
 
 async function route() {
@@ -1094,6 +1145,7 @@ async function route() {
     if (page === 'insights' && isCoach()) return await showInsights();
     if (page === 'completion' && isCoach()) return await showCompletion();
     if (page === 'balance' && isCoach()) return await showBalance();
+    if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
     if (page === 'athlete' && arg) return await showAthlete(decodeURIComponent(arg));
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));

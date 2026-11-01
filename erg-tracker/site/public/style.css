@@ -254,3 +254,13 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
 .cg-W { background: #eef2f5; color: #4a5763; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; margin-bottom: 10px; }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
+
+/* Coach Settings page */
+.settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); align-items: start; }
+.settings-grid .card { margin-bottom: 0; display: grid; gap: 10px; }
+.settings-grid h2 { margin: 0; }
+.setting { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 2px 12px; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; }
+.setting.wide { grid-template-columns: 1fr; }
+.setting input { font: inherit; padding: 6px 10px; min-height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
+.setting.wide input { width: 100%; }
+.setting .muted, .setting .error { grid-column: 1 / -1; }

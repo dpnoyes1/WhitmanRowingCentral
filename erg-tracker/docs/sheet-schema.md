@@ -10,7 +10,6 @@ Source of truth is `HEADERS` in `apps-script/Config.gs`. Times are seconds (`…
 | Slack member ID | For phase 2 group DMs |
 | Squad | Varsity / Novice / Alum. Alum (explicit, set by hand) appears only on the All Time boards: no plan, averages, team GMS, cards or season boards |
 | Role | Rower / Coxswain (coxswains only in "Entered by") |
-| OYO group, OYO required min, OYO elite min | Unused since 2026-10-27: every athlete uses Settings `oyo.standard.required` / `oyo.standard.elite`. Leave blank |
 | Active | Yes / No |
 | Notes | |
 | Birthday | Typed by coaches. Coach-only, never on the team site |
