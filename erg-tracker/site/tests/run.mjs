@@ -10,6 +10,7 @@ import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
+import { handleSettings } from '../functions/settings.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -1566,6 +1567,47 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(x.calls[1].url, 'https://slack.com/api/chat.update');
   assert.deepStrictEqual([x.calls[1].body.channel, x.calls[1].body.ts], ['D1', '1.2']);
   assert.ok(/Counted/.test(x.calls[1].body.text));
+});
+
+test('settings page: coaches only, goes to the Sheet with the feed key, errors come back per field', async () => {
+  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const sections = [{ id: 'rules', title: 'Rules', note: '', fields: [{ key: 'load.jump_pct', label: 'Load jump flag (%)', type: 'int', value: '15' }] }];
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/settings', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+
+  assert.strictEqual((await handleSettings(new Request('https://x/api/settings'), env, {})).status, 401);
+  assert.strictEqual((await handleSettings(new Request('https://x/api/settings', { headers: { cookie: athlete } }), env, {})).status, 403);
+  assert.strictEqual((await handleSettings(post(athlete, { changes: { 'load.jump_pct': '20' } }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+
+  let res = await handleSettings(new Request('https://x/api/settings', { headers: { cookie: coach } }), env, { fetchImpl: sheet({ status: 'ok', sections }) });
+  assert.deepStrictEqual((await res.json()).sections, sections);
+  assert.deepStrictEqual(calls[0], { action: 'settings-get', key: 'fake-key' });
+  assert.strictEqual(res.headers.get('cache-control'), 'private, no-store');
+
+  res = await handleSettings(post(coach, { changes: { 'load.jump_pct': '20' } }), env, { fetchImpl: sheet({ status: 'ok', changed: 1, sections }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { changed: 1, sections });
+  assert.deepStrictEqual(calls[1], { action: 'settings-save', changes: { 'load.jump_pct': '20' }, key: 'fake-key' });
+
+  res = await handleSettings(post(coach, { changes: { 'load.jump_pct': 'lots' } }), env, { fetchImpl: sheet({ status: 'invalid', errors: { 'load.jump_pct': 'Use a number.' } }) });
+  assert.strictEqual(res.status, 422);
+  assert.deepStrictEqual((await res.json()).errors, { 'load.jump_pct': 'Use a number.' });
+
+  const n = calls.length;
+  for (const bad of [{}, { changes: [] }, { changes: {} }, { changes: { a: 5 } }, { changes: { a: 'x'.repeat(201) } }]) {
+    assert.strictEqual((await handleSettings(post(coach, bad), env, { fetchImpl: sheet({}) })).status, 400);
+  }
+  assert.strictEqual((await handleSettings(post(coach, { changes: { a: '1' } }, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400, 'another site cannot save');
+  assert.strictEqual((await handleSettings(new Request('https://x/api/settings', { method: 'POST', headers: { cookie: coach, 'content-type': 'text/plain' }, body: '{"changes":{"a":"1"}}' }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual(calls.length, n, 'bad requests never reach the Sheet');
+
+  res = await handleSettings(post(coach, { changes: { 'load.jump_pct': '20' } }), env, { fetchImpl: async () => { throw new Error('down'); } });
+  assert.strictEqual(res.status, 502);
+  assert.ok(/nothing was saved/i.test((await res.json()).error));
 });
 
 photoTests(test);
