@@ -1342,4 +1342,13 @@ test('settings page: only listed keys change, errors block everything, unchanged
   keys.forEach((k) => assert.ok(known.includes(k), k + ' has no default row'));
 });
 
+test('setup: retired Settings rows are found, last first, and no live setting is among them', () => {
+  const keys = ['Key', 'timezone', 'default_warmup', 'oyo.standard.required', 'oyo.performance.elite', 'gms.star2_s', 'gms.star2_pct', 'target.UT2.20min', 'target.Aerobic.20min', 'multiplier.Run'];
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredRowsIn_(keys, g.RETIRED_SETTING_KEYS))), [8, 6, 5, 3]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredRowsIn_(['Key'], g.RETIRED_SETTING_KEYS))), []);
+  // a retired key must never be one the code still defaults or the Settings page edits
+  const live = g.SETTINGS_DEFAULTS.map((d) => d[0]);
+  g.RETIRED_SETTING_KEYS.forEach((k) => assert.ok(!live.includes(k) && !g.settingsPageField_(k), k + ' is still used'));
+});
+
 console.log(`${passed} tests passed`);
