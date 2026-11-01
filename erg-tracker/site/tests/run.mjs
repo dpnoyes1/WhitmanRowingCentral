@@ -416,6 +416,14 @@ test('api: 401 without a session, team and athlete with one', async () => {
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), tested.id);
   res = await handle(new Request('https://x/api/session', { headers: { cookie: her } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, tested.id);
+  // A cookie for an inactive or dropped athlete is refused on every route, not just /api/session.
+  for (const id of ['X1', 'NOPE1']) {
+    const gone = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), id);
+    for (const p of ['/api/session', '/api/team', '/api/leaderboards']) {
+      res = await handle(new Request('https://x' + p, { headers: { cookie: gone } }), env, deps);
+      assert.strictEqual(res.status, 401, p + ' for ' + id);
+    }
+  }
   res = await handle(new Request('https://x/api/athlete/' + tested.id, { headers: { cookie: her } }), env, deps);
   body = await res.json();
   assert.ok(body.own && body.gms.some((g) => g.gmsPct > 0));
