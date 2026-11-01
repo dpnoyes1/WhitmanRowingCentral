@@ -270,6 +270,49 @@ export function insightsView(feed, today) {
     missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, rowers: rows };
 }
 
+/** Completion grid: the last 10 practice days shown (David, 2026-11-01); the % is the whole school year. */
+export const COMPLETION_DAYS = 10;
+
+/**
+ * Coaches' grid, one row per active rower: season completion %, then one cell
+ * per recent practice day (F full, M modified, U made up, P missed with the
+ * make-up window open, O missed and closed, null = not expected), then OYO for
+ * last week and this week (done / short / open for a week still running).
+ */
+export function completionView(feed, today) {
+  const monday = weekStart(today);
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const windowDays = feed.settings.makeupWindowDays ?? 7;
+  const rowers = activeRowers(feed);
+  const records = rowers.map((a) => practiceRecord(a, feed, today));
+  const dates = [...new Set(records.flatMap((r) => r.map((x) => x.date)))].sort().slice(-COMPLETION_DAYS);
+  const weeks = [addDays(monday, -7), monday];
+  const mins = Object.fromEntries(weeks.map((w) => [w, weekMinutes(feed.entries, feed.settings, w)]));
+  const rows = rowers.map((a, i) => {
+    const byDate = new Map(records[i].map((r) => [r.date, r]));
+    const season = records[i].filter((r) => r.date >= yearStart);
+    const cell = (d) => {
+      const r = byDate.get(d);
+      if (!r) return null;
+      if (r.done) return r.how === 'Full' ? 'F' : r.how === 'Modified' ? 'M' : 'U';
+      return daysBetween(d, today) <= windowDays ? 'P' : 'O';
+    };
+    return {
+      ...athleteSummary(a),
+      pct: pct(season.filter((r) => r.done).length, season.length),
+      done: season.filter((r) => r.done).length, expected: season.length,
+      cells: dates.map(cell),
+      oyo: weeks.map((w) => {
+        const m = (mins[w][a.id] || { oyo: 0 }).oyo;
+        const goals = oyoGoals(a, w, feed.settings);
+        const st = oyoStatus(m, goals);
+        return { minutes: round(m), required: goals.oyoRequired, code: st !== 'short' ? 'F' : w === monday ? 'W' : 'O' };
+      })
+    };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  return { today, yearStart, weekStarts: weeks, dates, rows };
+}
+
 /** Missed practices in the last 4 weeks (David, 2026-10-28): 2 or more not made up is flagged. */
 export const MISSED_FLAG_AT = 2;
 export const MISSED_WINDOW_DAYS = 28;

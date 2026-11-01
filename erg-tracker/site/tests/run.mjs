@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, activeRowers, balanceView } from '../lib/views.mjs';
+import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -151,6 +151,21 @@ test('insights: missed practices not made up in the last 4 weeks', () => {
   assert.strictEqual(missedNotMadeUp([rec('2026-10-22', false)], '2026-10-23', 7).flag, false, 'one miss is not flagged');
   const v = insightsView(feed, TODAY);
   assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
+});
+
+test('completion grid: season % first, last 10 practice days, coaches only', async () => {
+  const v = completionView(feed, TODAY);
+  assert.strictEqual(v.rows.length, 30);
+  assert.ok(v.dates.length > 0 && v.dates.length <= 10, 'at most 10 practice days');
+  assert.deepStrictEqual([...v.dates], [...v.dates].sort());
+  const r = v.rows[0];
+  assert.strictEqual(r.cells.length, v.dates.length);
+  assert.strictEqual(r.oyo.length, 2);
+  const a = feed.athletes.find((x) => x.id === r.id);
+  const season = S.practiceRecord(a, feed, TODAY).filter((x) => x.date >= v.yearStart);
+  assert.strictEqual(r.expected, season.length, 'the % covers the whole school year, not just the shown days');
+  assert.ok(v.rows.every((x) => x.cells.every((c) => [null, 'F', 'M', 'U', 'P', 'O'].includes(c))));
+  assert.ok(!/birth|weight/i.test(JSON.stringify(v)));
 });
 
 test('team view: three groups, averages only', () => {

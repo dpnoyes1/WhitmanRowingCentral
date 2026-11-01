@@ -1,5 +1,5 @@
 // Whitman Rowing team site. Plain JS, hash routes:
-// #/team, #/week, #/boards, #/stars, #/insights, #/balance, #/settings, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
+// #/team, #/week, #/boards, #/stars, #/insights, #/completion, #/balance, #/settings, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
@@ -84,6 +84,7 @@ function setNav(active) {
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
+  document.getElementById('nav-completion').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
 }
@@ -959,6 +960,27 @@ async function showInsights() {
   wireFooter();
 }
 
+/** Coaches only: Name, season %, then the last practice days and OYO weeks. */
+async function showCompletion() {
+  const v = await api('/api/completion');
+  setNav('completion');
+  const sym = { F: '✓', M: 'M', U: 'MU', P: '!', O: '✕', W: '…' };
+  const name = { F: 'Full', M: 'Modified', U: 'Made up', P: 'Out, make-up open', O: 'Out, window closed', W: 'Week in progress' };
+  const cell = (c, title) => `<td class="c">${c ? `<span class="cg cg-${c}" title="${esc(title || name[c])}">${sym[c]}</span>` : ''}</td>`;
+  const head = (d) => `<th class="c">${fmtDate(d, { weekday: 'short' })}<br>${fmtDate(d, { month: 'short', day: 'numeric' })}</th>`;
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Completion</h1>
+    <p class="muted">Coaches only. Last ${v.dates.length} practice days, with each rower's completion % for the whole school year since ${fmtDate(v.yearStart)}.</p></div></div>
+    <div class="card"><div class="legend">${['F', 'M', 'U', 'P', 'O', 'W'].map((k) => `<span><span class="cg cg-${k}">${sym[k]}</span> ${name[k]}</span>`).join('')}</div>
+    <div class="table-wrap"><table class="insights grid">
+      <tr><th>Rower</th><th class="r">Season</th>${v.dates.map(head).join('')}${v.weekStarts.map((w, i) => `<th class="c">OYO<br>${i ? 'this wk' : 'last wk'}</th>`).join('')}</tr>
+      ${v.rows.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        <td class="r"><b>${r.pct === null ? '–' : r.pct + '%'}</b></td>${r.cells.map((c) => cell(c)).join('')}${r.oyo.map((o) => cell(o.code, `${o.minutes} of ${o.required} min`)).join('')}</tr>`).join('')}
+    </table></div>
+    <p class="muted small">Season %: practices logged or made up out of practices planned so far this school year. Any miss counts, with no excused split. OYO is not in the %. Hover a cell for details.</p></div>
+    ${footer(v.meta)}`;
+  wireFooter();
+}
+
 /** Coaches only: 100m vs 2k vs 20' in watts, beside Paul's Law and the tracker's rules. */
 async function showBalance() {
   const v = await api('/api/balance');
@@ -1181,6 +1203,7 @@ async function route() {
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'insights' && isCoach()) return await showInsights();
+    if (page === 'completion' && isCoach()) return await showCompletion();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
