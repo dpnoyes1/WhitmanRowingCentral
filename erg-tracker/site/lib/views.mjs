@@ -4,7 +4,7 @@
 
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
-  practiceStreak, openMakeups, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
+  practiceStreak, openMakeups, pacingFor, teamRank, gmsSummary, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
   resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal,
   balanceGap, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT
 } from './stats.mjs';
@@ -130,7 +130,13 @@ export function athleteView(feed, id, today) {
   const pbs = personalBests(id, feed.benchmarks, yearStart);
   const tests = feed.benchmarks.filter((b) => b.athleteId === id)
     .sort((x, y) => (x.date < y.date ? 1 : -1))
-    .map(testRow);
+    .map((b) => ({ ...testRow(b), id: b.id }));
+  const activeIds = activeRowers(feed).map((r) => r.id);
+  // Pacing look-back for her 2k and 20' tests, newest first (api.mjs sends it to her and coaches only).
+  const pacing = feed.benchmarks.filter((b) => b.athleteId === id && b.date <= today)
+    .sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : x.id < y.id ? 1 : -1))
+    .map(pacingFor).filter(Boolean);
+  const gms = athleteGms(feed, id, today);
 
   return {
     today, weekStart: monday, yearStart,
@@ -155,10 +161,14 @@ export function athleteView(feed, id, today) {
     zones: roundZones(zoneMinutes(mine, addDays(monday, -7 * (ZONE_WEEKS - 1)), today)),
     bests: TESTS.filter((t) => pbs[t]).map((t) => ({
       test: t, count: pbs[t].count,
-      season: pbs[t].season && testRow(pbs[t].season), allTime: testRow(pbs[t].allTime)
+      season: pbs[t].season && { ...testRow(pbs[t].season), id: pbs[t].season.id }, allTime: { ...testRow(pbs[t].allTime), id: pbs[t].allTime.id },
+      rank: teamRank(t, id, feed.benchmarks, activeIds)
     })),
     tests,
-    gms: athleteGms(feed, id, today),
+    gms,
+    gmsSummary: gmsSummary(gms),
+    pacing,
+    madeUp: record.filter((r) => r.how === 'Make-up').slice(-3).reverse().map((r) => ({ date: r.date, makeupDate: r.makeupDate })),
     insights: athleteInsights(feed, a, mine, record, weeks, yearStart, today),   // her own page and coaches only (api.mjs)
     todayPlan: (weekView(feed, today, id, { results: 'own' }).days.find((d) => d.day === today) || { sessions: [] }).sessions,   // her own page and coaches only (api.mjs strips it for anyone else)
     sessions: mine.filter((e) => e.date <= today)

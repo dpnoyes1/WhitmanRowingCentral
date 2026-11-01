@@ -56,9 +56,9 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const { todayPlan, insights, workouts, ...rest } = view;
+    const { todayPlan, insights, workouts, pacing, gmsSummary, ...rest } = view;
     return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
-      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], own, coach, meta });
+      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, own, coach, meta });
   }
   // One logged workout: her own (or any, for coaches). Splits and targets come with it (David, 2026-10-25).
   const wk = path.match(/^\/api\/workout\/([A-Za-z0-9_-]+)$/);

@@ -274,6 +274,7 @@ function siteFeed(inputs, asOf) {
       timeS: feedNum_(b['Time s']), meters: feedNum_(b.Meters), avgRate: rate,
       dateApprox: /import/i.test(String(b.Source || '')),   // imported history: the date is a placeholder inside the school year
       valid: !(b.Test === '30r20' && rate !== null && rate > rateCap),
+      splits: feedSplits_(b['Splits s']),   // seconds per split as typed on the form; the site shows them to the athlete and coaches only
       gmsPct: null, stars: null, nextStar: null
     };
     if (result && b.Test !== '30r20') {
@@ -454,4 +455,11 @@ function feedLogged_(inputs, yearStart, s) {
 /** Test keys as stored in Benchmarks ('100m', '500m', '2000m', '20min', '30r20'). */
 function feedTestKeys_() {
   return Object.keys(BENCHMARK_TESTS).map(function (label) { return BENCHMARK_TESTS[label].key || label; });
+}
+
+/** "114.8,117.4,..." (Benchmarks "Splits s") to a list of seconds; blank or unreadable gives []. */
+function feedSplits_(text) {
+  return String(text === null || text === undefined ? '' : text).split(',')
+    .map(function (x) { return Number(String(x).trim()); })
+    .filter(function (x) { return isFinite(x) && x > 0; });
 }
