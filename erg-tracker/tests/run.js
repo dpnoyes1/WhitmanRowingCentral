@@ -99,6 +99,9 @@ test('parse practice with intervals', () => {
     [i3.WORK_TIME]: '10:00.0', [i3.WORK_M]: '2675', [i3.ANOTHER]: 'No, that was the last one',
     [Q.COOLDOWN]: '5:00', [Q.RPE]: '6', [Q.DRAG]: '105', [Q.WARMUP_M]: '2000', [Q.COOLDOWN_M]: ''
   };
+  // Two active athletes with one name: refuse, never guess.
+  const twin = ctxFor(); twin.athleteIds = { 'Jane Smith': null };
+  assert.throws(() => g.parseSubmission(ans, twin), /Two active athletes are named "Jane Smith"/);
   const r = g.parseSubmission(ans, ctxFor());
   assert.strictEqual(r.entry['Session type'], 'Practice');
   assert.strictEqual(r.entry['Status'], 'Full');

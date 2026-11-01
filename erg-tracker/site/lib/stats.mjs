@@ -443,3 +443,64 @@ export function balanceGap(athleteId, benchmarks, today, hi, lo) {
   const avgRatio = pairs.reduce((s, p) => s + p.weight * p.ratio, 0) / total;
   return { best, avgRatio, pairs: pairs.length, weak: best.weight < BALANCE_WEAK_WEIGHT };
 }
+
+// ---- test pacing post-mortem (David, 2026-11-01) --------------------------------
+// A look-back at how a 2k or 20' was paced, from the split list stored with the
+// test (Benchmarks "Splits s"). Never a plan or a target.
+
+export const PACING_TESTS = ['2000m', '20min'];
+export const PACING_EVEN_S = 1;   // a split within this many seconds of her average counts as even
+
+/** Her splits, each against her own average. Null when the test has no usable split list. */
+export function pacingFor(b) {
+  if (!b || !PACING_TESTS.includes(b.test) || !b.valid || !Array.isArray(b.splits)) return null;
+  const sp = b.splits.filter((x) => Number.isFinite(x) && x > 0);
+  if (sp.length < 2) return null;
+  const avg = sp.reduce((s, x) => s + x, 0) / sp.length;
+  const round1 = (x) => Math.round(x * 10) / 10;
+  const named = b.test === '2000m' && sp.length === 4;
+  const segments = sp.map((s, i) => ({
+    label: named ? `${i * 500}–${(i + 1) * 500}` : `Part ${i + 1}`,
+    splitS: round1(s), deltaS: round1(s - avg)
+  }));
+  return { id: b.id, test: b.test, date: b.date, avgS: round1(avg), segments, read: pacingRead(sp, avg) };
+}
+
+/** One plain sentence from fixed rules: how it started, what happened in the middle, how it finished. */
+export function pacingRead(sp, avg) {
+  const first = sp[0] - avg, last = sp[sp.length - 1] - avg;
+  const mid = sp.length > 2 ? sp.slice(1, -1).reduce((s, x) => s + x, 0) / (sp.length - 2) - avg : 0;
+  if (sp.every((x) => Math.abs(x - avg) < PACING_EVEN_S)) return `Even pace: every split within ${PACING_EVEN_S} second of your average.`;
+  const start = first <= -PACING_EVEN_S ? 'Fast start' : first >= PACING_EVEN_S ? 'Slow start' : 'Even start';
+  const middle = mid >= PACING_EVEN_S ? ', a fade through the middle' : mid <= -PACING_EVEN_S ? ', quicker through the middle' : '';
+  const finish = last >= PACING_EVEN_S ? ', then slower at the end' : last <= -PACING_EVEN_S ? ', then finished strong' : ', then held to the finish';
+  return start + middle + finish + '.';
+}
+
+/**
+ * Where her best result stands among active rowers (1 = fastest or farthest),
+ * counting each rower's best valid result for the test, all time. Null when she
+ * is not an active rower or has no valid result.
+ */
+export function teamRank(test, athleteId, benchmarks, activeIds) {
+  if (!activeIds.includes(athleteId)) return null;
+  const best = {};
+  benchmarks.forEach((b) => {
+    if (b.test !== test || !b.valid || !resultValue(b) || !activeIds.includes(b.athleteId)) return;
+    if (!best[b.athleteId] || better(test, b, best[b.athleteId])) best[b.athleteId] = b;
+  });
+  const mine = best[athleteId];
+  if (!mine) return null;
+  const ahead = Object.values(best).filter((b) => better(test, b, mine)).length;
+  return { pos: ahead + 1, of: Object.keys(best).length };
+}
+
+/** One sentence naming her strongest and weakest GMS test this season, from fixed rules. Null with fewer than two tests. */
+export function gmsSummary(gms, labels = TEST_LABELS) {
+  const list = (gms || []).filter((g) => g.gmsPct !== null && g.gmsPct !== undefined);
+  if (list.length < 2) return null;
+  const sorted = list.slice().sort((x, y) => y.gmsPct - x.gmsPct);
+  const top = sorted[0], low = sorted[sorted.length - 1];
+  if (top.gmsPct - low.gmsPct < 1) return 'Your tests are all close to the same level.';
+  return `${labels[top.test]} is your strongest test against the standard; ${labels[low.test]} has the most room to grow.`;
+}

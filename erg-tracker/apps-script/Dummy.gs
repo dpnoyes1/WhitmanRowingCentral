@@ -293,6 +293,10 @@ function buildDummyData(opts) {
     var meters = Math.round(1200 * 500 / split20);
     var splits = '';
     var timeS = '';
+    if (!timed) {
+      // Four 5-minute blocks, a little quicker at the start and the finish.
+      splits = [split20 - 0.8, split20 + 0.3, split20 + 0.6, split20 - 0.4].map(roundTenths_).join(',');
+    }
     if (timed) {
       var s = [split2k - rng.range(0.5, 2.5), split2k + rng.range(0.3, 1.5), split2k + rng.range(0.5, 2)];
       s = s.map(roundTenths_);

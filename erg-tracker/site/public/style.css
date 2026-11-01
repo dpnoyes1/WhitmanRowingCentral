@@ -255,6 +255,19 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
 .legend { display: flex; flex-wrap: wrap; gap: 14px; font-size: 13px; margin-bottom: 10px; }
 .legend > span { display: inline-flex; align-items: center; gap: 6px; }
 
+/* Test pacing look-back and the GMS summary line */
+.callout { background: var(--track); border-radius: 8px; padding: 10px 12px; font-size: .875rem; line-height: 1.5; margin: 12px 0 8px; }
+.pace-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
+.pace-row { display: grid; grid-template-columns: 5.5em 3.2em minmax(0, 1fr) 3.2em; gap: 8px; align-items: center; font-size: .8125rem; margin: 6px 0; }
+.pace-bar { display: flex; height: 16px; }
+.pace-bar .half { flex: 1; display: flex; }
+.pace-bar .fast { justify-content: flex-end; border-right: 1px solid var(--text); }
+.pace-bar i { display: block; height: 100%; }
+.pace-bar .fast i { background: var(--series-1); }
+.pace-bar .slow i { background: var(--series-2); }
+.pace-delta { text-align: right; }
+@media (max-width: 480px) { .pace-row { grid-template-columns: 6.2em 3em minmax(0, 1fr) 3em; gap: 6px; } .pace-row .muted { white-space: nowrap; } }
+
 /* Coach Settings page */
 .settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); align-items: start; }
 .settings-grid .card { margin-bottom: 0; display: grid; gap: 10px; }

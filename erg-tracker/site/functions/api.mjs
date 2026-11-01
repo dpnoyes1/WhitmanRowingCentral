@@ -22,10 +22,11 @@ export async function handle(req, envFn, deps = {}) {
   const data = feed.data;
   const today = deps.today || todayIn(data.settings.timezone || 'America/New_York');
   const meta = { generatedAt: data.generatedAt, stale: feed.stale };
+  // A cookie lasts a year; an athlete dropped from the Roster or set inactive is signed out of every route, not just the page.
+  if (who.kind === 'athlete' && !data.athletes.some((x) => x.id === who.id && x.active)) return json({ error: 'signin' }, 401);
 
   if (path === '/api/session') {
     const a = who.kind === 'athlete' && data.athletes.find((x) => x.id === who.id);
-    if (who.kind === 'athlete' && !a) return json({ error: 'signin' }, 401);   // dropped from the Roster
     return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
@@ -58,9 +59,9 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const { todayPlan, insights, workouts, ...rest } = view;
+    const { todayPlan, insights, workouts, pacing, gmsSummary, ...rest } = view;
     return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
-      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], own, coach, meta });
+      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, own, coach, meta });
   }
   // One logged workout: her own (or any, for coaches). Splits and targets come with it (David, 2026-10-25).
   const wk = path.match(/^\/api\/workout\/([A-Za-z0-9_-]+)$/);

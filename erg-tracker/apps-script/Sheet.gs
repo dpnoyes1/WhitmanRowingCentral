@@ -93,11 +93,22 @@ function activeRoster_(includeCoxswains) {
   });
 }
 
-/** Name -> Athlete ID across the whole roster (inactive too, so history resolves). */
+/**
+ * Name -> Athlete ID across the whole roster (inactive too, so history resolves).
+ * Two active athletes with one name map to null, so a log is refused instead of
+ * landing on the wrong one; an inactive row never hides an active one.
+ */
 function athleteIdByName_() {
-  var map = {};
+  var map = {}, active = {};
   readObjects_(TABS.ROSTER).forEach(function (r) {
-    if (r.Name) map[String(r.Name).trim()] = r['Athlete ID'];
+    if (!r.Name) return;
+    var name = String(r.Name).trim(), isAct = isActive_(r.Active);
+    if (name in map && (active[name] || !isAct)) {
+      if (active[name] && isAct) map[name] = null;
+      return;
+    }
+    map[name] = r['Athlete ID'];
+    active[name] = isAct;
   });
   return map;
 }

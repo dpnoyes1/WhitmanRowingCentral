@@ -104,6 +104,7 @@ function parseSubmission(answers, ctx) {
 
   var athlete = a(Q.ATHLETE);
   var athleteId = ctx.athleteIds[athlete];
+  if (athleteId === null) throw new Error('Two active athletes are named "' + athlete + '" on the Roster. Make the names different, then process the response again.');
   if (!athleteId) throw new Error('Athlete "' + athlete + '" is not on the Roster');
   var base = {
     'Submitted at': ctx.submittedAt,
