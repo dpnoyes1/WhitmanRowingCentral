@@ -514,16 +514,20 @@ test('profile: school year rolls over July 1', () => {
 
 test('profile: roster columns appended and formulas reference them', () => {
   const h = g.HEADERS[g.TABS.ROSTER];
-  assert.strictEqual(h.slice(0, 10).join(), 'Athlete ID,Name,Slack member ID,Squad,Role,OYO group,OYO required min,OYO elite min,Active,Notes');
-  assert.strictEqual(h.slice(10).join(), 'Birthday,Grad year,Age group,School year');
+  assert.strictEqual(h.slice(0, 7).join(), 'Athlete ID,Name,Slack member ID,Squad,Role,Active,Notes');
+  assert.strictEqual(h.slice(7).join(), 'Birthday,Grad year,Age group,School year');
+  // a live Sheet that still has the retired OYO columns loses exactly those, last first
+  const live = JSON.parse(JSON.stringify(g.retiredColumnsIn_(['Athlete ID', 'Name', 'Slack member ID', 'Squad', 'Role', 'OYO group', 'OYO required min', 'OYO elite min', 'Active', 'Notes'], g.RETIRED_ROSTER_COLUMNS)));
+  assert.deepStrictEqual(live, [8, 7, 6]);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.retiredColumnsIn_(h, g.RETIRED_ROSTER_COLUMNS))), [], 'already migrated: nothing to drop');
   const letters = {}; h.forEach((x, i) => { letters[x] = g.columnLetter_(i + 1); });
-  assert.strictEqual(letters['Birthday'], 'K');
-  assert.strictEqual(letters['Grad year'], 'L');
+  assert.strictEqual(letters['Birthday'], 'H');
+  assert.strictEqual(letters['Grad year'], 'I');
   assert.strictEqual(g.columnLetter_(27), 'AA');
   const ag = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['Age group'](letters);
   const sy = g.COMPUTED_COLUMNS[g.TABS.ROSTER]['School year'](letters);
-  assert.ok(ag.startsWith('={"Age group";') && ag.includes('K2:K') && ag.includes('DATE(YEAR(TODAY()),1,1)'), ag);
-  assert.ok(sy.startsWith('={"School year";') && sy.includes('L2:L') && sy.includes('MONTH(TODAY())>=7'), sy);
+  assert.ok(ag.startsWith('={"Age group";') && ag.includes('H2:H') && ag.includes('DATE(YEAR(TODAY()),1,1)'), ag);
+  assert.ok(sy.startsWith('={"School year";') && sy.includes('I2:I') && sy.includes('MONTH(TODAY())>=7'), sy);
   for (const f of [ag, sy]) {
     let depth = 0; for (const c of f) { if (c === '(') depth++; if (c === ')') depth--; assert.ok(depth >= 0, f); }
     assert.strictEqual(depth, 0, 'balanced parens: ' + f);

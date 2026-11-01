@@ -92,6 +92,7 @@ function ensureTab_(name) {
   var ss = ss_();
   var sheet = ss.getSheetByName(name) || ss.insertSheet(name);
   var headers = HEADERS[name];
+  if (name === TABS.ROSTER) dropRetiredRosterColumns_(sheet);
   if (sheet.getMaxColumns() < headers.length) {
     sheet.insertColumnsAfter(sheet.getMaxColumns(), headers.length - sheet.getMaxColumns());
   }
@@ -118,6 +119,23 @@ function ensureTab_(name) {
   if (name === TABS.RACES) addRaceValidation_(sheet);
   if (name === TABS.WORKOUTS || name === TABS.SCHEDULE) addPlanValidation_(sheet, name);
   return sheet;
+}
+
+/** Roster columns retired 2026-11-01 (separate OYO groups were dropped); a live Sheet still has them until setup runs. */
+var RETIRED_ROSTER_COLUMNS = ['OYO group', 'OYO required min', 'OYO elite min'];
+
+/** Pure: 1-based columns of retired headers in a header row, last first, so deleting them one by one stays correct. */
+function retiredColumnsIn_(headerRow, retired) {
+  var out = [];
+  headerRow.forEach(function (h, i) { if (retired.indexOf(String(h)) >= 0) out.push(i + 1); });
+  return out.reverse();
+}
+
+/** Deletes the retired Roster columns from the live tab (a no-op once they are gone). */
+function dropRetiredRosterColumns_(sheet) {
+  if (sheet.getLastColumn() < 1) return;
+  var row = sheet.getRange(1, 1, 1, sheet.getLastColumn()).getValues()[0];
+  retiredColumnsIn_(row, RETIRED_ROSTER_COLUMNS).forEach(function (c) { sheet.deleteColumn(c); });
 }
 
 /** Writes the header-cell array formulas for computed columns and warns on manual edits. */

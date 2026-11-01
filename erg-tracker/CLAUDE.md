@@ -48,7 +48,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 
 ## OYO goals
 
-Weekly weighted minutes. Required 60 / Elite 120 for every athlete (Settings `oyo.standard.*`). No separate Elite or Performance group and no per-athlete override (David, 2026-10-27); the Roster columns OYO group / OYO required min / OYO elite min stay in the sheet for the header contract but are not read. Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
+Weekly weighted minutes. Required 60 / Elite 120 for every athlete (Settings `oyo.standard.*`). No separate Elite or Performance group and no per-athlete override (David, 2026-10-27); the Roster columns OYO group / OYO required min / OYO elite min were deleted (David, 2026-11-01); `setup()` removes them from a live Sheet (`dropRetiredRosterColumns_`), so run Set up Sheet and Form right after the Apps Script push. Missing Required counts against completion. Minutes above Elite show in totals but earn no extra recognition. OYO goal progress is public.
 
 Break weeks (David, 2026-10-23): the one winter break (Christmas) has no practices or scheduled workouts, so everything is OYO. Settings `oyo.break.dates` holds the range(s) and `oyo.break.required` / `oyo.break.elite` the goals for everyone in a break week (blank = her usual goal). A Mon-Sun week with 4+ break days is a break week (`isBreakWeek` / `oyoGoals` in `site/lib/stats.mjs`). Real dates go in Settings only.
 

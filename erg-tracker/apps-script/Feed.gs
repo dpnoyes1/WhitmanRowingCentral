@@ -199,7 +199,7 @@ function siteFeed(inputs, asOf) {
   var multipliers = {};
   ACTIVITIES.forEach(function (a) { multipliers[a[0]] = num('multiplier.' + a[0], a[1]); });
   // One OYO Required and Elite for every athlete (David, 2026-10-27). The old
-  // Roster columns OYO group / required / elite are no longer read.
+  // Roster columns for OYO group / required / elite were removed 2026-11-01.
   var oyoRequired = num('oyo.standard.required', 60);
   var oyoElite = num('oyo.standard.elite', 120);
 
