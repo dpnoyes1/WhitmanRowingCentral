@@ -185,7 +185,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
       assert.strictEqual(b.allTime.result, best);
     });
-    const { gms, ...rest } = v;
+    const { gms, gmsSummary, pacing, ...rest } = v;
     assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(rest)), a.name);
     assert.ok(!/"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(gms)), a.name);
   });
@@ -316,6 +316,38 @@ test('own-page GMS: next star in time or meters, never weight', () => {
   });
 });
 
+test('pacing: each split against her own average, one fixed-rule sentence', () => {
+  const p = S.pacingFor({ id: 'B1', test: '2000m', valid: true, date: '2026-01-10', splits: [114.8, 117.4, 117.9, 114.9] });
+  assert.strictEqual(p.avgS, 116.3);
+  assert.deepStrictEqual(p.segments.map((x) => x.label), ['0–500', '500–1000', '1000–1500', '1500–2000']);
+  assert.deepStrictEqual(p.segments.map((x) => x.deltaS), [-1.5, 1.2, 1.7, -1.3]);
+  assert.ok(p.segments[0].deltaS < 0 && p.segments[2].deltaS > 0);
+  assert.strictEqual(p.read, 'Fast start, a fade through the middle, then finished strong.');
+  assert.strictEqual(S.pacingFor({ id: 'B2', test: '2000m', valid: true, date: '2026-01-10', splits: [116, 116.4, 115.9, 116.2] }).read, 'Even pace: every split within 1 second of your average.');
+  assert.strictEqual(S.pacingFor({ id: 'B3', test: '2000m', valid: true, date: '2026-01-10', splits: [118, 117, 116, 114] }).read, 'Slow start, then finished strong.');
+  assert.strictEqual(S.pacingFor({ id: 'B4', test: '20min', valid: true, date: '2026-01-10', splits: [110, 111, 112] }).segments[0].label, 'Part 1');
+  // No pacing for short tests, tests with no split list, or a single split.
+  assert.strictEqual(S.pacingFor({ id: 'B5', test: '100m', valid: true, splits: [18.6, 18.7] }), null);
+  assert.strictEqual(S.pacingFor({ id: 'B6', test: '2000m', valid: true, splits: [] }), null);
+  assert.strictEqual(S.pacingFor({ id: 'B7', test: '2000m', valid: true, splits: [116] }), null);
+});
+
+test('team rank: best valid result among active rowers; null for others', () => {
+  const b = (athleteId, timeS) => ({ athleteId, test: '2000m', timeS, valid: true });
+  const list = [b('A', 450), b('B', 440), b('C', 460), b('A', 470), b('X', 430)];
+  assert.deepStrictEqual(S.teamRank('2000m', 'A', list, ['A', 'B', 'C']), { pos: 2, of: 3 });
+  assert.strictEqual(S.teamRank('2000m', 'X', list, ['A', 'B', 'C']), null);
+  assert.strictEqual(S.teamRank('20min', 'A', list, ['A']), null);
+  const v = athleteView(feed, starsView(feed, TODAY).rowers.find((r) => r.stars !== null).id, TODAY);
+  v.bests.forEach((x) => assert.ok(x.rank === null || (x.rank.pos >= 1 && x.rank.pos <= x.rank.of)));
+});
+
+test('GMS summary: strongest and weakest test, none with fewer than two', () => {
+  assert.strictEqual(S.gmsSummary([{ test: '2000m', gmsPct: 99 }]), null);
+  assert.match(S.gmsSummary([{ test: '2000m', gmsPct: 99.5 }, { test: '20min', gmsPct: 98.4 }, { test: '500m', gmsPct: 98.8 }]), /^2k is your strongest .*20' has the most room to grow\.$/);
+  assert.match(S.gmsSummary([{ test: '2000m', gmsPct: 99.5 }, { test: '20min', gmsPct: 99.1 }]), /close to the same level/);
+});
+
 test('auth: tokens, cookies, password', () => {
   const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' })[k];
   const secret = A.sessionSecret(env);
@@ -431,6 +463,14 @@ test('api: 401 without a session, team and athlete with one', async () => {
   res = await handle(new Request('https://x/api/athlete/' + mate.id, { headers: { cookie: her } }), env, deps);
   const mateText = await res.text();
   assert.ok(!/gmsPct|nextStar/.test(mateText) && JSON.parse(mateText).coach === false);
+  // Pacing (splits) goes to the athlete herself and coaches; a teammate gets none.
+  const mateBody = JSON.parse(mateText);
+  assert.deepStrictEqual(mateBody.pacing, []);
+  assert.strictEqual(mateBody.gmsSummary, null);
+  assert.ok(athleteView(feed, mate.id, TODAY).pacing.length > 0, 'the view has pacing for the test setup');
+  assert.ok(body.pacing.length > 0 && body.pacing.every((p) => p.segments.length >= 2));
+  res = await handle(new Request('https://x/api/athlete/' + mate.id, { headers: { cookie } }), env, deps);
+  assert.ok((await res.json()).pacing.length > 0, 'coaches see any athlete\'s pacing');
   res = await handle(new Request('https://x/api/week', { headers: { cookie: her } }), env, deps);
   assert.strictEqual((await res.json()).athlete.id, tested.id);
   // Star rankings are coaches only.
