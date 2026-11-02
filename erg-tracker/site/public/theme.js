@@ -1,10 +1,9 @@
-// Light / dark switch (David, 2026-10-25). No saved choice = follow the device
-// (style.css handles that). A choice is remembered on this device only.
+// Light / dark switch (David, 2026-10-25). Dark is the default (David, 2026-11-02): no saved
+// choice = dark, whatever the device prefers. A choice is remembered on this device only.
 // Loaded in <head> so the theme is set before the page paints.
 (function () {
-  const KEY = 'wrc.theme';   // 'light' | 'dark'; absent = follow the device
+  const KEY = 'wrc.theme';   // 'light' | 'dark'; absent = dark
   const root = document.documentElement;
-  const systemDark = () => window.matchMedia('(prefers-color-scheme: dark)').matches;
 
   function saved() {
     try { return localStorage.getItem(KEY); } catch { return null; }
@@ -14,10 +13,10 @@
   }
 
   const choice = saved();
-  if (choice === 'light' || choice === 'dark') root.dataset.theme = choice;
+  root.dataset.theme = choice === 'light' ? 'light' : 'dark';
 
   function current() {
-    return root.dataset.theme || (systemDark() ? 'dark' : 'light');
+    return root.dataset.theme === 'light' ? 'light' : 'dark';
   }
 
   function paint(button) {

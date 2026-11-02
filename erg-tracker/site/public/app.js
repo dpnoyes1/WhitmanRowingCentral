@@ -80,29 +80,62 @@ function setNav(active) {
   document.getElementById('nav').hidden = false;
   document.getElementById('menu').hidden = false;
   document.getElementById('log-top').hidden = false;
+  document.body.classList.add('authed');
+  document.getElementById('tabbar').hidden = false;
   closeMenu();
   const m = me();
   const link = document.getElementById('nav-me');
   link.hidden = !m;
-  if (m) link.textContent = m.name.split(' ')[0];
+  document.getElementById('tab-me').hidden = !m;
+  if (m) link.querySelector('.t').textContent = m.name.split(' ')[0];
+  const who = m ? m.name : (isCoach() ? 'Coach' : '');
+  const card = document.getElementById('usercard');
+  card.hidden = !who;
+  if (who) {
+    document.getElementById('user-name').textContent = who;
+    document.getElementById('user-role').textContent = isCoach() ? 'Coach' : 'Athlete';
+    document.getElementById('user-av').textContent = who.trim().charAt(0).toUpperCase();
+  }
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
   document.getElementById('nav-completion').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
-  document.querySelectorAll('#nav a').forEach((a) => a.classList.toggle('on', a.dataset.nav === active));
+  document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
+    const on = a.dataset.nav === active;
+    a.classList.toggle('on', on);
+    if (on) a.setAttribute('aria-current', 'page'); else a.removeAttribute('aria-current');
+  });
 }
 
-/** Phone menu (David, 2026-10-28): the links fold into a hamburger under 720px; CSS ignores it on wider screens. */
-function closeMenu() {
-  document.querySelector('.top').classList.remove('open');
-  document.getElementById('menu').setAttribute('aria-expanded', 'false');
+/** Side navigation (David, 2026-11-02): a panel on the left on wide screens; on phones it slides in over the page from the menu button or the More tab. */
+function setMenu(open) {
+  document.body.classList.toggle('menu-open', open);
+  for (const id of ['menu', 'menu-tab']) document.getElementById(id).setAttribute('aria-expanded', String(open));
 }
-document.getElementById('menu').onclick = () => {
-  const open = document.querySelector('.top').classList.toggle('open');
-  document.getElementById('menu').setAttribute('aria-expanded', String(open));
+function closeMenu() { setMenu(false); }
+for (const id of ['menu', 'menu-tab']) {
+  document.getElementById(id).onclick = () => setMenu(!document.body.classList.contains('menu-open'));
+}
+document.getElementById('scrim').onclick = closeMenu;
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape') closeMenu(); });
+document.getElementById('side').addEventListener('click', (ev) => { if (ev.target.closest('a')) closeMenu(); });
+
+/** Icon-only sidebar on wide screens, remembered on this device only. */
+const SIDE_KEY = 'wrc.side';
+function setCollapsed(on) {
+  document.body.classList.toggle('collapsed', on);
+  const b = document.getElementById('collapse');
+  b.setAttribute('aria-pressed', String(on));
+  const label = on ? 'Expand sidebar' : 'Collapse sidebar';
+  b.title = label; b.setAttribute('aria-label', label);
+}
+try { setCollapsed(localStorage.getItem(SIDE_KEY) === '1'); } catch { /* private mode */ }
+document.getElementById('collapse').onclick = () => {
+  const on = !document.body.classList.contains('collapsed');
+  setCollapsed(on);
+  try { localStorage.setItem(SIDE_KEY, on ? '1' : '0'); } catch { /* private mode */ }
 };
-document.getElementById('nav').addEventListener('click', (ev) => { if (ev.target.closest('a')) closeMenu(); });
 
 /**
  * Today's practice status above every signed-in page (David, 2026-11-02), read live from the
@@ -229,7 +262,7 @@ function weeklyChart(rows, caption, load = null) {
 function zoneBar(z) {
   const zones = ['Aerobic', 'Threshold', 'Anaerobic'];
   const total = zones.reduce((s, k) => s + (z[k] || 0), 0);
-  if (!total) return '<p class="muted">No sessions logged yet.</p>';
+  if (!total) return '<p class="empty">No sessions logged yet.</p>';
   const seg = zones.map((k, i) => {
     const share = (100 * (z[k] || 0)) / total;
     return share > 0 ? `<div style="flex:${share};background:var(--seq-${i + 1})" data-tip="${k}: ${fmtMin(z[k])} (${Math.round(share)}%)"></div>` : '';
@@ -245,7 +278,7 @@ function zoneBar(z) {
  */
 function lineChart(points, { caption, fmt, invert = false, pad = 1, tipLabel, min = null, max = null }) {
   const have = points.filter((p) => p.value !== null && p.value !== undefined);
-  if (!have.length) return '<p class="muted">Nothing logged yet.</p>';
+  if (!have.length) return '<p class="empty">Nothing logged yet.</p>';
   const narrow = window.innerWidth < 600;
   const W = narrow ? 380 : 640, H = 150, padL = 44, padB = 24, padT = 12, padR = 8;
   const lo = min ?? Math.min(...have.map((p) => p.value)) - pad, hi = max ?? Math.max(...have.map((p) => p.value)) + pad;
@@ -278,6 +311,8 @@ function showLogin() {
   document.getElementById('nav').hidden = true;
   document.getElementById('menu').hidden = true;
   document.getElementById('log-top').hidden = true;
+  document.body.classList.remove('authed');
+  document.getElementById('tabbar').hidden = true;
   closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
@@ -379,7 +414,7 @@ function teamTodayCard(wk, squad) {
 
 function recentList(t) {
   const names = Object.fromEntries(t.athletes.map((a) => [a.id, a.name]));
-  if (!t.recent.length) return '<p class="muted">Nothing logged yet.</p>';
+  if (!t.recent.length) return '<p class="empty">Nothing logged yet.</p>';
   // Activity sits under the name so the table fits a phone (David, 2026-10-28).
   return `<div class="table-wrap"><table>${t.recent.map((r) => `<tr>
     <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
@@ -641,7 +676,7 @@ function nextStarText(g) {
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
 function gmsCard(gms, coach = false, summary = null) {
-  if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="muted">No tests with a GMS yet this season.</p></div>';
+  if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="empty">No tests with a GMS yet this season.</p></div>';
   // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
@@ -929,7 +964,7 @@ async function showBoards() {
           <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
             <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
           <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
-      </table></div>` : '<p class="muted">No results yet.</p>'}</div>${footer(v.meta)}`;
+      </table></div>` : '<p class="empty">No results yet.</p>'}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
         state[b.dataset.k] = b.dataset.v;
@@ -1063,7 +1098,7 @@ async function showOyo() {
 }
 
 function bestsTable(v) {
-  if (!v.bests.length) return '<p class="muted">No tests yet.</p>';
+  if (!v.bests.length) return '<p class="empty">No tests yet.</p>';
   // Split under the season result and date under the all-time result, so it fits a phone (David, 2026-10-28).
   // Rank is among active rowers' all-time bests, the same as the PR boards. A Pacing link opens that test's look-back (her own page and coaches).
   const havePacing = new Set((v.pacing || []).map((p) => p.id));
@@ -1126,7 +1161,7 @@ function wirePacing(list) {
 }
 
 function testsTable(tests) {
-  if (!tests.length) return '<p class="muted">No tests yet.</p>';
+  if (!tests.length) return '<p class="empty">No tests yet.</p>';
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Test</th><th class="r">Result</th><th class="r">Split</th><th class="r">Rate</th><th></th></tr>
     ${tests.map((r) => `<tr><td>${fmtDate(r.date)}</td><td>${TEST_LABELS[r.test]}</td><td class="r">${fmtResult(r)}</td>
       <td class="r">${split(r)}</td><td class="r">${r.avgRate ?? ''}</td>
@@ -1135,7 +1170,7 @@ function testsTable(tests) {
 }
 
 function sessionsTable(rows) {
-  if (!rows.length) return '<p class="muted">Nothing logged yet.</p>';
+  if (!rows.length) return '<p class="empty">Nothing logged yet.</p>';
   // Four columns fit a phone. Tap a row for the rest; the detail row sits under it.
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Type</th><th>Activity</th><th class="r">Minutes</th></tr>
     ${rows.map((r) => {
@@ -1204,10 +1239,14 @@ async function showSettings() {
 
 // ---- router --------------------------------------------------------------
 
+const SKELETON = `<div class="skel" aria-hidden="true"><div class="skel-bar w40"></div><div class="skel-row"><div class="skel-tile"></div><div class="skel-tile"></div><div class="skel-tile"></div></div><div class="skel-card"></div></div><span class="sr-only">Loading…</span>`;
+
 async function route() {
   tip.hidden = true;
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
+  // Placeholder cards if a page takes more than a moment to load; the page replaces them.
+  const slow = setTimeout(() => { if (SESSION) app.innerHTML = SKELETON; }, 250);
   try {
     if (!SESSION) {
       const saved = savedSession();
@@ -1244,6 +1283,8 @@ async function route() {
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
     showError(err);
+  } finally {
+    clearTimeout(slow);
   }
 }
 
