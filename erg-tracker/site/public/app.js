@@ -3,7 +3,10 @@
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
 // in as themselves (name + birthday); coaches with the coach password.
 
+import { loadPractice } from './practice.mjs';
+
 const app = document.getElementById('app');
+const practiceBox = document.getElementById('practice');
 const tip = document.getElementById('tip');
 const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on sign-in
 const SQUAD_KEY = 'wrc.squad';
@@ -73,6 +76,7 @@ async function api(path) {
 const isCoach = () => !!SESSION && SESSION.kind === 'team';
 
 function setNav(active) {
+  showPractice();
   document.getElementById('nav').hidden = false;
   document.getElementById('menu').hidden = false;
   document.getElementById('log-top').hidden = false;
@@ -99,6 +103,30 @@ document.getElementById('menu').onclick = () => {
   document.getElementById('menu').setAttribute('aria-expanded', String(open));
 };
 document.getElementById('nav').addEventListener('click', (ev) => { if (ev.target.closest('a')) closeMenu(); });
+
+/**
+ * Today's practice status above every signed-in page (David, 2026-11-02), read live from the
+ * "Is Whitman Rowing Today" Sheet so the girls check one site. Today only, visitor's local date.
+ * Refreshed when older than 5 minutes; a failed load shows one quiet line and never blocks the page.
+ */
+let practiceAt = 0, practiceLoading = false;
+function showPractice() {
+  practiceBox.hidden = false;
+  if (practiceLoading || (practiceBox.innerHTML && Date.now() - practiceAt < 5 * 60 * 1000)) return;
+  practiceLoading = true;
+  if (!practiceBox.innerHTML) practiceBox.innerHTML = '<p class="muted small">Checking today’s practice…</p>';
+  loadPractice().then((p) => {
+    const when = fmtDate(p.iso, { weekday: 'long', month: 'long', day: 'numeric' });
+    const lines = p.shifts ? `<p class="shifts">Girls: ${esc(p.shifts.girls)}<br>Boys: ${esc(p.shifts.boys)}</p>`
+      : `<p class="note">${esc(p.note)}</p>`;
+    practiceBox.innerHTML = `<div class="card practice st-${p.status.toLowerCase()}">
+      <h2>Practice today <span class="muted small">${esc(when)}</span></h2>
+      <p class="status">${esc(p.label)}</p>${lines}</div>`;
+    practiceAt = Date.now();
+  }).catch(() => {
+    if (!practiceAt) practiceBox.innerHTML = '<p class="muted small">Could not load today’s practice right now.</p>';
+  }).finally(() => { practiceLoading = false; });
+}
 
 function staleNote(meta) {
   if (!meta || !meta.stale) return '';
@@ -245,6 +273,7 @@ function tile(label, value, sub = '') {
 // ---- pages ---------------------------------------------------------------
 
 function showLogin() {
+  practiceBox.hidden = true;
   document.getElementById('nav').hidden = true;
   document.getElementById('menu').hidden = true;
   document.getElementById('log-top').hidden = true;
