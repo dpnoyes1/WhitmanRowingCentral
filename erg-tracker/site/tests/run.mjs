@@ -24,6 +24,7 @@ import { handleCallback } from '../functions/concept2-callback.mjs';
 import * as LS from '../lib/logbook-sync.mjs';
 import { handleWebhookRequest } from '../functions/concept2-webhook.mjs';
 import photoTests from './photo.mjs';
+import * as PR from '../public/practice.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -1671,6 +1672,40 @@ test('settings page: coaches only, goes to the Sheet with the feed key, errors c
   res = await handleSettings(post(coach, { changes: { 'load.jump_pct': '20' } }), env, { fetchImpl: async () => { throw new Error('down'); } });
   assert.strictEqual(res.status, 502);
   assert.ok(/nothing was saved/i.test((await res.json()).error));
+});
+
+test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.com)', () => {
+  const cols = (n) => n.map((label) => ({ label }));
+  const tab = (labels, rows) => ({ cols: cols(labels), rows: rows.map((r) => ({ c: r.map((v) => (v === null ? null : typeof v === 'object' ? v : { v })) })) });
+  const sheetDays = (v) => ['NO', ...v, 'NO'];   // Sun..Sat for Mon-Fri
+  const seasons = PR.parseSeasons(PR.tableRows(tab(
+    ['Season', 'Start Date', 'End Date', 'Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'],
+    [['Fall', { v: 'Date(2026,7,19)', f: 'August 19, 2026' }, 'November 2, 2026', ...['NO', 'YES', 'YES', 'YES', 'YES', 'YES', 'YES']],
+     ['Winter', 'November 18, 2026', 'February 20, 2027', ...sheetDays(['YES', 'YES', 'YES', 'YES', 'YES'])]])));
+  const over = PR.parseOverrides(PR.tableRows(tab(['Timestamp', 'Date', 'Status', 'Reason'], [
+    ['t', '11/4/2026', 'NO', 'Fall Break'], ['t', '11/19/2026', 'PARTIAL', ''], ['t', '11/20/2026', 'PARTIAL', 'Erg test only\nBring water'],
+    ['t', '11/23/2026', 'REGATTA', 'Head race'], ['t', '8/22/2026', 'zREGATTA', 'typo'], ['t', '11/25/2026', 'yes', '']])));
+  const at = (d) => PR.practiceFor(d, seasons, over);
+  assert.strictEqual(at('2026-09-01').status, 'YES');                 // Tuesday in Fall
+  assert.strictEqual(at('2026-09-01').note, 'Standard Schedule');
+  assert.strictEqual(at('2026-09-06').status, 'NO');                  // Sunday
+  assert.strictEqual(at('2026-11-04').note, 'Fall Break');            // override wins over Fall YES
+  assert.strictEqual(at('2026-11-10').status, 'NO');                  // gap between seasons
+  assert.strictEqual(at('2026-08-22').status, 'NO');                  // stray 'zREGATTA' row: unknown status is NO (as on the live site)
+  assert.strictEqual(at('2026-11-19').note, 'Check Slack for Details'); // PARTIAL, blank reason
+  assert.strictEqual(at('2026-11-20').note, 'Erg test only\nBring water');
+  assert.strictEqual(at('2026-11-23').status, 'YES');                 // REGATTA never decides today
+  assert.deepStrictEqual(at('2026-11-23').shifts, { girlsEarly: true, girls: '3:30–5:30 PM', boys: '5:00–7:00 PM' });   // Mon
+  assert.strictEqual(at('2026-11-24').shifts.girls, '5:00–7:00 PM');  // Tue
+  assert.strictEqual(at('2026-11-25').status, 'YES');                 // lower-case status read, Wed shifts
+  assert.strictEqual(at('2026-11-25').shifts.girls, '3:30–5:30 PM');
+  assert.strictEqual(at('2026-11-26').shifts.girls, '5:00–7:00 PM');  // Thu
+  assert.strictEqual(at('2026-11-27').shifts.girls, '5:00–7:00 PM');  // Fri, odd date: Girls late
+  assert.strictEqual(at('2026-12-04').shifts.girls, '3:30–5:30 PM');  // Fri, even date: Girls early
+  assert.strictEqual(at('2026-11-21').status, 'NO');                  // Saturday in Winter
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).status, 'NO');   // unknown status
+  // header row inside the data when Google gives no column labels
+  assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
 });
 
 photoTests(test);
