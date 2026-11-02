@@ -116,12 +116,13 @@ function showPractice() {
   practiceLoading = true;
   if (!practiceBox.innerHTML) practiceBox.innerHTML = '<p class="muted small">Checking today’s practice…</p>';
   loadPractice().then((p) => {
-    const when = fmtDate(p.iso, { weekday: 'long', month: 'long', day: 'numeric' });
-    const lines = p.shifts ? `<p class="shifts">Girls: ${esc(p.shifts.girls)}<br>Boys: ${esc(p.shifts.boys)}</p>`
-      : `<p class="note">${esc(p.note)}</p>`;
+    // Girls only (David, 2026-11-02): "Monday 11/2" then "Early Shift: 3:30–5:30 PM". No big Yes; No and Partial still say so.
+    const d = new Date(p.iso + 'T12:00:00');
+    const when = `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${d.getMonth() + 1}/${d.getDate()}`;
+    const head = p.status === 'YES' ? '' : `<p class="status">${p.status === 'NO' ? 'No practice' : 'Partial practice'}</p>`;
+    const line = p.shifts ? `${p.shifts.girlsEarly ? 'Early' : 'Late'} Shift: ${esc(p.shifts.girls)}` : esc(p.note);
     practiceBox.innerHTML = `<div class="card practice st-${p.status.toLowerCase()}">
-      <h2>Practice today <span class="muted small">${esc(when)}</span></h2>
-      <p class="status">${esc(p.label)}</p>${lines}</div>`;
+      <h2>${esc(when)}</h2>${head}<p class="note">${line}</p></div>`;
     practiceAt = Date.now();
   }).catch(() => {
     if (!practiceAt) practiceBox.innerHTML = '<p class="muted small">Could not load today’s practice right now.</p>';

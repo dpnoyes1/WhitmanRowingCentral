@@ -74,12 +74,12 @@ nav a.on, nav a:hover { background: rgba(255, 255, 255, .35); }
 .practice-wrap[hidden] { display: none; }
 .practice-wrap > p { margin: 0; }
 .practice-wrap .card { margin-bottom: 0; }
-.practice h2 { margin-bottom: 4px; }
+.practice h2 { margin-bottom: 4px; font-size: 1.25rem; }
 .practice .status { font-size: 1.75rem; font-weight: 700; margin: 0; line-height: 1.2; }
 .practice.st-yes .status { color: var(--good); }
 .practice.st-no .status { color: var(--bad); }
 .practice.st-partial .status { color: var(--warn); }
-.practice .note, .practice .shifts { margin: 4px 0 0; color: var(--text-2); white-space: pre-line; }
+.practice .note { margin: 4px 0 0; font-size: 1.05rem; color: var(--text-2); white-space: pre-line; }
 main { max-width: 1040px; margin: 0 auto; padding: 20px 16px 48px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
 

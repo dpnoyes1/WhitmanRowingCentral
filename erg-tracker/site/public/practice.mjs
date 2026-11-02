@@ -78,7 +78,7 @@ export function winterShift(iso) {
   else if (wd === 2 || wd === 4) girlsEarly = false;
   else if (wd === 5) girlsEarly = d.getDate() % 2 === 0;
   else return null;
-  return { girls: girlsEarly ? WINTER_SHIFTS.early : WINTER_SHIFTS.late, boys: girlsEarly ? WINTER_SHIFTS.late : WINTER_SHIFTS.early };
+  return { girlsEarly, girls: girlsEarly ? WINTER_SHIFTS.early : WINTER_SHIFTS.late, boys: girlsEarly ? WINTER_SHIFTS.late : WINTER_SHIFTS.early };
 }
 
 /** { status: 'YES'|'NO'|'PARTIAL', note, shifts: {girls, boys}|null, label } for one local date. */

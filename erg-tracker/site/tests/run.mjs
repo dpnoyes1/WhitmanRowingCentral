@@ -1695,7 +1695,7 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-11-19').note, 'Check Slack for Details'); // PARTIAL, blank reason
   assert.strictEqual(at('2026-11-20').note, 'Erg test only\nBring water');
   assert.strictEqual(at('2026-11-23').status, 'YES');                 // REGATTA never decides today
-  assert.deepStrictEqual(at('2026-11-23').shifts, { girls: '3:30–5:30 PM', boys: '5:00–7:00 PM' });   // Mon
+  assert.deepStrictEqual(at('2026-11-23').shifts, { girlsEarly: true, girls: '3:30–5:30 PM', boys: '5:00–7:00 PM' });   // Mon
   assert.strictEqual(at('2026-11-24').shifts.girls, '5:00–7:00 PM');  // Tue
   assert.strictEqual(at('2026-11-25').status, 'YES');                 // lower-case status read, Wed shifts
   assert.strictEqual(at('2026-11-25').shifts.girls, '3:30–5:30 PM');
