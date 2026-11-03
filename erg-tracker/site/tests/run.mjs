@@ -1315,6 +1315,24 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
   }
 });
 
+test('offline shell: service worker caches app files only, never the API, and is registered', () => {
+  const publicDir = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'public');
+  const sw = fs.readFileSync(path.join(publicDir, 'sw.js'), 'utf8');
+  assert.ok(sw.includes("startsWith('/api/')"), 'API requests are left to the network');
+  assert.ok(sw.includes("req.method !== 'GET'"));
+  const shell = JSON.parse(sw.match(/const SHELL = (\[[^\]]*\])/)[1].replace(/'/g, '"'));
+  for (const f of shell.filter((x) => x !== '/')) assert.ok(fs.existsSync(path.join(publicDir, f)), f + ' exists');
+  assert.ok(!shell.some((f) => f.startsWith('/api')), 'no data in the shell');
+  assert.ok(fs.readFileSync(path.join(publicDir, 'app.js'), 'utf8').includes("register('/sw.js')"));
+});
+
+test('insights: missed practices sort ahead of load jumps', () => {
+  const v = insightsView(feed, TODAY);
+  const flaggedAt = v.rowers.map((r) => r.missed.flag);
+  const firstUnflagged = flaggedAt.indexOf(false);
+  assert.ok(firstUnflagged === -1 || !flaggedAt.slice(firstUnflagged).includes(true), 'missed-flagged rowers come first');
+});
+
 test('workout photo: any signed-in person gets the kept copy, only when the workout has one', async () => {
   clearFeedCache();
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
