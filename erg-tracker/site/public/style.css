@@ -419,3 +419,6 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 
 /* Insights: load jumps are quiet next to missed practices (David, 2026-11-03). */
 .jump { color: var(--text-2); font-size: .85rem; white-space: nowrap; }
+.pw-list { list-style: none; margin: 8px 0 0; padding: 0; }
+.pw-list li { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 8px 0; border-top: 1px solid var(--border); }
+.pw-list li:first-child { border-top: 0; }

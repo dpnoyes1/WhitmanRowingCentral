@@ -718,6 +718,63 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   clearFeedCache();
 });
 
+test('coach password: spaces at the ends never lock a coach out; any coach can reset any coach', async () => {
+  const { passwordProblem } = await import('../lib/coachpw.mjs');
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const coachStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); },
+    keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
+  const withCoaches = { ...feed, logins: [...feed.logins,
+    { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') },
+    { coach: true, code: A.loginCode(env2, 'coach:sam tester', '1975-12-31') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoaches)), failDelayMs: 0, coachStore, shared: null, today: TODAY };
+  const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
+  const login = (name, password) => handleLogin(post('/api/login', { name, password }), env2, deps);
+  const cookieOf = async (name, password) => A.COOKIE + '=' + ((await login(name, password)).headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  clearFeedCache();
+  const pat = await cookieOf('Pat Example', '2/3/1980');
+  const sam = await cookieOf('Sam Tester', '12/31/1975');
+  // Found in QA (2026-11-03): a trailing space was saved, sign-in dropped it, and nothing worked any more.
+  assert.ok(passwordProblem('   '), 'only spaces is refused');
+  assert.strictEqual((await handlePassword(post('/api/password', { current: '2/3/1980', next: '   ' }, pat), env2, deps)).status, 400);
+  assert.strictEqual((await handlePassword(post('/api/password', { current: '2/3/1980', next: 'rowing2026 ' }, pat), env2, deps)).status, 200);
+  assert.strictEqual((await login('Pat Example', 'rowing2026 ')).status, 200, 'typed with the space');
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 200, 'typed without it');
+  assert.strictEqual((await login('Pat Example', '2/3/1980')).status, 401, 'birthday no longer works');
+  // The list: coaches only, only coaches with a personal password, names from the store.
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), feed.athletes[0].id);
+  assert.strictEqual((await handlePassword(get('/api/coach-passwords'), env2, deps)).status, 401);
+  assert.strictEqual((await handlePassword(get('/api/coach-passwords', athlete), env2, deps)).status, 403);
+  let list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
+  assert.deepStrictEqual(list.coaches.map((c) => [c.key, c.name, c.you]), [['pat example', 'Pat Example', false]]);
+  assert.ok(!JSON.stringify(list).includes('hash') && !JSON.stringify(list).includes('salt'), 'no hash or salt in the list');
+  // Athletes cannot reset; other sites cannot either.
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'pat example' }, athlete), env2, deps)).status, 403);
+  const form = new Request('https://x/api/coach-passwords', { method: 'POST', headers: { cookie: sam, 'content-type': 'text/plain' }, body: JSON.stringify({ reset: 'pat example' }) });
+  assert.strictEqual((await handlePassword(form, env2, deps)).status, 400);
+  assert.ok(mem.has('pat example'));
+  // Sam resets Pat: Pat's birthday works again and the new password stops working.
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'pat example' }, sam), env2, deps)).status, 200);
+  assert.ok(!mem.has('pat example'));
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 401);
+  assert.strictEqual((await login('Pat Example', '2/3/1980')).status, 200);
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'pat example' }, sam), env2, deps)).status, 404, 'nothing left to reset');
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: '' }, sam), env2, deps)).status, 400);
+  list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
+  assert.deepStrictEqual(list.coaches, []);
+  // A coach can reset her own too, and it is marked as hers.
+  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars' }, sam), env2, deps);
+  list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
+  assert.deepStrictEqual(list.coaches.map((c) => [c.name, c.you]), [['Sam Tester', true]]);
+  // No store (local dev): an empty list, and a reset says it cannot.
+  const none = { ...deps, coachStore: null };
+  assert.deepStrictEqual((await (await handlePassword(get('/api/coach-passwords', sam), env2, none)).json()).coaches, []);
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'sam tester' }, sam), env2, none)).status, 503);
+  clearFeedCache();
+});
+
 test('health: key required, counts only, flags a broken feed or missing sign-in codes', async () => {
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const post = (body) => new Request('https://x/api/health', { method: 'POST', body: JSON.stringify(body) });

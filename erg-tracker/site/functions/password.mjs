@@ -1,9 +1,11 @@
 // Coach password change (David, 2026-11-03): POST /api/password { current, next }.
 // Only a coach who signed in with a name can use it. The current password is her personal
 // password if she has one, otherwise her birthday. The new one is kept as a salted hash in Netlify Blobs.
-import { session, athleteFor, nameKey } from '../lib/auth.mjs';
+// Reset (David, 2026-11-03: any coach can reset any coach): GET /api/coach-passwords lists the coaches
+// with a personal password; POST /api/coach-passwords { reset: key } clears one, so that coach's birthday works again.
+import { session, athleteFor, nameKey, displayName } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
-import { defaultCoachStore, checkCoachPassword, setCoachPassword, passwordProblem } from '../lib/coachpw.mjs';
+import { defaultCoachStore, checkCoachPassword, setCoachPassword, passwordProblem, cleanPassword, coachesWithPassword, resetCoachPassword } from '../lib/coachpw.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -13,6 +15,19 @@ export async function handlePassword(req, envFn, deps = {}) {
   const who = session(envFn, req);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
+  const reset = new URL(req.url).pathname.replace(/\/+$/, '') === '/api/coach-passwords';
+  const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
+  if (reset && req.method === 'GET') {
+    if (!store) return json({ coaches: [] });
+    try {
+      const list = await coachesWithPassword(store);
+      return json({ coaches: list.map((c) => ({ key: c.key, name: displayName(c.key), updatedAt: c.updatedAt, you: c.key === nameKey(who.name) })) });
+    } catch (err) {
+      console.error('coach list error:', err.message);
+      return json({ error: 'The list could not be loaded. Try again in a minute.' }, 502);
+    }
+  }
+  if (req.method !== 'POST') return json({ error: 'Not found' }, 404);
   // A form on another site cannot send JSON, so this also stops other sites from changing it for a signed-in coach.
   const origin = req.headers.get('origin');
   if (!/^application\/json/i.test(req.headers.get('content-type') || '') || (origin && origin !== new URL(req.url).origin)) {
@@ -20,10 +35,22 @@ export async function handlePassword(req, envFn, deps = {}) {
   }
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
-  const current = String(body.current || '').trim(), next = String(body.next || '');
+  if (reset) {
+    const key = nameKey(body.reset);
+    if (!key) return json({ error: 'Pick a coach.' }, 400);
+    if (!store) return json({ error: 'Passwords cannot be changed right now.' }, 503);
+    let had;
+    try { had = await resetCoachPassword(store, key); } catch (err) {
+      console.error('coach reset error:', err.message);
+      return json({ error: 'That did not work. Try again in a minute.' }, 502);
+    }
+    // Names and who did it, never a password; shows in the Netlify function log.
+    console.log('coach password reset:', JSON.stringify({ coach: displayName(key), by: displayName(who.name), had }));
+    return had ? json({ ok: true }) : json({ error: 'That coach has no password to reset.' }, 404);
+  }
+  const current = cleanPassword(body.current), next = cleanPassword(body.next);
   const problem = passwordProblem(next);
   if (problem) return json({ error: problem }, 400);
-  const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
   if (!store) return json({ error: 'Passwords cannot be saved right now.' }, 503);
   const key = nameKey(who.name);
   let ok;
@@ -48,4 +75,4 @@ export async function handlePassword(req, envFn, deps = {}) {
 
 export default (req) => handlePassword(req, env);
 
-export const config = { path: '/api/password', method: 'POST', rateLimit: { windowLimit: 20, windowSize: 60, aggregateBy: ['ip', 'domain'] } };
+export const config = { path: ['/api/password', '/api/coach-passwords'], method: ['GET', 'POST'], rateLimit: { windowLimit: 20, windowSize: 60, aggregateBy: ['ip', 'domain'] } };
