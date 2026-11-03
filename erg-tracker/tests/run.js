@@ -1264,6 +1264,29 @@ test('slack photo: saved read becomes the same entry the Form would make', () =>
   assert.throws(() => g.slackPhotoAnswers({ ...photo, pieces: Array(11).fill(photo.pieces[0]) }, 'Jane Smith'), /More than 10/);
 });
 
+test('slack photo: a 2k or 20-minute piece the athlete calls a test writes the Benchmarks row and the session', () => {
+  const two = { benchmark: '2000m', date: '2026-10-28', machine: 'RowErg', title: '2000m', rpe: '9', note: 'From erg photo', pieces: [{ timeS: 452.3, meters: 2000, rate: 31, restS: 0 }] };
+  const r = g.parseSubmission(g.slackPhotoAnswers(two, 'Jane Smith'), ctxFor());
+  assert.strictEqual(r.benchmark.Test, '2000m');
+  assert.strictEqual(r.benchmark['Time s'], 452.3);
+  assert.strictEqual(r.benchmark['Drag check'], 'FLAG: no drag factor', 'the screen has no drag factor');
+  assert.strictEqual(r.entry['Benchmark ID'], r.benchmark['Benchmark ID']);
+  assert.strictEqual(r.entry['Session type'], 'Practice');
+  assert.strictEqual(r.entry.RPE, 9);
+  assert.strictEqual(r.entry['Work m'], 2000);
+  assert.strictEqual(r.intervals.length, 1);
+  const twenty = { ...two, benchmark: '20min', title: '20:00', pieces: [{ timeS: 1200, meters: 5210, rate: 24, restS: 0 }] };
+  const t = g.parseSubmission(g.slackPhotoAnswers(twenty, 'Jane Smith'), ctxFor());
+  assert.strictEqual(t.benchmark.Test, '20min');
+  assert.strictEqual(t.benchmark.Meters, 5210);
+  assert.strictEqual(t.entry['Work s'], 1200);
+  assert.throws(() => g.slackPhotoAnswers({ ...two, pieces: [{ timeS: 452.3, meters: 1990 }] }, 'Jane Smith'), /not a 2000m test/);
+  assert.throws(() => g.slackPhotoAnswers({ ...twenty, pieces: [{ timeS: 1190, meters: 5000 }] }, 'Jane Smith'), /not a 20min test/);
+  assert.throws(() => g.slackPhotoAnswers({ ...two, machine: 'BikeErg' }, 'Jane Smith'), /never a benchmark/);
+  assert.throws(() => g.slackPhotoAnswers({ ...two, pieces: [two.pieces[0], two.pieces[0]] }, 'Jane Smith'), /one piece/);
+  assert.strictEqual(g.parseSubmission(g.slackPhotoAnswers({ ...two, benchmark: '' }, 'Jane Smith'), ctxFor()).benchmark, undefined, 'no answer means a normal workout');
+});
+
 test('photos: Drive link, same-workout match, Logbook wins, feed says only that a photo exists', () => {
   assert.strictEqual(g.photoFileId_('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp-_/view?usp=drivesdk'), '1AbCdEfGhIjKlMnOp-_');
   assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');

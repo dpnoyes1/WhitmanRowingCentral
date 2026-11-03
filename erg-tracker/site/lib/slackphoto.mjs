@@ -80,6 +80,28 @@ export async function readAndCheck({ client, bytes, today }) {
 const problemText = (issues) => issues.filter((i) => i.level === 'hold' || i.level === 'ask')
   .map((i) => (i.athlete || i.coach).replace(/ A coach has been told\.?/, '').replace(/ or type it in with \/log\./, ' or use /log.')).join('\n');
 
+/**
+ * A single RowErg piece of exactly 2000 m or exactly 20:00 might be a benchmark
+ * test (David, 2026-11-03). Returns '2000m', '20min' or '' (BikeErg never counts).
+ */
+export function benchmarkShape(machine, pieces) {
+  if (machine !== 'RowErg' || !pieces || pieces.length !== 1) return '';
+  const p = pieces[0];
+  if (Number(p.meters) === 2000) return '2000m';
+  if (Number(p.timeS) === 1200) return '20min';
+  return '';
+}
+const TEST_NAME = { '2000m': '2k', '20min': "20'" };
+
+/** The question card: is this one a test? */
+export function askBlocks(text, token) {
+  const btn = (id, label, style) => ({ type: 'button', action_id: id, value: token, text: { type: 'plain_text', text: label }, ...(style ? { style } : {}) });
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', elements: [btn('photo_test_yes', 'Yes, it was a test', 'primary'), btn('photo_test_no', 'No, a normal workout'), btn('photo_cancel', 'Cancel')] }
+  ];
+}
+
 export function cardBlocks(text, token) {
   const btn = (id, label, style) => ({ type: 'button', action_id: id, value: token, text: { type: 'plain_text', text: label }, ...(style ? { style } : {}) });
   return [
@@ -156,6 +178,13 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say) {
   const token = randomBytes(9).toString('hex');
   await store.set('card:' + token, { user, athlete: who.athlete, ...pending });   // keeps the photo copy until she saves
   await store.delete('pending:' + user);
+  const shape = benchmarkShape(pending.machine, pending.pieces);
+  if (shape) {
+    await store.set('card:' + token, { user, athlete: who.athlete, ...pending, ask: shape });
+    const text = `*For ${who.athlete}:* ${pending.summary}.\nThis is exactly ${shape === '2000m' ? '2000 m' : '20:00'}. Was it a ${TEST_NAME[shape]} test? A test counts toward the best ${TEST_NAME[shape]}, stars and the boards.`;
+    await say(text, askBlocks(text, token));
+    return { status: 'card', athlete: who.athlete, asked: shape };
+  }
   const text = `*For ${who.athlete}:* ${pending.summary}.\nTap the session RPE to save it, or save without one.`;
   await say(text, cardBlocks(text, token));
   return { status: 'card', athlete: who.athlete };
@@ -180,6 +209,16 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
     await sendReply(envFn, fetchImpl, payload, replace(':x: Cancelled, nothing was saved.'));
     return { status: 'cancelled' };
   }
+  if (id === 'photo_test_yes' || id === 'photo_test_no') {
+    if (!card.ask) return { ignored: 'not asking' };
+    const yes = id === 'photo_test_yes';
+    const base = text.replace(/\nThis is exactly[\s\S]*$/, '');
+    const next = `${base}\n${yes ? `Counted as a ${TEST_NAME[card.ask]} test. ` : 'Saved as a normal workout. '}Tap the session RPE to save it, or save without one.`;
+    await store.set('card:' + token, { ...card, ask: '', benchmark: yes ? card.ask : '' });
+    await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: next, blocks: cardBlocks(next, token) });
+    return { status: yes ? 'test' : 'not_test' };
+  }
+  if (card.ask) { await sendReply(envFn, fetchImpl, payload, note('First tell me whether this was a test.')); return { status: 'asking' }; }
   const m = id.match(/^photo_rpe_(\d+)$/);
   const rpe = m ? m[1] : id === 'photo_norpe' ? '' : null;
   if (rpe === null) return { ignored: 'unknown button' };
@@ -188,18 +227,19 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   let result;
   try {
     result = await callSheet(envFn, fetchImpl, { action: 'slack-photo', slackUserId: payload.user.id, slackName: name, token, athlete: card.athlete,
-      photo: { date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe, note: card.note, image: card.image || '' } });
+      photo: { benchmark: card.benchmark || '', date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe, note: card.note, image: card.image || '' } });
   } catch (err) {
     result = { status: 'error', error: err.message };
   }
   if (result.status === 'ok') {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
-    await sendReply(envFn, fetchImpl, payload, replace(`:white_check_mark: Saved for ${result.athlete}${rpe ? ` with RPE ${rpe}` : ''}.` + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
+    await sendReply(envFn, fetchImpl, payload, replace(`:white_check_mark: Saved for ${result.athlete}${rpe ? ` with RPE ${rpe}` : ''}.` + (result.benchmark ? ` It is on the ${TEST_NAME[card.benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : '')));
   } else if (result.status === 'merged') {
     await sendReply(envFn, fetchImpl, payload, replace(':white_check_mark: Concept2 Logbook already has this workout for ' + result.athlete + ', so its entry stands' +
-      (result.photo === 'added' ? ' and your photo is kept with it.' : result.photo === 'failed' ? ' (the photo copy could not be kept).' : '.')));
+      (result.photo === 'added' ? ' and your photo is kept with it.' : result.photo === 'failed' ? ' (the photo copy could not be kept).' : '.') +
+      (card.benchmark ? ' To count it as a test, mark it on the Logbook card.' : '')));
   } else if (result.status === 'duplicate') {
     await sendReply(envFn, fetchImpl, payload, replace(':information_source: Already saved. Nothing changed.'));
   } else {

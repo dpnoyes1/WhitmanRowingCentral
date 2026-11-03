@@ -17,6 +17,7 @@ var SLACK_PHOTO_ACTION = 'slack-photo';
  * because the screen doesn't show them. Times arrive as seconds.
  */
 function slackPhotoAnswers(photo, athleteName, enteredBy) {
+  if (photo.benchmark) return slackPhotoTestAnswers_(photo, athleteName, enteredBy);
   var answers = {};
   answers[Q.ATHLETE] = athleteName;
   answers[Q.ENTERED_BY] = enteredBy || athleteName;
@@ -37,6 +38,40 @@ function slackPhotoAnswers(photo, athleteName, enteredBy) {
     answers[t.RATE] = p.rate == null ? '' : p.rate;
     answers[t.REST_TIME] = p.restS ? formatTime(p.restS) : '';
   });
+  return answers;
+}
+
+/**
+ * The athlete said the photo is a 2k or 20' test (David, 2026-11-03). One RowErg
+ * piece of exactly 2000 m ('2000m') or 20:00 ('20min'), saved like a Form test
+ * at practice, so it writes the Benchmarks row and the session. Drag factor
+ * isn't on the screen, so the usual "no drag factor" flag is raised.
+ */
+function slackPhotoTestAnswers_(photo, athleteName, enteredBy) {
+  var pieces = photo.pieces || [];
+  var p = pieces[0];
+  if (pieces.length !== 1) throw new Error('A test is one piece');
+  if (photo.machine === 'BikeErg') throw new Error('A BikeErg result is never a benchmark test');
+  var timed = photo.benchmark === '2000m';
+  if (photo.benchmark !== '2000m' && photo.benchmark !== '20min') throw new Error('Unknown test "' + photo.benchmark + '"');
+  if (timed ? Number(p.meters) !== 2000 : Number(p.timeS) !== 1200) throw new Error('This piece is not a ' + photo.benchmark + ' test');
+  var answers = {};
+  answers[Q.ATHLETE] = athleteName;
+  answers[Q.ENTERED_BY] = enteredBy || athleteName;
+  answers[Q.DATE] = photo.date;
+  answers[Q.LOG_TYPE] = LOG_TYPES.BENCHMARK;
+  answers[Q.B_WHERE] = TEST_WHERE.PRACTICE;
+  answers[Q.TEST] = timed ? '2000m' : "20' (20 min)";
+  answers[Q.B_RPE] = photo.rpe || '';
+  if (timed) {
+    answers[Q.T_TIME] = formatTime(p.timeS);
+    answers[Q.T_RATE] = p.rate == null ? '' : p.rate;
+    answers[Q.T_NOTE] = photo.note || '';
+  } else {
+    answers[Q.D_METERS] = p.meters;
+    answers[Q.D_RATE] = p.rate == null ? '' : p.rate;
+    answers[Q.D_NOTE] = photo.note || '';
+  }
   return answers;
 }
 
@@ -62,6 +97,6 @@ function processSlackPhoto_(body) {
       return null;
     }
   });
-  if (out.status === 'ok') out.photo = saved.photo;
+  if (out.status === 'ok') { out.photo = saved.photo; out.benchmark = !!(body.photo || {}).benchmark; }
   return out;
 }
