@@ -19,7 +19,7 @@ tests/       run.mjs: `node erg-tracker/site/tests/run.mjs`
 ## How data flows
 
 1. The Sheet's Apps Script publishes a private web app (`apps-script/Feed.gs`). It only answers a POST that carries the feed key.
-2. `functions/refresh-feed.mjs` runs every 5 minutes on the live site and saves the feed to Netlify Blobs (store `feed`, key `latest`; `@netlify/blobs` in the root `package.json`). `lib/feed.mjs` serves that copy, keeps it in memory for a minute, and asks the Sheet directly only when the copy is missing or over 15 minutes old. If the Sheet is down, the last copy (up to a day old) is shown with a stale note.
+2. `functions/refresh-feed.mjs` runs every 5 minutes on the live site and saves the feed to Netlify Blobs (store `feed`, key `latest`; `@netlify/blobs` in the root `package.json`). `lib/feed.mjs` serves that copy, keeps it in memory for a minute, and asks the Sheet directly only when the copy is missing or over 15 minutes old. If the Sheet is down, the last copy (up to a day old) is shown with a stale note. Visitors who arrive while one Sheet call is under way share that call.
 3. `lib/views.mjs` shapes it for each page. Multipliers, OYO goals and completion are applied here, when the data is read.
 
 The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster notes. For sign-in it sends one keyed code per athlete (`logins`), which never leaves the server. GMS % and stars are worked out in the Sheet; each athlete's GMS % goes only to her own page and to coaches.

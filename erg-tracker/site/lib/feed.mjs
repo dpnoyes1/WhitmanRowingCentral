@@ -12,9 +12,11 @@ export const SHARED_FRESH_MS = 15 * 60 * 1000;   // shared copy counts as curren
 const STALE_LIMIT_MS = 24 * 60 * 60 * 1000;
 const BLOB_STORE = 'feed', BLOB_KEY = 'latest';
 let cache = null;   // { data, at }
+let inflight = null;   // the load already under way, so a crowd of visitors shares one Sheet call (QA 2026-11-03)
 
 export function clearFeedCache() {
   cache = null;
+  inflight = null;
 }
 
 /** The shared copy in Netlify Blobs: { get(), set(entry) }, or null where Blobs isn't available (tests, local dev). */
@@ -53,8 +55,17 @@ async function fetchSheet(env, fetchImpl) {
  * The feed for a request: memory, then the shared copy, then the Sheet.
  * deps: { fetchImpl, now, shared } (shared: null turns the shared copy off).
  */
-export async function getFeed(env, { fetchImpl = fetch, now = Date.now(), shared } = {}) {
+export async function getFeed(env, deps = {}) {
+  const { now = Date.now() } = deps;
   if (cache && now - cache.at < FEED_TTL_MS) return { data: cache.data, stale: false };
+  // Requests that arrive while one is already loading wait for that answer instead of each asking Apps Script.
+  if (inflight) return inflight;
+  const run = loadFeed(env, deps).finally(() => { if (inflight === run) inflight = null; });
+  inflight = run;
+  return run;
+}
+
+async function loadFeed(env, { fetchImpl = fetch, now = Date.now(), shared } = {}) {
   const store = shared === undefined ? await defaultShared() : shared;
   const copy = store ? await store.get().catch(() => null) : null;
   if (copy && copy.data && now - copy.at < SHARED_FRESH_MS) {
