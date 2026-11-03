@@ -433,8 +433,9 @@ function notLoggedCard(nl, squad) {
 function teamTodayCard(wk, squad) {
   if (!wk) return '';
   // An athlete's week is already her squad only; coaches follow the squad switch.
-  const forSquad = (x) => !!wk.athlete || squad === 'all' || !/^(varsity|novice)$/i.test(x.squad) || x.squad.toLowerCase() === squad;
-  const days = wk.days.filter((d) => d.day >= wk.today).map((d) => ({ ...d, sessions: d.sessions.filter(forSquad) })).filter((d) => d.sessions.length);
+  const noviceOwn = (d, x) => squad === 'novice' && /^varsity$/i.test(x.squad) && !wk.days.some((dd) => dd.day === d && dd.sessions.some((y) => y.session === x.session && /^novice$/i.test(y.squad)));
+  const forSquad = (x, d) => !!wk.athlete || squad === 'all' || !/^(varsity|novice)$/i.test(x.squad) || x.squad.toLowerCase() === squad || noviceOwn(d, x);
+  const days = wk.days.filter((d) => d.day >= wk.today).map((d) => ({ ...d, sessions: d.sessions.filter((x) => forSquad(x, d.day)) })).filter((d) => d.sessions.length);
   const d = days[0];
   const title = !d ? 'Today' : d.day === wk.today ? 'Today' : `Next: ${fmtDay(d.day)}`;
   const body = d ? d.sessions.map((x) => sessionBlock({ ...x, results: undefined }, !!wk.athlete)).join('')

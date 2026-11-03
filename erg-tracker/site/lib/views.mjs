@@ -578,7 +578,7 @@ export function weekView(feed, today, id = null, opts = {}) {
   let pieces = 0, targeted = 0;
   const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
     day,
-    sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquad(s, a.squad))).map((s) => {
+    sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquadDay(s, a.squad, plan.sessions))).map((s) => {
       const out = planSession(s, a);
       if (a) { pieces += out.pieces.length; targeted += out.pieces.filter((p) => p.target).length; }
       const of = (athleteId) => {
@@ -592,7 +592,7 @@ export function weekView(feed, today, id = null, opts = {}) {
         out.missed = !out.result && day < today;
       }
       if (results === 'all') {
-        out.results = rowers.filter((r) => inSquad(s, r.squad)).map((r) => {
+        out.results = rowers.filter((r) => inSquadDay(s, r.squad, plan.sessions)).map((r) => {
           const t = (s.athletes || []).find((x) => x.athlete === r.name);
           return { ...athleteSummary(r), result: of(r.id), targets: t ? t.targets.map((x) => x.target || null) : [] };
         });
@@ -610,6 +610,9 @@ export function weekView(feed, today, id = null, opts = {}) {
 }
 
 const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
+/** inSquad, plus: a novice does the Varsity workout when no Novice one is scheduled for that day and session (David, 2026-11-03). */
+const inSquadDay = (s, squad, all) => inSquad(s, squad) ||
+  (/^novice$/i.test(squad) && /^varsity$/i.test(s.squad) && !all.some((x) => x.day === s.day && x.session === s.session && /^novice$/i.test(x.squad)));
 
 /** One published session as the athlete sees it: her target per piece (null without an athlete). */
 function planSession(s, a) {
@@ -626,7 +629,7 @@ function planSession(s, a) {
 /** The workouts published for one past day, in her squad, with her targets. Make-ups use the missed day's plan. */
 export function dayPlan(feed, day, a) {
   const plan = (feed.weeks || []).find((w) => w.weekStart === weekStart(day)) || { sessions: [] };
-  return plan.sessions.filter((s) => s.day === day && inSquad(s, a.squad)).map((s) => planSession(s, a));
+  return plan.sessions.filter((s) => s.day === day && inSquadDay(s, a.squad, plan.sessions)).map((s) => planSession(s, a));
 }
 
 // ---- balance: 100m vs 2k vs 20' in watts, coaches only (David, 2026-10-27) --------

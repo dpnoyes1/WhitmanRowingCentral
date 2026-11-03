@@ -532,6 +532,18 @@ test('week ahead: coming week Mon-Sat, her squad, only her own targets', () => {
   assert.ok(today.length > 0 && today.every((s) => s.squad !== 'Varsity'));
 });
 
+test('week ahead: a novice does the Varsity workout when no Novice one is scheduled that day', () => {
+  const nov = feed.athletes.find((a) => a.squad === 'Novice' && a.active);
+  const monday = comingMonday(TODAY);
+  const mk = (squad, name) => ({ day: monday, session: 'Practice', squad, workout: name, notes: '', pieces: [{ label: 'p1', notes: '' }], athletes: [], results: [] });
+  const only = { ...feed, weeks: [{ weekStart: monday, sessions: [mk('Varsity', 'V only')] }] };
+  assert.deepStrictEqual(weekView(only, TODAY, nov.id).days[0].sessions.map((x) => x.workout), ['V only'], 'novice sees the Varsity workout');
+  const both = { ...feed, weeks: [{ weekStart: monday, sessions: [mk('Varsity', 'V'), mk('Novice', 'N')] }] };
+  assert.deepStrictEqual(weekView(both, TODAY, nov.id).days[0].sessions.map((x) => x.workout), ['N'], 'a Novice workout replaces it');
+  const vars = feed.athletes.find((a) => a.squad === 'Varsity' && a.active);
+  assert.deepStrictEqual(weekView(both, TODAY, vars.id).days[0].sessions.map((x) => x.workout), ['V']);
+});
+
 test('week results: her own vs goal; coaches see everyone and last week', async () => {
   const rower = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.role === 'Rower');
   const v = weekView(feed, TODAY, rower.id, { results: 'own' });
