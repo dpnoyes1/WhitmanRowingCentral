@@ -39,6 +39,11 @@
     Content-Security-Policy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://docs.google.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
 
 # Static files: a short cache so repeat visits are quick; filenames are not hashed, so keep it brief.
+# The service worker must always be re-checked so a new deploy reaches the installed app.
+[[headers]]
+  for = "/sw.js"
+  [headers.values]
+    Cache-Control = "no-cache"
 [[headers]]
   for = "/*.css"
   [headers.values]

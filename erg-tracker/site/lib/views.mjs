@@ -244,7 +244,7 @@ function athleteInsights(feed, a, mine, record, weeks, yearStart, today) {
 /**
  * Coaches' table, one row per active rower: load this week so far and last
  * week against the trailing average, RPE, steady-split trend, projected 2k and
- * this month's consistency. Flagged rowers first.
+ * this month's consistency. Rowers missing practices first, load jumps second.
  */
 export function insightsView(feed, today) {
   const monday = weekStart(today);
@@ -264,8 +264,9 @@ export function insightsView(feed, today) {
       missed: missedNotMadeUp(record, today, feed.settings.makeupWindowDays ?? 7)
     };
   });
-  const bad = (r) => Number(r.thisWeek.flag || r.lastWeek.flag) * 2 + Number(r.missed.flag);
-  rows.sort((x, y) => (bad(y) - bad(x)) || x.name.localeCompare(y.name));
+  // Missed practices lead; a load jump only breaks ties (David, 2026-11-03).
+  const bad = (r) => Number(r.missed.flag) * 2 + Number(r.thisWeek.flag || r.lastWeek.flag);
+  rows.sort((x, y) => (bad(y) - bad(x)) || (y.missed.count - x.missed.count) || x.name.localeCompare(y.name));
   return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
     missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, rowers: rows };
 }

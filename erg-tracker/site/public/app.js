@@ -1068,25 +1068,29 @@ async function showStars() {
 async function showInsights() {
   const v = await api('/api/insights');
   setNav('insights');
-  const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${w.changePct === null ? '<span class="muted">–</span>'
-    : `${w.flag ? '<span class="pill warn">▲ ' : ''}${w.changePct > 0 ? '+' : ''}${w.changePct}%${w.flag ? '</span>' : ''}`}</td>`;
   const trend = (t) => (!t ? '<span class="muted">–</span>' : Math.abs(t.changeS) < 0.5 ? 'same'
     : `<span class="${t.changeS < 0 ? 'good-text' : ''}">${t.changeS < 0 ? '▲' : '▼'} ${Math.abs(t.changeS).toFixed(1)}s</span>`);
   const flagged = v.rowers.filter((r) => r.thisWeek.flag || r.lastWeek.flag).length;
   const missedFlagged = v.rowers.filter((r) => r.missed.flag).length;
+  // Missed practices lead (David, 2026-11-03); load jumps stay, quieter: a ▲ with no pill.
+  const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
+    : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
+      : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
+  const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${jump(w)}</td>`;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
-    <p class="muted">Coaches only. Weighted minutes against each rower's average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it. ${flagged ? `<b>${flagged} flagged.</b>` : 'Nobody flagged.'} ${missedFlagged ? `<b>${missedFlagged} missing practices without making them up.</b>` : ''}</p></div></div>
+    <p class="muted">Coaches only. ${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
+      Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     <div class="card"><div class="table-wrap"><table class="insights">
-      <tr><th>Rower</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
-        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th><th class="r">Missed, 4 wks</th></tr>
+      <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
+        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
       ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td>
         ${loadCell(r.thisWeek)}${loadCell(r.lastWeek)}<td class="r">${r.lastWeek.rpe ?? ''}</td>
         <td class="r">${trend(r.splitTrend)}</td><td class="r">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
         <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
-        <td class="r">${r.month.streak}</td>
-        <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td></tr>`).join('')}
+        <td class="r">${r.month.streak}</td></tr>`).join('')}
     </table></div>
-    <p class="muted small">Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Missed: practices not logged or made up in the last ${v.missedWindowDays} days (open = still inside the make-up window, overdue = past it); ${v.missedFlagAt} or more is flagged. Open a rower for her charts.</p></div>
+    <p class="muted small">Missed: practices not logged or made up in the last ${v.missedWindowDays} days (open = still inside the make-up window, overdue = past it); ${v.missedFlagAt} or more is flagged. Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }
@@ -1368,3 +1372,8 @@ async function route() {
 document.getElementById('skip').onclick = (ev) => { ev.preventDefault(); app.focus(); };
 window.addEventListener('hashchange', route);
 route();
+
+// Offline home-screen shell (David, 2026-11-03): the service worker keeps only the app files; data always needs the network.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', () => { navigator.serviceWorker.register('/sw.js').catch(() => {}); });
+}

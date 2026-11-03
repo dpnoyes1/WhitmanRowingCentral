@@ -416,3 +416,6 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 #pw-form input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-height: 44px; }
 .pw-buttons { display: flex; gap: 8px; justify-content: flex-end; }
 @media print { dialog, .user-menu { display: none !important; } }
+
+/* Insights: load jumps are quiet next to missed practices (David, 2026-11-03). */
+.jump { color: var(--text-2); font-size: .85rem; white-space: nowrap; }
