@@ -1,6 +1,6 @@
 # Team site (whitmanrowingcentral.netlify.app)
 
-Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the same way, then a personal password they set themselves. Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
+Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the same way, then a personal password they set themselves (any coach can reset another coach's from Settings). Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/balance (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me, #/workout/E-ID)

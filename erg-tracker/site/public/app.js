@@ -1262,7 +1262,7 @@ function sessionsTable(rows) {
 // field list; only fields that changed are sent back, and the Sheet checks every value.
 
 async function showSettings() {
-  const v = await api('/api/settings');
+  const [v, pw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
     app.innerHTML = `<div class="head"><div><h1>Settings</h1>
@@ -1276,8 +1276,10 @@ async function showSettings() {
           ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
         <section class="card"><h2>Access</h2>
           <p class="small">The Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
+        ${coachPasswordsCard(pw)}
       </div>${footer(v.meta)}`;
     wireFooter();
+    wireCoachPasswords();
     const save = document.getElementById('save');
     const inputs = [...app.querySelectorAll('input[data-key]')];
     const changed = () => inputs.filter((i) => i.value.trim() !== i.dataset.was);
@@ -1305,6 +1307,41 @@ async function showSettings() {
     };
   };
   draw(v.sections, '');
+}
+
+/**
+ * Coach passwords (David, 2026-11-03): any coach can reset any coach's personal password from Settings.
+ * A reset clears it, so that coach signs in with their birthday again and can set a new one from the menu.
+ */
+function coachPasswordsCard(pw) {
+  const list = pw && pw.coaches;
+  const rows = !list ? '<p class="error small">The list could not be loaded. Reload the page to try again.</p>'
+    : !list.length ? '<p class="muted small">No coach has set a personal password yet.</p>'
+      : `<ul class="pw-list">${list.map((c) => `<li><span>${esc(c.name)}${c.you ? ' (you)' : ''}${c.updatedAt ? `<span class="muted small"> · set ${esc(fmtDate(c.updatedAt.slice(0, 10)))}</span>` : ''}</span>
+        <button class="btn ghost" type="button" data-reset="${esc(c.key)}" data-name="${esc(c.name)}">Reset</button></li>`).join('')}</ul>`;
+  return `<section class="card" id="coach-pw"><h2>Coach passwords</h2>
+    <p class="muted small">If a coach forgets their password, reset it here. They then sign in with their birthday again (MM/DD/YYYY) and can set a new password from the menu.</p>
+    ${rows}<p id="coach-pw-msg" class="small" role="status"></p></section>`;
+}
+
+function wireCoachPasswords() {
+  app.querySelectorAll('[data-reset]').forEach((b) => {
+    b.onclick = async () => {
+      const msg = document.getElementById('coach-pw-msg');
+      if (!confirm(`Reset ${b.dataset.name}'s password? Their birthday will sign them in again until they set a new one.`)) return;
+      b.disabled = true; msg.className = 'small'; msg.textContent = '';
+      try {
+        const res = await fetch('/api/coach-passwords', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: b.dataset.reset }) });
+        if (res.status === 401) { setSession(null); showLogin('You were signed out. Please sign in again.'); return; }
+        const body = await res.json().catch(() => ({}));
+        if (!res.ok) { msg.className = 'error small'; msg.textContent = body.error || 'That did not work.'; b.disabled = false; return; }
+        b.closest('li').remove();
+        msg.className = 'good-text small'; msg.textContent = `${b.dataset.name}'s password is reset. Their birthday signs them in now.`;
+      } catch {
+        msg.className = 'error small'; msg.textContent = 'Could not reach the site. Nothing was changed.'; b.disabled = false;
+      }
+    };
+  });
 }
 
 // ---- router --------------------------------------------------------------
