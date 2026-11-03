@@ -15,7 +15,7 @@ import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
-import { handlePhotoEvent, handlePhotoButton } from '../lib/slackphoto.mjs';
+import { handlePhotoEvent, handlePhotoButton, benchmarkShape } from '../lib/slackphoto.mjs';
 import * as SL from '../lib/slacklog.mjs';
 import * as SLB from '../lib/slacklogbook.mjs';
 import { createHmac } from 'node:crypto';
@@ -1019,8 +1019,11 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
   const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xe1, 'Exif\0\0GPS'), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
   const piece = (time, meters, split) => ({ time, meters, split, rate: 24 });
-  const single = { title: '2000m', date: '', split_label: '/500m', total: { time: '8:00.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, total_time_incl_rest: '', rest_meters: null,
-    meters_column: 'cumulative', pieces: [piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 1000, '2:00.0'), piece('2:00.0', 1500, '2:00.0'), piece('2:00.0', 2000, '2:00.0')], flags: [] };
+  const single = { title: '1500m', date: '', split_label: '/500m', total: { time: '6:00.0', meters: 1500, avg_split: '2:00.0', avg_rate: 24 }, total_time_incl_rest: '', rest_meters: null,
+    meters_column: 'cumulative', pieces: [piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 1000, '2:00.0'), piece('2:00.0', 1500, '2:00.0')], flags: [] };
+  const twoK = { ...single, title: '2000m', total: { time: '8:00.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, pieces: [...single.pieces, piece('2:00.0', 2000, '2:00.0')] };
+  const twenty = { ...single, title: '20:00', total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 }, total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 },
+    pieces: [piece('20:00.0', 5000, '2:00.0')], meters_column: 'cumulative' };
   const bad = { ...single, total: { ...single.total, time: '9:30.0' } };   // time does not match meters at that split
   const intervals = { ...single, title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
     pieces: [0, 1, 2, 3].map(() => piece('1:40.0', 500, '1:40.0')) };
@@ -1054,7 +1057,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   let w = world();
   let out = await handlePhotoEvent(photoMsg(), env, w.deps);
   assert.strictEqual(out.status, 'asked');
-  assert.ok(/Which athlete is this for/.test(w.dms()[0].text) && /2000m, RowErg, one piece, 2000 m in 8:00\.0/.test(w.dms()[0].text), w.dms()[0].text);
+  assert.ok(/Which athlete is this for/.test(w.dms()[0].text) && /1500m, RowErg, one piece, 1500 m in 6:00\.0/.test(w.dms()[0].text), w.dms()[0].text);
   assert.strictEqual(w.dms()[0].channel, 'UC1');
   const ai = w.calls.find((c) => c.url === 'https://api.anthropic.com/v1/messages');
   assert.strictEqual(ai.body.model, 'claude-haiku-5-5');
@@ -1084,8 +1087,8 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual(save.photo.rpe, '7');
   assert.strictEqual(save.photo.date, '2026-10-28');
   assert.strictEqual(save.photo.machine, 'RowErg');
-  assert.deepStrictEqual(save.photo.pieces, [{ timeS: 480, meters: 2000, rate: 24, restS: 0 }], 'single piece saves totals only');
-  assert.ok(/Splits: 2:00\.0, 2:00\.0, 2:00\.0, 2:00\.0/.test(save.photo.note));
+  assert.deepStrictEqual(save.photo.pieces, [{ timeS: 360, meters: 1500, rate: 24, restS: 0 }], 'single piece saves totals only');
+  assert.ok(/Splits: 2:00\.0, 2:00\.0, 2:00\.0/.test(save.photo.note));
   assert.strictEqual(save.photo.image, Buffer.from('small-copy').toString('base64'), 'the small copy goes with the save, not the original');
   const sent = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
   assert.ok(/Saved for Olivia Fake with RPE 7/.test(sent.text) && sent.replace_original);
@@ -1166,6 +1169,51 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.ok(/Logged from an erg photo\./.test(aSave.photo.note) && !/by a coach/.test(aSave.photo.note));
   w = world({ sheet: { access: athleteAccess } });
   assert.strictEqual((await handlePhotoEvent(textMsg('Someone Else', 'UA1'), env, w.deps)).ignored, 'nothing pending');
+
+  // exactly 2000 m or exactly 20:00 on the RowErg: ask whether it is a test before the RPE card (athlete and coach alike)
+  w = world({ answers: [twoK], sheet: { access: athleteAccess } });
+  out = await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
+  assert.strictEqual(out.asked, '2000m');
+  const q = w.dms()[0];
+  assert.ok(/Was it a 2k test/.test(q.text) && q.blocks[1].elements.map((e) => e.action_id).join() === 'photo_test_yes,photo_test_no,photo_cancel');
+  const qTok = q.blocks[1].elements[0].value;
+  const aboutAthlete = { id: 'UA1', name: 'olivia.fake' };
+  out = await handlePhotoButton(press('photo_rpe_6', qTok, aboutAthlete), env, w.deps);
+  assert.strictEqual(out.status, 'asking', 'cannot save before answering');
+  assert.ok(!w.calls.some((c) => c.body && c.body.action === 'slack-photo'));
+  out = await handlePhotoButton(press('photo_test_yes', qTok, { id: 'UA9', name: 'someone.else' }), env, w.deps);
+  assert.strictEqual(out.status, 'not_owner');
+  out = await handlePhotoButton(press('photo_test_yes', qTok, aboutAthlete), env, w.deps);
+  assert.strictEqual(out.status, 'test');
+  const rpeReply = JSON.parse(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body ? JSON.stringify(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body) : '{}');
+  assert.ok(rpeReply.replace_original && rpeReply.blocks[1].elements.length === 10, 'the card becomes the RPE card');
+  out = await handlePhotoButton(press('photo_rpe_8', qTok, aboutAthlete), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  const tSave = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body;
+  assert.strictEqual(tSave.photo.benchmark, '2000m');
+  assert.strictEqual(tSave.athlete, 'Olivia Fake');
+  w = world({ answers: [twoK], sheet: { access: athleteAccess } });
+  await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
+  const nTok = w.dms()[0].blocks[1].elements[0].value;
+  assert.strictEqual((await handlePhotoButton(press('photo_test_no', nTok, aboutAthlete), env, w.deps)).status, 'not_test');
+  await handlePhotoButton(press('photo_norpe', nTok, aboutAthlete), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo.benchmark, '', 'No means a normal workout');
+  w = world({ answers: [twoK], sheet: { access: athleteAccess } });
+  await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
+  assert.strictEqual((await handlePhotoButton(press('photo_cancel', w.dms()[0].blocks[1].elements[2].value, aboutAthlete), env, w.deps)).status, 'cancelled');
+  assert.ok(!w.calls.some((c) => c.body && c.body.action === 'slack-photo'), 'cancel saves nothing');
+  w = world({ answers: [twenty], sheet: { access: athleteAccess } });
+  assert.strictEqual((await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps)).asked, '20min');
+  assert.ok(/20' test/.test(w.dms()[0].text));
+  w = world({ answers: [single], sheet: { access: athleteAccess } });
+  assert.strictEqual((await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps)).asked, undefined, 'any other size is not asked');
+  const bikePieces = [{ timeS: 480, meters: 2000, rate: 24, restS: 0 }];
+  assert.strictEqual(benchmarkShape('RowErg', bikePieces), '2000m');
+  assert.strictEqual(benchmarkShape('BikeErg', bikePieces), '', 'BikeErg never counts');
+  assert.strictEqual(benchmarkShape('RowErg', [{ ...bikePieces[0], meters: 2001 }]), '');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1200, meters: 5000 }]), '20min');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1199.9, meters: 5000 }]), '');
+  assert.strictEqual(benchmarkShape('RowErg', [...bikePieces, ...bikePieces]), '');
 
   // guards: Slack accounts not on the Roster, missing key, unreadable numbers (retried on the stronger model), wrong file type
   w = world();

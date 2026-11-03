@@ -177,11 +177,16 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
       submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_
     });
     result.entry.Source = 'Slack';
+    if (result.benchmark) result.benchmark.Source = 'Slack';
     if (hooks && hooks.beforeWrite) {
       var early = hooks.beforeWrite(result, athlete);
       if (early) return early;
     }
     writeResult_(result);
+    if (result.benchmark && result.benchmark['Drag check']) {
+      logChange_({ Who: 'slack', Tab: TABS.BENCHMARKS, 'Row ID': result.benchmark['Benchmark ID'],
+        Note: result.benchmark['Drag check'] + ' (' + result.benchmark.Test + ', ' + result.benchmark.Athlete + ')' });
+    }
     SpreadsheetApp.flush();
     var squads = {};
     roster.forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
