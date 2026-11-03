@@ -117,9 +117,47 @@ export function loadTab(gid) {
   });
 }
 
-/** Today's practice for the visitor's local date, or throws when the Sheet cannot be read. */
+// ---- a week at a time ------------------------------------------------------
+// The browser keeps the next 7 days of results (David, 2026-11-03: people mostly want their shift
+// time, and a school network may block Google). A saved copy is used only when Google cannot be read.
+
+export const CACHE_KEY = 'wrc.practiceWeek';
+export const CACHE_DAYS = 7;
+export const CACHE_MAX_AGE_MS = CACHE_DAYS * 24 * 60 * 60 * 1000;
+
+/** Results for `days` dates starting at `iso`: { 'YYYY-MM-DD': practiceFor(...) }. */
+export function weekEntries(iso, seasons, overrides, days = CACHE_DAYS) {
+  const out = {};
+  const d = new Date(iso + 'T12:00:00');
+  for (let i = 0; i < days; i++) {
+    const day = localIso(new Date(d.getFullYear(), d.getMonth(), d.getDate() + i, 12));
+    out[day] = practiceFor(day, seasons, overrides);
+  }
+  return out;
+}
+
+/** The saved result for `iso`, or null when there is none or the copy is older than a week. */
+export function cachedPractice(cache, iso, nowMs = Date.now()) {
+  if (!cache || !cache.entries || typeof cache.savedAt !== 'number') return null;
+  if (nowMs - cache.savedAt > CACHE_MAX_AGE_MS || nowMs < cache.savedAt) return null;
+  const e = cache.entries[iso];
+  return e ? { iso, ...e, cachedAt: cache.savedAt } : null;
+}
+
+function readCache() { try { return JSON.parse(localStorage.getItem(CACHE_KEY)); } catch { return null; } }
+function writeCache(c) { try { localStorage.setItem(CACHE_KEY, JSON.stringify(c)); } catch { /* private mode */ } }
+
+/** Today's practice for the visitor's local date; from the saved week when Google cannot be read; throws when neither works. */
 export async function loadPractice(now = new Date()) {
-  const [s, o] = await Promise.all([loadTab(SEASONS_GID), loadTab(OVERRIDES_GID)]);
   const iso = localIso(now);
-  return { iso, ...practiceFor(iso, parseSeasons(tableRows(s)), parseOverrides(tableRows(o))) };
+  try {
+    const [s, o] = await Promise.all([loadTab(SEASONS_GID), loadTab(OVERRIDES_GID)]);
+    const seasons = parseSeasons(tableRows(s)), overrides = parseOverrides(tableRows(o));
+    writeCache({ savedAt: now.getTime(), entries: weekEntries(iso, seasons, overrides) });
+    return { iso, ...practiceFor(iso, seasons, overrides) };
+  } catch (err) {
+    const saved = cachedPractice(readCache(), iso, now.getTime());
+    if (saved) return saved;
+    throw err;
+  }
 }

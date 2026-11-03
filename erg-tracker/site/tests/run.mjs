@@ -532,6 +532,18 @@ test('week ahead: coming week Mon-Sat, her squad, only her own targets', () => {
   assert.ok(today.length > 0 && today.every((s) => s.squad !== 'Varsity'));
 });
 
+test('practice box: a saved week of results is used when Google cannot be read', () => {
+  const seasons = [{ name: 'Winter', start: '2026-11-02', end: '2027-03-01', days: { Monday: 'YES', Tuesday: 'YES', Wednesday: 'YES', Thursday: 'YES', Friday: 'YES', Saturday: 'NO', Sunday: 'NO' } }];
+  const week = PR.weekEntries('2026-11-02', seasons, []);
+  assert.strictEqual(Object.keys(week).length, 7, 'seven days saved');
+  assert.strictEqual(week['2026-11-02'].shifts.girls, PR.WINTER_SHIFTS.early, 'Monday girls are early');
+  const cache = { savedAt: Date.parse('2026-11-02T12:00:00Z'), entries: week };
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-04', Date.parse('2026-11-04T12:00:00Z')).shifts.girls, PR.WINTER_SHIFTS.early, 'Wednesday is early too');
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-09', Date.parse('2026-11-04T12:00:00Z')), null, 'a day outside the saved week');
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-04', Date.parse('2026-11-12T12:00:00Z')), null, 'a copy over a week old is not used');
+  assert.strictEqual(PR.cachedPractice(null, '2026-11-04'), null);
+});
+
 test('week ahead: a novice does the Varsity workout when no Novice one is scheduled that day', () => {
   const nov = feed.athletes.find((a) => a.squad === 'Novice' && a.active);
   const monday = comingMonday(TODAY);

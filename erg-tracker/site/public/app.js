@@ -172,7 +172,7 @@ function showPractice() {
     const head = p.status === 'YES' ? '' : `<p class="status">${p.status === 'NO' ? 'No practice' : 'Partial practice'}</p>`;
     const line = p.shifts ? `${p.shifts.girlsEarly ? 'Early' : 'Late'} Shift: ${esc(p.shifts.girls)}` : esc(p.note);
     practiceBox.innerHTML = `<div class="card practice st-${p.status.toLowerCase()}">
-      <h2>${esc(when)}</h2>${head}<p class="note">${line}</p></div>`;
+      <h2>${esc(when)}</h2>${head}<p class="note">${line}</p>${p.cachedAt ? `<p class="muted small">Saved copy from ${esc(new Date(p.cachedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))}. Check Slack for changes.</p>` : ''}</div>`;
     practiceAt = Date.now();
   }).catch(() => {
     // Quiet failure: no error line above a page that loaded fine; try again in a minute, not on every tab.
