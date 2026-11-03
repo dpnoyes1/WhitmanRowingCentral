@@ -16,6 +16,8 @@ export async function handleLogin(req, envFn, deps = {}) {
   }
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
+  if (typeof body.password === 'string') body.password = body.password.trim();   // a stray space from a phone keyboard
+  if (typeof body.name === 'string') body.name = body.name.trim();
   const secret = sessionSecret(envFn);
   if (!secret) return json({ error: 'The site is not set up yet (missing TEAM_PASSWORD or FEED_KEY).' }, 500);
   if (passwordMatches(envFn, body.password)) {
@@ -42,7 +44,7 @@ export async function handleLogin(req, envFn, deps = {}) {
   }
   if (!athlete) {
     await new Promise((r) => setTimeout(r, deps.failDelayMs ?? 600));   // slows down guessing
-    return json({ error: "That name and password don't match. Use your first and last name." }, 401);
+    return json({ error: "That name and password don't match. Check the spelling of your first and last name, and type your birthday as MM/DD/YYYY. Coaches: leave Name empty." }, 401);
   }
   return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete === 'team' ? 'team' : athlete.id)) });
 }

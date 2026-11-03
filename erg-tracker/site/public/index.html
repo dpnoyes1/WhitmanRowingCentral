@@ -15,6 +15,7 @@
   <script src="/theme.js"></script>
 </head>
 <body>
+  <a class="skip" href="#app" id="skip">Skip to content</a>
   <div class="shell">
     <aside class="side" id="side">
       <div class="side-head">
@@ -39,7 +40,7 @@
       <div class="side-foot">
         <a href="/logworkout" target="_blank" rel="noopener" class="nav-log" title="Log a workout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="t">Log a workout ↗</span></a>
         <a href="#/settings" data-nav="settings" title="Settings" id="nav-settings" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14 3h-4l-.6 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2L10 21h4l.6-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg><span class="t">Settings</span></a>
-        <div class="usercard" id="usercard" hidden><span class="av" id="user-av"></span><span class="who t"><b id="user-name"></b><small id="user-role"></small></span><button id="theme" class="theme-toggle" type="button" aria-label="Switch to dark mode"></button></div>
+        <div class="usercard" id="usercard" hidden><span class="av" id="user-av"></span><span class="who t"><b id="user-name"></b><small id="user-role"></small><button id="usercard-out" class="linkish signout" type="button">Sign out</button></span><button id="theme" class="theme-toggle" type="button" aria-label="Switch to dark mode"></button></div>
       </div>
     </aside>
     <div class="scrim" id="scrim"></div>
@@ -50,7 +51,8 @@
         <a id="log-top" class="log-top" href="/logworkout" target="_blank" rel="noopener" hidden>Log</a>
       </header>
       <div id="practice" class="practice-wrap" hidden></div>
-      <main id="app" aria-live="polite"><p class="muted">Loading…</p></main>
+      <div id="live" class="sr-only" aria-live="polite"></div>
+      <main id="app" tabindex="-1"><p class="muted">Loading…</p></main>
     </div>
   </div>
   <nav class="tabbar" id="tabbar" aria-label="Quick links" hidden>

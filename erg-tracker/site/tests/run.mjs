@@ -567,10 +567,15 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
   assert.strictEqual(body.weekStart, '2026-10-19', 'athletes cannot look back');
   assert.ok(body.days.flatMap((d) => d.sessions).some((x) => x.result) && !JSON.stringify(body).includes('"results"'));
   const mate = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.id !== rower.id);
-  body = await get('/api/week/' + mate.id, her);
-  assert.ok(body.days.flatMap((d) => d.sessions).every((x) => !('result' in x)), 'no teammate results');
+  const mateWeek = await handle(new Request('https://x/api/week/' + mate.id, { headers: { cookie: her } }), env, deps);
+  assert.strictEqual(mateWeek.status, 403, 'an athlete cannot open a teammate\'s week');
+  assert.strictEqual((await handle(new Request('https://x/api/week/' + rower.id, { headers: { cookie: her } }), env, deps)).status, 200, 'her own week by id still works');
   body = await get('/api/athlete/' + mate.id, her);
   assert.deepStrictEqual(body.todayPlan, [], 'no teammate Today card');
+  body = await get('/api/team', her);
+  assert.ok(!('notLogged' in body), 'athletes get no not-logged list');
+  body = await get('/api/team', team);
+  assert.ok(body.notLogged && Array.isArray(body.notLogged.rowers) && body.notLogged.rowers.every((r) => r.id && r.name && !('birthday' in r)), 'coaches get the not-logged list');
   body = await get('/api/week?week=prev', team);
   assert.strictEqual(body.weekStart, '2026-10-12');
   body = await get('/api/week/' + mate.id, team);
@@ -585,6 +590,8 @@ test('login: wrong password 401, right one sets the cookie, logout clears it', a
   let res = await login(post('/api/login', { password: 'nope' }));
   assert.strictEqual(res.status, 401);
   assert.strictEqual(res.headers.get('set-cookie'), null);
+  res = await login(post('/api/login', { password: '  fake-team-pw ' }));
+  assert.strictEqual(res.status, 200, 'stray spaces around the password are ignored');
   res = await login(post('/api/login', { password: 'fake-team-pw' }));
   assert.strictEqual(res.status, 200);
   const token = res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];

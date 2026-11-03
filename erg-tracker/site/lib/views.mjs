@@ -407,6 +407,17 @@ function splitOf(b) {
  * average is shown, however few rowers it has. Freshman = the 9th-grade
  * class, as the feed works it out from Grad year.
  */
+/**
+ * Coaches only. Active rowers with no logged session yet this week (Monday to today), so a coach sees who to
+ * nudge without opening the Completion grid. Out days do not count as a log.
+ */
+export function notLoggedView(feed, today) {
+  const monday = weekStart(today);
+  const logged = new Set(feed.entries.filter((e) => e.date >= monday && e.date <= today && e.status !== 'Out').map((e) => e.athleteId));
+  const rowers = activeRowers(feed).filter((a) => !logged.has(a.id)).map((a) => ({ id: a.id, name: a.name, squad: a.squad }));
+  return { weekStart: monday, rowers };
+}
+
 export function teamSplitsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const rowers = activeRowers(feed);

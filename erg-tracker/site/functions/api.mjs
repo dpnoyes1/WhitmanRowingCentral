@@ -2,7 +2,7 @@ import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -30,7 +30,7 @@ export async function handle(req, envFn, deps = {}) {
     return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
-  if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today) } : {}), meta });
+  if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today), notLogged: notLoggedView(data, today) } : {}), meta });
   if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
@@ -50,7 +50,9 @@ export async function handle(req, envFn, deps = {}) {
   }
   const w = path.match(/^\/api\/week\/([A-Za-z0-9-]+)$/);
   if (w) {
-    const view = weekView(data, today, w[1], { offset, results: coach || (who.kind === 'athlete' && who.id === w[1]) ? 'own' : 'none' });
+    // An athlete's week, with her own targets, is for her and for coaches (David's rule: only your own targets).
+    if (!coach && !(who.kind === 'athlete' && who.id === w[1])) return json({ error: 'That week is only for the athlete and coaches.' }, 403);
+    const view = weekView(data, today, w[1], { offset, results: 'own' });
     return view ? json({ ...view, meta }) : json({ error: 'No athlete with that ID.' }, 404);
   }
   const m = path.match(/^\/api\/athlete\/([A-Za-z0-9-]+)$/);

@@ -65,11 +65,27 @@ async function signOut() {
   showLogin();
 }
 
+const API_TIMEOUT_MS = 15000;
+let returnTo = '';   // the page to go back to after signing in again
 async function api(path) {
-  const res = await fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' } });
-  if (res.status === 401) { setSession(null); showLogin(); throw new Error('signin'); }
+  const ctl = new AbortController();
+  const timer = setTimeout(() => ctl.abort(), API_TIMEOUT_MS);
+  let res;
+  try {
+    res = await fetch(path, { credentials: 'same-origin', headers: { accept: 'application/json' }, signal: ctl.signal });
+  } catch (err) {
+    if (err.name === 'AbortError') throw new Error('This is taking too long. Check your connection and try again.');
+    throw new Error(navigator.onLine === false ? 'You are offline. Reconnect and try again.' : 'Could not reach the site. Check your connection and try again.');
+  } finally { clearTimeout(timer); }
+  if (res.status === 401) {
+    const was = !!SESSION;
+    setSession(null);
+    if (location.hash && location.hash !== '#/') returnTo = location.hash;
+    showLogin(was ? 'You were signed out. Please sign in again.' : '');
+    throw new Error('signin');
+  }
   const body = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(body.error || 'Something went wrong.');
+  if (!res.ok) throw new Error(body.error || (res.status >= 500 ? 'The site had a problem. Try again in a minute.' : 'Something went wrong.'));
   return body;
 }
 
@@ -142,8 +158,9 @@ document.getElementById('collapse').onclick = () => {
  * "Is Whitman Rowing Today" Sheet so the girls check one site. Today only, visitor's local date.
  * Refreshed when older than 5 minutes; a failed load shows one quiet line and never blocks the page.
  */
-let practiceAt = 0, practiceLoading = false;
+let practiceAt = 0, practiceLoading = false, practiceFailedAt = 0;
 function showPractice() {
+  if (practiceLoading || (practiceFailedAt && Date.now() - practiceFailedAt < 60 * 1000)) return;
   practiceBox.hidden = false;
   if (practiceLoading || (practiceBox.innerHTML && Date.now() - practiceAt < 5 * 60 * 1000)) return;
   practiceLoading = true;
@@ -158,7 +175,9 @@ function showPractice() {
       <h2>${esc(when)}</h2>${head}<p class="note">${line}</p></div>`;
     practiceAt = Date.now();
   }).catch(() => {
-    if (!practiceAt) practiceBox.innerHTML = '<p class="muted small">Could not load today’s practice right now.</p>';
+    // Quiet failure: no error line above a page that loaded fine; try again in a minute, not on every tab.
+    if (!practiceAt) { practiceBox.innerHTML = ''; practiceBox.hidden = true; }
+    practiceFailedAt = Date.now();
   }).finally(() => { practiceLoading = false; });
 }
 
@@ -173,6 +192,8 @@ function footer(meta) {
     <button class="linkish" id="signout">Sign out</button></p>`;
 }
 
+document.getElementById('usercard-out').onclick = () => signOut();
+
 function wireFooter() {
   const b = document.getElementById('signout');
   if (b) b.onclick = signOut;
@@ -181,7 +202,7 @@ function wireFooter() {
 function showError(err) {
   if (err.message === 'signin') return;
   app.innerHTML = `<div class="card"><p class="error">${esc(err.message)}</p><button class="btn ghost" id="retry">Try again</button></div>`;
-  document.getElementById('retry').onclick = () => location.reload();
+  document.getElementById('retry').onclick = () => { app.innerHTML = SKELETON; route(); };
 }
 
 // ---- tooltips --------------------------------------------------------------
@@ -306,7 +327,7 @@ function tile(label, value, sub = '') {
 
 // ---- pages ---------------------------------------------------------------
 
-function showLogin() {
+function showLogin(note = '') {
   practiceBox.hidden = true;
   document.getElementById('nav').hidden = true;
   document.getElementById('menu').hidden = true;
@@ -316,7 +337,8 @@ function showLogin() {
   closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
-    <p class="muted">Sign in with your first and last name and the password from your coach.</p>
+    <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY). Coaches: leave Name empty and use the coach password.</p>
+    ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
       <label for="name" class="small">Name</label>
       <input id="name" autocomplete="username" autocapitalize="words" spellcheck="false">
@@ -346,8 +368,8 @@ function showLogin() {
     if (!res.ok) return done(body.error || 'Could not sign in.');
     store.set(OLD_ME_KEY, null);
     setSession(null);
-    location.hash = '#/';
-    route();
+    const back = returnTo; returnTo = '';
+    if (back && back !== '#/') { if (location.hash === back) route(); else location.hash = back; } else { location.hash = '#/'; route(); }
   };
 }
 
@@ -368,12 +390,13 @@ async function showTeam() {
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
+      ${teamTodayCard(wk, squad)}
+      ${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}
       ${t.splits ? splitsCard(t.splits) : ''}
       <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
         ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
-        <div class="stack-col"><div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
-          ${teamTodayCard(wk, squad)}</div>
+        <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
         <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
       </div>${footer(t.meta)}`;
     app.querySelectorAll('[data-sq]').forEach((b) => { b.onclick = () => { squad = b.dataset.sq; store.set(SQUAD_KEY, squad); render(); }; });
@@ -400,6 +423,13 @@ function splitsCard(s) {
  * Team page: today's workout for the chosen squad (an athlete always sees
  * her own, with her targets). Nothing today: the next scheduled day this week.
  */
+/** Coaches: rowers with nothing logged yet this week, for the chosen squad. */
+function notLoggedCard(nl, squad) {
+  const list = nl.rowers.filter((r) => squad === 'all' || r.squad.toLowerCase() === squad);
+  return `<div class="card"><h2>Not logged yet this week <span class="pill ${list.length ? 'warn' : 'good'}">${list.length}</span></h2>
+    ${list.length ? `<p class="small">${list.map((r) => `<a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>`).join(' · ')}</p><p class="muted small">Nothing logged since Monday ${fmtDate(nl.weekStart)}.</p>` : '<p class="muted">Everyone has logged something this week.</p>'}</div>`;
+}
+
 function teamTodayCard(wk, squad) {
   if (!wk) return '';
   // An athlete's week is already her squad only; coaches follow the squad switch.
@@ -430,7 +460,7 @@ async function showAthletes() {
     <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
     ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
-        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
+        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   document.getElementById('q').oninput = (ev) => {
     const q = ev.target.value.trim().toLowerCase();
@@ -459,6 +489,12 @@ async function showAthlete(id) {
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
     ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
     ${v.own || v.coach ? '<div id="logbook-card"></div>' : ''}
+    <div class="card"><h2>OYO this week: ${fmtMin(w.oyoMin)} <span class="pill ${w.oyoStatus === 'short' ? '' : 'good'}">${oyoText}${toElite}</span>${a.breakWeek ? ' <span class="pill">Break week</span>' : ''}</h2>
+      <div class="meter" role="img" aria-label="OYO ${Math.round(w.oyoMin)} of ${a.oyoRequired} required, ${a.oyoElite} elite">
+        <div class="fill" style="width:${Math.min(100, (100 * w.oyoMin) / oyoMax)}%"></div>
+        <div class="mark" style="left:${(100 * a.oyoRequired) / oyoMax}%"><span>Required ${a.oyoRequired}m</span></div>
+        <div class="mark" style="left:${(100 * a.oyoElite) / oyoMax}%"><span>Elite ${a.oyoElite}m</span></div>
+      </div></div>
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
@@ -467,12 +503,6 @@ async function showAthlete(id) {
       ${tile('Season training', fmtMin(s.trainingMin), fmtNum(s.meters) + ' m')}
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
-    <div class="card"><h2>OYO this week: ${fmtMin(w.oyoMin)} <span class="pill ${w.oyoStatus === 'short' ? '' : 'good'}">${oyoText}${toElite}</span>${a.breakWeek ? ' <span class="pill">Break week</span>' : ''}</h2>
-      <div class="meter" role="img" aria-label="OYO ${Math.round(w.oyoMin)} of ${a.oyoRequired} required, ${a.oyoElite} elite">
-        <div class="fill" style="width:${Math.min(100, (100 * w.oyoMin) / oyoMax)}%"></div>
-        <div class="mark" style="left:${(100 * a.oyoRequired) / oyoMax}%"><span>Required ${a.oyoRequired}m</span></div>
-        <div class="mark" style="left:${(100 * a.oyoElite) / oyoMax}%"><span>Elite ${a.oyoElite}m</span></div>
-      </div></div>
     ${makeups}${madeUp}
     ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
@@ -651,7 +681,7 @@ function starText(n) {
   const full = Math.floor(n), half = n - full >= 0.5 ? 1 : 0;
   return '★'.repeat(full) + (half ? '<span class="star-half">★</span>' : '') + '<span class="star-off">' + '★'.repeat(MAX_STARS - full - half) + '</span>';
 }
-const starWord = (n) => `${n} star${n === 1 ? '' : 's'}`;
+const starWord = (n) => `${n} of ${MAX_STARS} stars`;
 /** Average of the 2k and 20' stars, matching seasonStars on the server. */
 const avgStars = (list) => (list.length ? Math.round((2 * list.reduce((x, y) => x + y, 0)) / list.length) / 2 : null);
 
@@ -660,7 +690,7 @@ function starsLine(gms) {
   const s = gms.filter((g) => g.stars !== null);
   if (!s.length) return '';
   const avg = avgStars(s.map((g) => g.stars));
-  return `<div class="card"><h2>Stars <span class="stars" aria-label="${starWord(avg)}">${starText(avg)}</span></h2>
+  return `<div class="card"><h2>Stars <span class="stars" role="img" aria-label="${starWord(avg)}">${starText(avg)}</span></h2>
     <p class="muted small">${s.map((g) => `${TEST_LABELS[g.test]}: ${starWord(g.stars)}`).join(' · ')}${s.length > 1 ? ' · average of the two' : ''}</p></div>`;
 }
 
@@ -669,9 +699,9 @@ function nextStarText(g) {
   if (g.stars === MAX_STARS) return 'Top band reached.';
   if (!n) return '';
   if (g.test === '2000m') {
-    return `Next star: <b>${n.secondsFaster.toFixed(1)}s faster</b> on your 2k (${fmtTime(n.targetS)}, about ${n.splitFaster.toFixed(1)}s/500m).`;
+    return `Next star: <b>${n.secondsFaster.toFixed(1)}s faster</b> on your 2k (${fmtTime(n.targetS)}${n.splitFaster >= 0.1 ? `, about ${n.splitFaster.toFixed(1)}s/500m` : ''}).`;
   }
-  return `Next star: <b>${fmtNum(n.metersMore)} m more</b> on your 20' (${fmtNum(n.targetM)} m, about ${n.splitFaster.toFixed(1)}s/500m faster).`;
+  return `Next star: <b>${fmtNum(n.metersMore)} m more</b> on your 20' (${fmtNum(n.targetM)} m${n.splitFaster >= 0.1 ? `, about ${n.splitFaster.toFixed(1)}s/500m faster` : ''}).`;
 }
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
@@ -680,13 +710,13 @@ function gmsCard(gms, coach = false, summary = null) {
   // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
-    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best this season</th><th class="r">GMS</th><th>Stars</th></tr>
+    <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best GMS this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
     </table></div>
     ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
     ${summary ? `<p class="callout">${esc(summary)}</p>` : ''}
-    <p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'. 500m and 100m are power checks with no stars.</p></div>`;
+    <p class="muted small">100% = the 1v8 standard (5:00 for 1500m). Stars come from your 2k and 20'. 500m and 100m are power checks with no stars. Each row is the test with your highest GMS %, which can differ from your fastest time.</p></div>`;
 }
 
 // ---- week ahead ----
@@ -748,7 +778,7 @@ function teamResults(s, today) {
   const inRange = logged.filter((x) => x.result.hit === true).length;
   const ahead = today && s.day > today;
   const sort = store.get(RESULTS_SORT_KEY) || 'name';
-  return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length ? ` · ${inRange} all in range` : ''}</summary>
+  return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length && !logged.every((x) => x.result.test) ? ` · ${inRange} all in range` : ''}</summary>
     <div class="seg results-sort" role="group" aria-label="Sort results">
       <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
     <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th>Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
@@ -927,7 +957,7 @@ async function showWeek(id = null, prev = false) {
       <select id="pick" aria-label="Show targets for">
       <option value="">Whole team</option>
       ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>${prev ? 'Last week' : 'Week ahead'}</h1>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>${prev ? 'Last week' : 'This week'}</h1>
       <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
       ${tools}</div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
@@ -962,9 +992,9 @@ async function showBoards() {
         <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th><th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
           <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
-            <div class="sub">${r.stars === null ? '' : `<span class="stars" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
+            <div class="sub">${r.stars === null ? '' : `<span class="stars" role="img" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
           <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
-      </table></div>` : '<p class="empty">No results yet.</p>'}</div>${footer(v.meta)}`;
+      </table></div>` : `<p class="empty">No ${esc(TEST_LABELS[state.test])} results yet${state.group === 'all' ? '' : ' for this group'}${state.window === 'season' ? ' this school year' : ''}. Try another test or group.</p>`}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
         state[b.dataset.k] = b.dataset.v;
@@ -987,7 +1017,7 @@ async function showStars() {
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
     <p class="muted">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
-    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
+    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" role="img" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
       <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}<span class="by-test muted small">${['2000m', '20min'].map((t) => r.byTest[t] === null ? '' : `${TEST_LABELS[t]} ${r.byTest[t]}★`).filter(Boolean).join(' · ')}</span></span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
     <div class="card"><h2>Team Gold Medal Standard</h2>
@@ -1098,7 +1128,7 @@ async function showOyo() {
 }
 
 function bestsTable(v) {
-  if (!v.bests.length) return '<p class="empty">No tests yet.</p>';
+  if (!v.bests.length) return '<p class="empty">No 2k or 20\u2019 test yet. When one is logged, the result, GMS and stars show up here.</p>';
   // Split under the season result and date under the all-time result, so it fits a phone (David, 2026-10-28).
   // Rank is among active rowers' all-time bests, the same as the PR boards. A Pacing link opens that test's look-back (her own page and coaches).
   const havePacing = new Set((v.pacing || []).map((p) => p.id));
@@ -1161,7 +1191,7 @@ function wirePacing(list) {
 }
 
 function testsTable(tests) {
-  if (!tests.length) return '<p class="empty">No tests yet.</p>';
+  if (!tests.length) return '<p class="empty">No 2k or 20\u2019 test yet. When one is logged, the result, GMS and stars show up here.</p>';
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Test</th><th class="r">Result</th><th class="r">Split</th><th class="r">Rate</th><th></th></tr>
     ${tests.map((r) => `<tr><td>${fmtDate(r.date)}</td><td>${TEST_LABELS[r.test]}</td><td class="r">${fmtResult(r)}</td>
       <td class="r">${split(r)}</td><td class="r">${r.avgRate ?? ''}</td>
@@ -1241,6 +1271,7 @@ async function showSettings() {
 
 const SKELETON = `<div class="skel" aria-hidden="true"><div class="skel-bar w40"></div><div class="skel-row"><div class="skel-tile"></div><div class="skel-tile"></div><div class="skel-tile"></div></div><div class="skel-card"></div></div><span class="sr-only">Loading…</span>`;
 
+let routed = false, pendingNote = '', redirected = false;
 async function route() {
   tip.hidden = true;
   const h = location.hash.replace(/^#\/?/, '');
@@ -1280,13 +1311,24 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
+    if (['stars', 'insights', 'completion', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
     showError(err);
   } finally {
     clearTimeout(slow);
+    // A new page opens at the top, and keyboard and screen-reader users start at its heading.
+    if (routed) window.scrollTo(0, 0);
+    routed = true;
+    if (redirected) { redirected = false; return; }
+    if (pendingNote && SESSION && app.firstElementChild && !app.querySelector('.login')) { app.insertAdjacentHTML('afterbegin', `<p class="notice" role="status">${esc(pendingNote)}</p>`); }
+    pendingNote = '';
+    const h1 = app.querySelector('h1');
+    if (h1 && SESSION) { h1.tabIndex = -1; h1.focus({ preventScroll: true }); document.getElementById('live').textContent = h1.textContent; }
   }
 }
 
+document.getElementById('skip').onclick = (ev) => { ev.preventDefault(); app.focus(); };
 window.addEventListener('hashchange', route);
 route();
