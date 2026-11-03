@@ -2,9 +2,7 @@
 // personal password. It is kept as a salted scrypt hash in Netlify Blobs (store `coachpw`, one key per
 // coach name), never in the Sheet or the repo. Once set, the birthday no longer signs that coach in.
 import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
-import { parseBirthday } from './auth.mjs';
 
-export const MIN_LENGTH = 10;
 const STORE = 'coachpw';
 
 const derive = (password, salt) => new Promise((resolve, reject) => {
@@ -22,12 +20,11 @@ export async function defaultCoachStore() {
   }
 }
 
-/** Why a new password is not acceptable, or '' when it is. */
+/** Why a new password is not acceptable, or '' when it is. David sets no rules (2026-11-03); only empty and absurdly long are refused. */
 export function passwordProblem(next) {
   const p = String(next || '');
-  if (p.length < MIN_LENGTH) return `Use at least ${MIN_LENGTH} characters.`;
-  if (p.length > 200) return 'That password is too long.';
-  if (parseBirthday(p)) return 'A date is easy to guess. Use something else.';
+  if (!p) return 'Type a new password.';
+  if (p.length > 1000) return 'That password is too long.';
   return '';
 }
 

@@ -1,4 +1,4 @@
-import { passwordMatches, sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey, displayName } from '../lib/auth.mjs';
+import { sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey, displayName } from '../lib/auth.mjs';
 import { defaultCoachStore, checkCoachPassword } from '../lib/coachpw.mjs';
 import { getFeed } from '../lib/feed.mjs';
 
@@ -9,7 +9,7 @@ const json = (body, status = 200, headers = {}) =>
 /**
  * POST /api/login { name, password }. An athlete types her name and her
  * birthday as the password; so does a coach listed in the Sheet's
- * site.coaches. TEAM_PASSWORD with no name is the coaches' fallback.
+ * site.coaches, or with the personal password she set from the menu. There is no shared password.
  */
 export async function handleLogin(req, envFn, deps = {}) {
   if (new URL(req.url).pathname === '/api/logout') {
@@ -20,10 +20,7 @@ export async function handleLogin(req, envFn, deps = {}) {
   if (typeof body.password === 'string') body.password = body.password.trim();   // a stray space from a phone keyboard
   if (typeof body.name === 'string') body.name = body.name.trim();
   const secret = sessionSecret(envFn);
-  if (!secret) return json({ error: 'The site is not set up yet (missing TEAM_PASSWORD or FEED_KEY).' }, 500);
-  if (passwordMatches(envFn, body.password)) {
-    return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, 'team')) });
-  }
+  if (!secret) return json({ error: 'The site is not set up yet (missing FEED_KEY).' }, 500);
   let athlete = null;
   let coachName = '';
   if (body.name) {
@@ -60,7 +57,7 @@ export async function handleLogin(req, envFn, deps = {}) {
   }
   if (!athlete) {
     await new Promise((r) => setTimeout(r, deps.failDelayMs ?? 600));   // slows down guessing
-    return json({ error: "That name and password don't match. Check the spelling of your first and last name, and type your birthday as MM/DD/YYYY. Coaches: leave Name empty." }, 401);
+    return json({ error: "That name and password don't match. Check the spelling of your first and last name, and type your birthday as MM/DD/YYYY (coaches: your password, if you set one)." }, 401);
   }
   return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete === 'team' ? 'team' : athlete.id, Date.now(), coachName)) });
 }

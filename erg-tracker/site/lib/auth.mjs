@@ -1,8 +1,8 @@
 // Sign-in and a signed session cookie. Athletes sign in with their name and
 // birthday (David, 2026-10-23), checked against keyed codes in the feed, so
-// the site never holds a birthday. Coaches use TEAM_PASSWORD, which lives
-// only in Netlify environment variables. Changing it or FEED_KEY signs
-// everyone out.
+// the site never holds a birthday. Coaches sign in the same way (Settings
+// site.coaches) and can then set a personal password (lib/coachpw.mjs). There is
+// no shared password (David, 2026-11-03). Rotating FEED_KEY signs everyone out.
 import { createHmac, timingSafeEqual } from 'node:crypto';
 
 export const COOKIE = 'wrc_session';
@@ -17,37 +17,32 @@ function sameText(a, b) {
   return x.length === y.length && timingSafeEqual(x, y);
 }
 
-/** Signing secret derived from the password and feed key, so rotating either ends old sessions. */
+/** Signing secret derived from the feed key, so rotating the key ends every session. */
 export function sessionSecret(env) {
-  const team = env('TEAM_PASSWORD'), key = env('FEED_KEY');
-  if (!team || !key) return null;
-  return createHmac('sha256', key).update('team-session:' + team).digest();
-}
-
-export function passwordMatches(env, given) {
-  const team = env('TEAM_PASSWORD');
-  return !!team && sameText(team, String(given || ''));
+  const key = env('FEED_KEY');
+  if (!key) return null;
+  return createHmac('sha256', key).update('session-v2').digest();
 }
 
 /**
- * who: 'team' (coach) or an athlete ID. A coach who signed in with a name carries it (name), so the
- * menu can show it and the password change knows whose password it is. The name is signed, not secret.
+ * who: 'team' (a coach, who always carries her name) or an athlete ID. The name lets the menu show it and
+ * the password change know whose password it is. It is signed, not secret.
  */
 export function makeToken(secret, who = 'team', now = Date.now(), name = '') {
   const exp = Math.floor(now / 1000) + SESSION_DAYS * 86400;
-  const label = who !== 'team' ? 'ath:' + who : name ? 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url') : 'team';
+  if (who === 'team' && !name) throw new Error('A coach session needs her name');
+  const label = who !== 'team' ? 'ath:' + who : 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url');
   const payload = label + '.' + exp;
   return payload + '.' + sign(secret, payload);
 }
 
-/** { kind: 'team', name? } or { kind: 'athlete', id } for a good, unexpired token, else null. */
+/** { kind: 'team', name } or { kind: 'athlete', id } for a good, unexpired token, else null. An old nameless 'team' token (from the retired shared password) is not valid. */
 export function readToken(secret, token, now = Date.now()) {
   if (!secret || !token) return null;
   const parts = String(token).split('.');
   if (parts.length !== 3) return null;
   const payload = parts[0] + '.' + parts[1];
   if (!sameText(sign(secret, payload), parts[2]) || Number(parts[1]) * 1000 <= now) return null;
-  if (parts[0] === 'team') return { kind: 'team' };
   const c = parts[0].match(/^coach:([A-Za-z0-9_-]+)$/);
   if (c) return { kind: 'team', name: Buffer.from(c[1], 'base64url').toString('utf8') };
   const m = parts[0].match(/^ath:([A-Za-z0-9-]+)$/);

@@ -28,6 +28,7 @@ export async function handleHealth(req, envFn, deps = {}) {
     checks.feed = true;
     checks.fresh = !feed.stale;
     checks.athleteLogins = out.athletes === 0 || out.athleteCodes > 0;
+    checks.coachLogins = out.coachCodes > 0;
   } catch (err) {
     checks.feed = false;
     out.feedError = err.message;

@@ -18,7 +18,6 @@ export async function handlePassword(req, envFn, deps = {}) {
   if (!/^application\/json/i.test(req.headers.get('content-type') || '') || (origin && origin !== new URL(req.url).origin)) {
     return json({ error: 'Bad request.' }, 400);
   }
-  if (!who.name) return json({ error: 'Sign out, then sign in with your name and birthday to set your own password.' }, 400);
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
   const current = String(body.current || '').trim(), next = String(body.next || '');

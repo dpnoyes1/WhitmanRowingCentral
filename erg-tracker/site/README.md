@@ -1,6 +1,6 @@
 # Team site (whitmanrowingcentral.netlify.app)
 
-Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the coach password (TEAM_PASSWORD). Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
+Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their name and birthday, coaches the same way, then a personal password they set themselves. Plain HTML/JS plus Netlify Functions. There is no framework and no build step.
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/balance (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me, #/workout/E-ID)
@@ -28,7 +28,6 @@ The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster no
 
 | Name | What |
 |---|---|
-| `TEAM_PASSWORD` | Shared athlete password. Changing it signs everyone out. Rotate each season. |
 | `FEED_KEY` | The key from **Erg Tracker > Site feed key** in the Sheet. Mark it as secret. |
 | `FEED_URL` | The Apps Script web app URL (ends in `/exec`). |
 | `COACH_PASSWORD` | For the coach view later. Not used yet. |
@@ -56,7 +55,7 @@ When `Feed.gs` (or anything it uses) changes later, update the same deployment s
 
 1. Open the project at <https://app.netlify.com/projects/whitmanrowingcentral>.
 2. Go to **Project configuration > Build & deploy > Continuous deployment**, click **Link repository**, and pick GitHub, then `dpnoyes1/WhitmanRowingCentral`, branch `main`. Leave the build fields as Netlify fills them from `netlify.toml`.
-3. Go to **Project configuration > Environment variables > Add a variable**, and add `TEAM_PASSWORD` and `FEED_KEY` (tick "Contains secret values" on both) and `FEED_URL`.
+3. Go to **Project configuration > Environment variables > Add a variable**, and add `FEED_KEY` (tick "Contains secret values") and `FEED_URL`.
    - Secret variables start with a Production value only. Also fill in **Deploy Previews**, or the preview sign-in says "The site is not set up yet".
    - `FEED_KEY` is the 64-character key (digits and a-f) from the Sheet, not Netlify's gray "somevalue" placeholder.
 4. Go to **Deploys > Trigger deploy > Deploy project**. New env values only take effect on the next deploy.

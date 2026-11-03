@@ -1,7 +1,7 @@
 // Whitman Rowing team site. Plain JS, hash routes:
 // #/team, #/week, #/boards, #/stars, #/insights, #/completion, #/balance, #/settings, #/oyo, #/athletes, #/athlete/A001, #/me, #/workout/E-ID
 // Data comes from /api/* behind a sign-in (an HttpOnly cookie). Athletes sign
-// in as themselves (name + birthday); coaches with the coach password.
+// in as themselves (name + birthday); coaches with their own password.
 
 import { loadPractice } from './practice.mjs';
 
@@ -372,7 +372,7 @@ function showLogin(note = '') {
   closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
-    <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY). Coaches: leave Name empty and use the coach password.</p>
+    <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY). Coaches: your full name, and your birthday the first time (then set your own password from the menu).</p>
     ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
       <label for="name" class="small">Name</label>
@@ -1271,7 +1271,7 @@ async function showSettings() {
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
           ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
         <section class="card"><h2>Access</h2>
-          <p class="small">The team password and the Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
+          <p class="small">The Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
       </div>${footer(v.meta)}`;
     wireFooter();
     const save = document.getElementById('save');

@@ -72,13 +72,13 @@
   <dialog id="pw-dialog" aria-labelledby="pw-title">
     <form id="pw-form" method="dialog">
       <h2 id="pw-title">Change password</h2>
-      <p class="muted small">Pick something only you know, at least 10 characters. Your birthday will stop working for sign-in.</p>
+      <p class="muted small">Pick something only you know. Your birthday will stop working for sign-in.</p>
       <label for="pw-current" class="small">Current password (your birthday, MM/DD/YYYY, if you have not set one)</label>
       <input id="pw-current" type="password" autocomplete="current-password" required>
       <label for="pw-new" class="small">New password</label>
-      <input id="pw-new" type="password" autocomplete="new-password" minlength="10" required>
+      <input id="pw-new" type="password" autocomplete="new-password" required>
       <label for="pw-again" class="small">New password again</label>
-      <input id="pw-again" type="password" autocomplete="new-password" minlength="10" required>
+      <input id="pw-again" type="password" autocomplete="new-password" required>
       <p id="pw-msg" class="error small" role="alert"></p>
       <div class="pw-buttons"><button type="button" class="btn ghost" id="pw-cancel">Cancel</button><button type="submit" class="btn" id="pw-save">Save password</button></div>
     </form>

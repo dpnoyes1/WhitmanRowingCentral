@@ -1,5 +1,5 @@
 // Shapes the feed into what each page shows. Everything returned here goes to
-// a browser behind the team password, so it must never carry weight or
+// a browser behind the sign-in, so it must never carry weight or
 // birthdays (the feed has neither) and GMS % only on an athlete's own page.
 
 import {
