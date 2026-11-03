@@ -37,3 +37,21 @@
     Referrer-Policy = "same-origin"
     X-Robots-Tag = "noindex, nofollow"
     Content-Security-Policy = "default-src 'self'; img-src 'self' data:; style-src 'self' 'unsafe-inline'; script-src 'self' https://docs.google.com; connect-src 'self'; frame-ancestors 'none'; base-uri 'none'; form-action 'self'"
+
+# Static files: a short cache so repeat visits are quick; filenames are not hashed, so keep it brief.
+[[headers]]
+  for = "/*.css"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+[[headers]]
+  for = "/*.js"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+[[headers]]
+  for = "/*.mjs"
+  [headers.values]
+    Cache-Control = "public, max-age=300"
+[[headers]]
+  for = "/*.png"
+  [headers.values]
+    Cache-Control = "public, max-age=86400"

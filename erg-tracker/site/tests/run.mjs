@@ -11,6 +11,7 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
+import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -365,20 +366,18 @@ test('GMS summary: strongest and weakest test, none with fewer than two', () => 
 });
 
 test('auth: tokens, cookies, password', () => {
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key' })[k];
   const secret = A.sessionSecret(env);
-  const tok = A.makeToken(secret, 'team', 0);
-  assert.deepStrictEqual(A.readToken(secret, tok, 1000), { kind: 'team' });
+  const tok = A.makeToken(secret, 'team', 0, 'Pat Example');
+  assert.deepStrictEqual(A.readToken(secret, tok, 1000), { kind: 'team', name: 'Pat Example' });
+  assert.throws(() => A.makeToken(secret, 'team', 0), 'a coach token needs a name');
   assert.deepStrictEqual(A.readToken(secret, A.makeToken(secret, 'A901', 0), 1000), { kind: 'athlete', id: 'A901' });
   const forged = A.makeToken(secret, 'A901', 0).replace('ath:A901', 'ath:A902');
   assert.strictEqual(A.readToken(secret, forged, 1000), null, 'cannot swap the athlete');
   assert.ok(A.tokenValid(secret, tok, 1000));
   assert.ok(!A.tokenValid(secret, tok, (A.SESSION_DAYS + 1) * 86400000), 'expires');
   assert.ok(!A.tokenValid(secret, tok.slice(0, -2) + 'xx', 1000), 'tampered');
-  assert.ok(!A.tokenValid(A.sessionSecret((k) => ({ TEAM_PASSWORD: 'new-pw', FEED_KEY: 'fake-key' })[k]), tok, 1000), 'rotated');
-  assert.ok(A.passwordMatches(env, 'fake-team-pw'));
-  assert.ok(!A.passwordMatches(env, 'fake-team-p'));
-  assert.ok(!A.passwordMatches((k) => undefined, ''));
+  assert.ok(!A.tokenValid(A.sessionSecret((k) => ({ FEED_KEY: 'other-key' })[k]), tok, 1000), 'rotated');
   assert.strictEqual(A.sessionSecret(() => undefined), null);
   const req = new Request('https://x/api/team', { headers: { cookie: 'a=1; ' + A.COOKIE + '=' + tok } });
   assert.strictEqual(A.readCookie(req), tok);
@@ -428,11 +427,11 @@ test('feed: posts the key, caches 5 minutes, serves stale on error', async () =>
 
 test('api: 401 without a session, team and athlete with one', async () => {
   clearFeedCache();
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
   let res = await handle(new Request('https://x/api/team'), env, deps);
   assert.strictEqual(res.status, 401);
-  const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const cookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   res = await handle(new Request('https://x/api/team', { headers: { cookie } }), env, deps);
   assert.strictEqual(res.status, 200);
   const coachTeam = await res.json();
@@ -532,6 +531,30 @@ test('week ahead: coming week Mon-Sat, her squad, only her own targets', () => {
   assert.ok(today.length > 0 && today.every((s) => s.squad !== 'Varsity'));
 });
 
+test('practice box: a saved week of results is used when Google cannot be read', () => {
+  const seasons = [{ name: 'Winter', start: '2026-11-02', end: '2027-03-01', days: { Monday: 'YES', Tuesday: 'YES', Wednesday: 'YES', Thursday: 'YES', Friday: 'YES', Saturday: 'NO', Sunday: 'NO' } }];
+  const week = PR.weekEntries('2026-11-02', seasons, []);
+  assert.strictEqual(Object.keys(week).length, 7, 'seven days saved');
+  assert.strictEqual(week['2026-11-02'].shifts.girls, PR.WINTER_SHIFTS.early, 'Monday girls are early');
+  const cache = { savedAt: Date.parse('2026-11-02T12:00:00Z'), entries: week };
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-04', Date.parse('2026-11-04T12:00:00Z')).shifts.girls, PR.WINTER_SHIFTS.early, 'Wednesday is early too');
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-09', Date.parse('2026-11-04T12:00:00Z')), null, 'a day outside the saved week');
+  assert.strictEqual(PR.cachedPractice(cache, '2026-11-04', Date.parse('2026-11-12T12:00:00Z')), null, 'a copy over a week old is not used');
+  assert.strictEqual(PR.cachedPractice(null, '2026-11-04'), null);
+});
+
+test('week ahead: a novice does the Varsity workout when no Novice one is scheduled that day', () => {
+  const nov = feed.athletes.find((a) => a.squad === 'Novice' && a.active);
+  const monday = comingMonday(TODAY);
+  const mk = (squad, name) => ({ day: monday, session: 'Practice', squad, workout: name, notes: '', pieces: [{ label: 'p1', notes: '' }], athletes: [], results: [] });
+  const only = { ...feed, weeks: [{ weekStart: monday, sessions: [mk('Varsity', 'V only')] }] };
+  assert.deepStrictEqual(weekView(only, TODAY, nov.id).days[0].sessions.map((x) => x.workout), ['V only'], 'novice sees the Varsity workout');
+  const both = { ...feed, weeks: [{ weekStart: monday, sessions: [mk('Varsity', 'V'), mk('Novice', 'N')] }] };
+  assert.deepStrictEqual(weekView(both, TODAY, nov.id).days[0].sessions.map((x) => x.workout), ['N'], 'a Novice workout replaces it');
+  const vars = feed.athletes.find((a) => a.squad === 'Varsity' && a.active);
+  assert.deepStrictEqual(weekView(both, TODAY, vars.id).days[0].sessions.map((x) => x.workout), ['V']);
+});
+
 test('week results: her own vs goal; coaches see everyone and last week', async () => {
   const rower = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.role === 'Rower');
   const v = weekView(feed, TODAY, rower.id, { results: 'own' });
@@ -557,20 +580,25 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
   old.weeks.forEach((w) => w.sessions.forEach((x) => delete x.results));
   assert.ok(weekView(old, TODAY, rower.id, { results: 'own' }).days.flatMap((d) => d.sessions).every((x) => !x.missed && !x.result));
   // Over the API: an athlete gets only her own result, never a teammate's, and can't look back.
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
   clearFeedCache();
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), rower.id);
-  const team = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const team = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const get = async (p, cookie) => (await handle(new Request('https://x' + p, { headers: { cookie } }), env, deps)).json();
   let body = await get('/api/week?week=prev', her);
   assert.strictEqual(body.weekStart, '2026-10-19', 'athletes cannot look back');
   assert.ok(body.days.flatMap((d) => d.sessions).some((x) => x.result) && !JSON.stringify(body).includes('"results"'));
   const mate = feed.athletes.find((a) => a.squad === 'Varsity' && a.active && a.id !== rower.id);
-  body = await get('/api/week/' + mate.id, her);
-  assert.ok(body.days.flatMap((d) => d.sessions).every((x) => !('result' in x)), 'no teammate results');
+  const mateWeek = await handle(new Request('https://x/api/week/' + mate.id, { headers: { cookie: her } }), env, deps);
+  assert.strictEqual(mateWeek.status, 403, 'an athlete cannot open a teammate\'s week');
+  assert.strictEqual((await handle(new Request('https://x/api/week/' + rower.id, { headers: { cookie: her } }), env, deps)).status, 200, 'her own week by id still works');
   body = await get('/api/athlete/' + mate.id, her);
   assert.deepStrictEqual(body.todayPlan, [], 'no teammate Today card');
+  body = await get('/api/team', her);
+  assert.ok(!('notLogged' in body), 'athletes get no not-logged list');
+  body = await get('/api/team', team);
+  assert.ok(body.notLogged && Array.isArray(body.notLogged.rowers) && body.notLogged.rowers.every((r) => r.id && r.name && !('birthday' in r)), 'coaches get the not-logged list');
   body = await get('/api/week?week=prev', team);
   assert.strictEqual(body.weekStart, '2026-10-12');
   body = await get('/api/week/' + mate.id, team);
@@ -579,16 +607,14 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
 });
 
 test('login: wrong password 401, right one sets the cookie, logout clears it', async () => {
-  const vals = { TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key' };
+  const vals = { FEED_KEY: 'fake-key' };
   globalThis.Netlify = { env: { get: (k) => vals[k] } };
   const post = (path, body) => new Request('https://x' + path, { method: 'POST', body: JSON.stringify(body) });
   let res = await login(post('/api/login', { password: 'nope' }));
   assert.strictEqual(res.status, 401);
   assert.strictEqual(res.headers.get('set-cookie'), null);
   res = await login(post('/api/login', { password: 'fake-team-pw' }));
-  assert.strictEqual(res.status, 200);
-  const token = res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
-  assert.ok(A.tokenValid(A.sessionSecret((k) => vals[k]), token));
+  assert.strictEqual(res.status, 401, 'there is no shared password; a nameless sign-in never works');
   res = await login(post('/api/logout', {}));
   assert.ok(/Max-Age=0/.test(res.headers.get('set-cookie')));
   delete vals.FEED_KEY;
@@ -599,8 +625,8 @@ test('login: wrong password 401, right one sets the cookie, logout clears it', a
 
 test('login: athletes sign in with name and birthday, typed any common way', async () => {
   clearFeedCache();
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
-  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0 };
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0, coachStore: null };
   const a = feed.athletes.find((x) => x.active);
   const day = dummyBirthday(a.id);
   const [y, m, d] = day.split('-');
@@ -625,7 +651,7 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: sign('coach:pat example', '1980-02-03') }] };
   const cdeps = { ...deps, fetchImpl: async () => new Response(JSON.stringify(withCoach)) };
   clearFeedCache();
-  assert.deepStrictEqual(who(await handleLogin(post({ name: 'Pat Example', password: '2/3/1980' }), env, cdeps)), { kind: 'team' });
+  assert.deepStrictEqual(who(await handleLogin(post({ name: 'pat  EXAMPLE', password: '2/3/1980' }), env, cdeps)), { kind: 'team', name: 'Pat Example' }, 'a coach carries her tidied full name');
   assert.strictEqual((await handleLogin(post({ name: 'Pat Example', password: '2/4/1980' }), env, cdeps)).status, 401);
   // An athlete with two codes (her birthday and the shared test date) signs in with either.
   const two = { ...feed, logins: [...feed.logins, { id: a.id, code: sign(a.id, '2010-01-01') }] };
@@ -633,33 +659,91 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   clearFeedCache();
   assert.strictEqual(who(await handleLogin(post({ name: a.name, password: '1/1/2010' }), env, tdeps)).id, a.id);
   assert.strictEqual(who(await handleLogin(post({ name: a.name, password: day }), env, tdeps)).id, a.id);
-  // The coach password works with or without a name.
-  assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
-  assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  // No shared password: a nameless sign-in is refused.
+  assert.strictEqual((await handleLogin(post({ password: 'fake-team-pw' }), env, deps)).status, 401);
+  clearFeedCache();
+});
+
+test('coach password: set from the menu, replaces the birthday, hashed, coaches with a name only', async () => {
+  const { setCoachPassword, checkCoachPassword, passwordProblem } = await import('../lib/coachpw.mjs');
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const coachStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); } };
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore, shared: null, today: TODAY };
+  const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  const cookieOf = (res) => (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))?.[1];
+  const as = (token) => A.COOKIE + '=' + token;
+  clearFeedCache();
+  // The session names her; the team password never does, whatever name is typed with it.
+  let res = await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, deps);
+  const patCookie = as(cookieOf(res));
+  let sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).json();
+  assert.deepStrictEqual([sess.kind, sess.coachName], ['team', 'Pat Example']);
+  // Rules for a new password.
+  assert.strictEqual(passwordProblem('x'), '', 'no minimum length');
+  assert.strictEqual(passwordProblem('2/3/1980'), '', 'a date is allowed');
+  assert.ok(passwordProblem(''), 'empty is refused');
+  assert.strictEqual(passwordProblem('a long enough one'), '');
+  const change = (body, cookie) => handlePassword(post('/api/password', body, cookie), env2, deps);
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'a long enough one' })).status, 401, 'signed out');
+  const athleteCookie = as(A.makeToken(A.sessionSecret(env2), feed.athletes[0].id));
+  assert.strictEqual((await change({ current: 'x', next: 'a long enough one' }, athleteCookie)).status, 403, 'athletes cannot');
+  assert.strictEqual((await change({ current: '2/4/1980', next: 'a long enough one' }, patCookie)).status, 403, 'wrong current password');
+  assert.strictEqual((await change({ current: '2/3/1980', next: '' }, patCookie)).status, 400);
+  assert.strictEqual(mem.size, 0, 'nothing saved yet');
+  // First change: the current password is her birthday.
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'a long enough one' }, patCookie)).status, 200);
+  const rec = mem.get('pat example');
+  assert.ok(rec && rec.hash && rec.salt && !JSON.stringify(rec).includes('a long enough one'), 'stored as a salted hash');
+  assert.strictEqual(await checkCoachPassword(coachStore, 'pat example', 'a long enough one'), true);
+  // Now the birthday stops working and the new password works.
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, deps)).status, 401, 'birthday no longer signs her in');
+  res = await handleLogin(post('/api/login', { name: 'pat example', password: 'a long enough one' }), env2, deps);
+  assert.strictEqual(res.status, 200);
+  sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: as(cookieOf(res)) } }), env2, deps)).json();
+  assert.strictEqual(sess.coachName, 'Pat Example');
+  // A second change needs the personal password, not the birthday.
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'another long one!' }, patCookie)).status, 403);
+  assert.strictEqual((await change({ current: 'a long enough one', next: 'another long one!' }, patCookie)).status, 200);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: 'another long one!' }), env2, deps)).status, 200);
+  // A store that fails closes the door rather than falling back to the birthday.
+  const broken = { ...deps, coachStore: { get: async () => { throw new Error('blobs down'); }, set: async () => {} } };
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, broken)).status, 502);
+  // Athletes never touch the coach store.
+  const a = feed.athletes.find((x) => x.active);
+  const [y, m, d] = dummyBirthday(a.id).split('-');
+  assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, broken)).status, 200);
   clearFeedCache();
 });
 
 test('health: key required, counts only, flags a broken feed or missing sign-in codes', async () => {
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const post = (body) => new Request('https://x/api/health', { method: 'POST', body: JSON.stringify(body) });
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: 'fake-coach-code' }] };
   const serve = (f) => ({ fetchImpl: async () => new Response(JSON.stringify(f)), shared: null });
   clearFeedCache();
   assert.strictEqual((await handleHealth(post({}), env, serve(feed))).status, 401);
   assert.strictEqual((await handleHealth(post({ key: 'wrong' }), env, serve(feed))).status, 401);
   let res = await handleHealth(post({ key: 'fake-key' }), env, serve(feed));
   let b = await res.json();
+  assert.ok(res.status === 503 && b.checks.coachLogins === false, 'no coach codes in the feed is flagged');
+  clearFeedCache();
+  res = await handleHealth(post({ key: 'fake-key' }), env, serve(withCoach));
+  b = await res.json();
   assert.strictEqual(res.status, 200);
   assert.ok(b.ok && b.athletes === 30 && b.athleteCodes > 0, JSON.stringify(b));
   assert.ok(!JSON.stringify(b).includes(feed.athletes[0].name), 'no names');
   assert.ok(!JSON.stringify(b).includes(feed.logins[0].code), 'no codes');
   clearFeedCache();
-  b = await (await handleHealth(post({ key: 'fake-key' }), env, serve({ ...feed, logins: [] }))).json();
+  b = await (await handleHealth(post({ key: 'fake-key' }), env, serve({ ...withCoach, logins: withCoach.logins.filter((l) => l.coach) }))).json();
   assert.ok(!b.ok && b.checks.athleteLogins === false);
   clearFeedCache();
   res = await handleHealth(post({ key: 'fake-key' }), env, { fetchImpl: async () => new Response('oops', { status: 500 }), shared: null });
   b = await res.json();
   assert.ok(res.status === 503 && b.checks.feed === false && /500/.test(b.feedError), JSON.stringify(b));
-  const noTeam = (k) => (k === 'TEAM_PASSWORD' ? undefined : env(k));
+  const noTeam = (k) => (k === 'FEED_URL' ? undefined : env(k));
   clearFeedCache();
   b = await (await handleHealth(post({ key: 'fake-key' }), noTeam, serve(feed))).json();
   assert.ok(!b.ok && b.checks.env === false);
@@ -1196,9 +1280,9 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   assert.strictEqual(iv.rowers.length, 30);
   assert.ok(!/weight|birthday/i.test(JSON.stringify(iv)));
   clearFeedCache();
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
-  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
   const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
   assert.strictEqual((await get('/api/insights', coach)).status, 200);
@@ -1233,7 +1317,7 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
 
 test('workout photo: any signed-in person gets the kept copy, only when the workout has one', async () => {
   clearFeedCache();
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const mine = feed.entries.find((e) => e.athleteId === 'A901' && e.status !== 'Out');
   const other = feed.entries.find((e) => e.athleteId !== 'A901' && e.status !== 'Out');
   const withPhoto = { ...feed, entries: feed.entries.map((e) => (e.id === mine.id || e.id === other.id ? { ...e, hasPhoto: true } : e)) };
@@ -1243,7 +1327,7 @@ test('workout photo: any signed-in person gets the kept copy, only when the work
     if (body.action === 'photo-get') { calls.push(body); return Response.json({ status: 'ok', mime: 'image/jpeg', data: Buffer.from('JPEGBYTES').toString('base64') }); }
     return new Response(JSON.stringify(withPhoto));
   } };
-  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
   const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
   let res = await get('/api/photo/' + mine.id, her);
@@ -1266,9 +1350,9 @@ test('workout photo: any signed-in person gets the kept copy, only when the work
 
 test('my workouts: own and coaches see splits, teammates and strangers do not', async () => {
   clearFeedCache();
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), today: TODAY };
-  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const her = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
   const get = async (p, cookie) => handle(new Request('https://x' + p, { headers: { cookie } }), env, deps);
   // Her workout list: this school year's workouts with splits, every zone tag she logged.
@@ -1299,14 +1383,14 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
 
 // ---- Concept2 Logbook connect (fake keys, fake Logbook, in-memory store) ----
 const c2env = (k) => ({
-  TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
+  FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
   CONCEPT2_CLIENT_SECRET: 'fake-secret', CONCEPT2_TOKEN_KEY: 'ab'.repeat(32)
 })[k];
 const memStore = () => {
   const m = new Map();
   return { get: async (k) => m.get(k) ?? null, set: async (k, v) => { m.set(k, v); }, delete: async (k) => { m.delete(k); }, list: async (p) => [...m.keys()].filter((k) => k.startsWith(p)), m };
 };
-const c2cookie = (who) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(c2env), who);
+const c2cookie = (who) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(c2env), who, Date.now(), 'Pat Example');
 const fakeLogbook = (log = []) => async (url, init = {}) => {
   log.push({ url: String(url), body: init.body ? String(init.body) : '', auth: init.headers && init.headers.authorization });
   if (String(url).endsWith('/oauth/access_token')) {
@@ -1427,7 +1511,7 @@ const syncWorld = (opts = {}) => {
     if (u.includes('/api/users/me/results?')) return Response.json({ data: Object.values(results) });
     return new Response('no', { status: 404 });
   };
-  const env = (k) => ({ ...Object.fromEntries(['TEAM_PASSWORD', 'FEED_KEY', 'CONCEPT2_CLIENT_ID', 'CONCEPT2_CLIENT_SECRET', 'CONCEPT2_TOKEN_KEY'].map((n) => [n, c2env(n)])), FEED_URL: 'https://sheet.example/exec' })[k];
+  const env = (k) => ({ ...Object.fromEntries(['FEED_KEY', 'CONCEPT2_CLIENT_ID', 'CONCEPT2_CLIENT_SECRET', 'CONCEPT2_TOKEN_KEY'].map((n) => [n, c2env(n)])), FEED_URL: 'https://sheet.example/exec' })[k];
   return { store, sheet, calls, results, fetchImpl, env };
 };
 const connectA901 = (w) => C2.saveConnection(w.env, w.store, 'A901', { access: 'access-1', refresh: 'refresh-1', expiresAt: Date.now() + 5 * 86400000 }, { id: '777', username: 'fake-rower' });
@@ -1634,8 +1718,8 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
 });
 
 test('settings page: coaches only, goes to the Sheet with the feed key, errors come back per field', async () => {
-  const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
-  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team');
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
   const sections = [{ id: 'rules', title: 'Rules', note: '', fields: [{ key: 'load.jump_pct', label: 'Load jump flag (%)', type: 'int', value: '15' }] }];
   const calls = [];

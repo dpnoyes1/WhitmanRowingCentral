@@ -41,9 +41,10 @@ function healthProblems(page, health) {
   if (health.status === 401) return out.concat('The health check key doesn\'t match: FEED_KEY in Netlify differs from the Sheet\'s Site feed key.');
   if (health.status !== 200 && !b.checks) return out.concat('The health check answered ' + health.status + '.');
   var c = b.checks || {};
-  if (c.env === false) out.push('Netlify is missing TEAM_PASSWORD, FEED_KEY or FEED_URL, so nobody can sign in.');
+  if (c.env === false) out.push('Netlify is missing FEED_KEY or FEED_URL, so nobody can sign in.');
   if (c.feed === false) out.push('The site can\'t load the Sheet\'s data feed' + (b.feedError ? ' (' + b.feedError + ')' : '') + '.');
   if (c.fresh === false) out.push('The site is showing old data: the feed failed and the last good copy is from ' + (b.generatedAt || 'unknown') + '.');
+  if (c.coachLogins === false) out.push('Coaches can\'t sign in: the feed has no coach sign-in codes (check Settings site.coaches).');
   if (c.athleteLogins === false) out.push('Athletes can\'t sign in: the feed has ' + b.athletes + ' active athletes but no sign-in codes (check Roster Birthday or Settings site.test_password).');
   if (!out.length && health.status !== 200) out.push('The health check answered ' + health.status + '.');
   return out;
@@ -349,6 +350,5 @@ function startNewSchoolYear() {
   ui.alert(y.label + ' is closed out.\n\nArchive: ' + archive.url + '\n\nStill to do by hand:\n' +
     '• Move novices to Varsity on the Roster where it fits, and add new athletes.\n' +
     '• Set season.winter_start and season.winter_end, then Generate practice schedule.\n' +
-    '• Clear site.test_password once athletes use their birthdays.\n' +
-    '• Change TEAM_PASSWORD in Netlify (then redeploy).');
+    '• Clear site.test_password once athletes use their birthdays.');
 }

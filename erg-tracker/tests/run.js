@@ -431,7 +431,7 @@ test('week plan: published filter, squads, missing-benchmark flag', () => {
   assert.strictEqual(all.sessions.length, 3, 'next Monday is out of the week');
   const pub = g.buildWeekPlan({ ...inputs, weekStart: D(2026, 11, 2), publishedOnly: true });
   assert.strictEqual(pub.sessions.length, 2, 'draft hidden');
-  assert.strictEqual(pub.sessions[1].athletes.length, 1, 'Varsity only');
+  assert.strictEqual(pub.sessions[1].athletes.length, 2, 'Varsity workout with no Novice one that day: the novice does it too (David, 2026-11-03)');
   const two = pub.sessions[0].athletes.find(a => a.athleteId === 'A902');
   assert.strictEqual(two.targets[0].text, '', 'no benchmark, no target');
   assert.strictEqual(pub.flags.map(f => f.athleteId + f.base).join(), 'A9022k');
@@ -448,7 +448,13 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   const s = planSettings();
   const mk = { 'Session type': 'Make-up', Date: D(2026, 11, 6), 'Make-up for date': D(2026, 11, 4) };
   assert.strictEqual(g.plannedFor(mk, 'Varsity', SCHEDULE)['Workout ID'], 'P1');
-  assert.strictEqual(g.plannedFor(mk, 'Novice', SCHEDULE), null, 'P1 was Varsity only');
+  assert.strictEqual(g.plannedFor(mk, 'Novice', SCHEDULE)['Workout ID'], 'P1', 'no Novice workout that day: a novice does the Varsity one');
+  const withNovice = SCHEDULE.concat([{ Date: D(2026, 11, 4), Squad: 'Novice', Session: 'Practice', 'Workout ID': 'W1', Published: true }]);
+  assert.strictEqual(g.plannedFor(mk, 'Novice', withNovice)['Workout ID'], 'W1', 'a Novice workout wins when there is one');
+  assert.strictEqual(g.plannedFor(mk, 'Varsity', withNovice)['Workout ID'], 'P1');
+  assert.strictEqual(g.plannedFor(mk, 'Alum', SCHEDULE), null, 'Alum has no plan');
+  const nov = g.buildWeekPlan({ schedule: SCHEDULE, workouts: WORKOUTS, roster: ROSTER.filter((r) => r.Squad === 'Novice'), benchmarks: BENCH, settings: s, weekStart: D(2026, 11, 2), publishedOnly: true });
+  if (ROSTER.some((r) => r.Squad === 'Novice')) assert.ok(nov.sessions.find((x) => x.squad === 'Varsity').athletes.length > 0, 'novices get targets on a Varsity-only day');
   assert.strictEqual(g.plannedFor({ 'Session type': 'OYO', Date: D(2026, 11, 5) }, 'Novice', SCHEDULE)['Workout ID'], 'S8');
   const pieces = g.workoutPieces(WORKOUTS, 'W1');
   const iv = (n, s2, m) => ({ 'Interval #': n, 'Work s': s2, 'Work m': m });

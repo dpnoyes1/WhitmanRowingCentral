@@ -117,7 +117,7 @@ Follow `site/README.md` (One-time setup). In short:
 
 1. In the Sheet: **Erg Tracker > Site feed key**, then publish the feed as a web app (Execute as Me, access Anyone). Copy its URL.
 2. In Netlify: **Add new project > Import from Git**, pick your copy of this repo. `netlify.toml` at the repo root sets everything else.
-3. Add the environment variables `TEAM_PASSWORD`, `FEED_KEY` and `FEED_URL` (secret values ticked), then deploy.
+3. Add the environment variables `FEED_KEY` and `FEED_URL` (secret values ticked), then deploy.
 4. In the Sheet's Settings, set `site.url` to the site's address, and add the coaches' sign-ins to `site.coaches`. Athletes sign in with their name and birthday (or `site.test_password` while you're testing).
 5. **Before real athletes sign in:** clear `site.test_password` in Settings. While it is set, anyone who knows an athlete's name and that date can sign in as her.
 
@@ -179,7 +179,7 @@ Results, stars, leaderboards and targets already start over on `school_year_star
    - sets athletes whose Grad year is that year or earlier to Active = No (logged in the Change log). They stay in the history and on All Time boards.
 
    It never deletes anything.
-2. Then by hand: move novices up on the Roster and add new athletes, set the new `season.winter_start` / `season.winter_end` and run **Generate practice schedule**, clear `site.test_password` if athletes now use their birthdays, and change `TEAM_PASSWORD` in Netlify (then redeploy).
+2. Then by hand: move novices up on the Roster and add new athletes, set the new `season.winter_start` / `season.winter_end` and run **Generate practice schedule**, clear `site.test_password` if athletes now use their birthdays.
 
 ## Part E: Later
 

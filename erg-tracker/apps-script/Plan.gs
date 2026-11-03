@@ -183,6 +183,15 @@ function squadMatches_(planSquad, athleteSquad) {
 }
 
 /**
+ * Novices do the Varsity workout when no Novice workout is scheduled for that day and session
+ * (David, 2026-11-03: workouts rarely differ, so no Novice row means everyone does the Varsity one).
+ * hasNoviceRow: true when the day and session has a row tagged Novice.
+ */
+function noviceDoesVarsity_(planSquad, athleteSquad, hasNoviceRow) {
+  return !hasNoviceRow && String(planSquad || '').trim() === 'Varsity' && String(athleteSquad || '').trim() === 'Novice';
+}
+
+/**
  * The week ahead: every scheduled session from weekStart for 7 days, with each
  * active rower's targets, plus coach flags for athletes missing a benchmark.
  * opts: { schedule, workouts, roster, benchmarks, settings, weekStart, publishedOnly }
@@ -198,13 +207,16 @@ function buildWeekPlan(opts) {
   }).sort(function (a, b) { return a.Date - b.Date; });
 
   var flags = {};
+  var noviceRows = {};
+  rows.forEach(function (r) { if (String(r.Squad || '').trim() === 'Novice') noviceRows[dayKey_(r.Date) + '|' + (r.Session || 'Practice')] = true; });
   var sessions = rows.map(function (r) {
+    var hasNovice = !!noviceRows[dayKey_(r.Date) + '|' + (r.Session || 'Practice')];
     var pieces = workoutPieces(opts.workouts, r['Workout ID']);
     if (!pieces.length) {
       flags['missing ' + r['Workout ID']] = { athleteId: '', athlete: '', base: '',
         message: 'Workout ' + r['Workout ID'] + ' on ' + dayKey_(r.Date) + ' is not on the Workouts tab' };
     }
-    var athletes = opts.roster.filter(function (a) { return squadMatches_(r.Squad, a.Squad); }).map(function (a) {
+    var athletes = opts.roster.filter(function (a) { return squadMatches_(r.Squad, a.Squad) || noviceDoesVarsity_(r.Squad, a.Squad, hasNovice); }).map(function (a) {
       var targets = pieces.map(function (p) {
         var pct = pieceTargetPct(p, s);
         if (!pct) return { label: pieceLabel(p), text: '' };
@@ -237,14 +249,18 @@ function plannedFor(entry, athleteSquad, schedule) {
   var session = type === 'OYO' ? 'OYO' : 'Practice';
   if (!isDate_(date)) return null;
   var key = dayKey_(date);
+  var hasNovice = false, varsityRow = null;
   for (var i = 0; i < schedule.length; i++) {
     var r = schedule[i];
     if (!isDate_(r.Date) || dayKey_(r.Date) !== key) continue;
-    if ((r.Session || 'Practice') !== session || !squadMatches_(r.Squad, athleteSquad)) continue;
+    if ((r.Session || 'Practice') !== session) continue;
     if (String(r['Workout ID']).trim() === '') continue;
-    return r;
+    if (String(r.Squad || '').trim() === 'Novice') hasNovice = true;
+    if (squadMatches_(r.Squad, athleteSquad)) return r;
+    if (!varsityRow && noviceDoesVarsity_(r.Squad, athleteSquad, false)) varsityRow = r;
   }
-  return null;
+  // No Novice workout that day: a novice is held to the Varsity one.
+  return varsityRow && !hasNovice ? varsityRow : null;
 }
 
 /**

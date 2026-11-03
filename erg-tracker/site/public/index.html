@@ -15,6 +15,7 @@
   <script src="/theme.js"></script>
 </head>
 <body>
+  <a class="skip" href="#app" id="skip">Skip to content</a>
   <div class="shell">
     <aside class="side" id="side">
       <div class="side-head">
@@ -39,7 +40,14 @@
       <div class="side-foot">
         <a href="/logworkout" target="_blank" rel="noopener" class="nav-log" title="Log a workout"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 5v14M5 12h14"/></svg><span class="t">Log a workout ↗</span></a>
         <a href="#/settings" data-nav="settings" title="Settings" id="nav-settings" hidden><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="3"/><path d="M19 12a7 7 0 0 0-.1-1.2l2-1.5-2-3.4-2.3 1a7 7 0 0 0-2-1.2L14 3h-4l-.6 2.7a7 7 0 0 0-2 1.2l-2.3-1-2 3.4 2 1.5a7 7 0 0 0 0 2.4l-2 1.5 2 3.4 2.3-1a7 7 0 0 0 2 1.2L10 21h4l.6-2.7a7 7 0 0 0 2-1.2l2.3 1 2-3.4-2-1.5c.1-.4.1-.8.1-1.2Z"/></svg><span class="t">Settings</span></a>
-        <div class="usercard" id="usercard" hidden><span class="av" id="user-av"></span><span class="who t"><b id="user-name"></b><small id="user-role"></small></span><button id="theme" class="theme-toggle" type="button" aria-label="Switch to dark mode"></button></div>
+        <div class="usercard" id="usercard" hidden>
+          <button id="usercard-btn" class="usercard-btn" type="button" aria-haspopup="menu" aria-expanded="false" aria-controls="user-menu"><span class="av" id="user-av"></span><span class="who t"><b id="user-name"></b><small id="user-role"></small></span></button>
+          <button id="theme" class="theme-toggle" type="button" aria-label="Switch to dark mode"></button>
+          <div id="user-menu" class="user-menu" role="menu" hidden>
+            <button type="button" role="menuitem" id="um-password" hidden>Change password</button>
+            <button type="button" role="menuitem" id="um-logout">Log out</button>
+          </div>
+        </div>
       </div>
     </aside>
     <div class="scrim" id="scrim"></div>
@@ -50,7 +58,8 @@
         <a id="log-top" class="log-top" href="/logworkout" target="_blank" rel="noopener" hidden>Log</a>
       </header>
       <div id="practice" class="practice-wrap" hidden></div>
-      <main id="app" aria-live="polite"><p class="muted">Loading…</p></main>
+      <div id="live" class="sr-only" aria-live="polite"></div>
+      <main id="app" tabindex="-1"><p class="muted">Loading…</p></main>
     </div>
   </div>
   <nav class="tabbar" id="tabbar" aria-label="Quick links" hidden>
@@ -60,6 +69,20 @@
     <a href="#/me" data-nav="me" id="tab-me"><svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="12" cy="12" r="9"/><path d="M8.5 14.5c1 1.4 2.2 2 3.5 2s2.5-.6 3.5-2M9 10h.01M15 10h.01"/></svg><span>Me</span></a>
     <button type="button" id="menu-tab" aria-label="More" aria-expanded="false" aria-controls="side"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16"/></svg><span>More</span></button>
   </nav>
+  <dialog id="pw-dialog" aria-labelledby="pw-title">
+    <form id="pw-form" method="dialog">
+      <h2 id="pw-title">Change password</h2>
+      <p class="muted small">Pick something only you know. Your birthday will stop working for sign-in.</p>
+      <label for="pw-current" class="small">Current password (your birthday, MM/DD/YYYY, if you have not set one)</label>
+      <input id="pw-current" type="password" autocomplete="current-password" required>
+      <label for="pw-new" class="small">New password</label>
+      <input id="pw-new" type="password" autocomplete="new-password" required>
+      <label for="pw-again" class="small">New password again</label>
+      <input id="pw-again" type="password" autocomplete="new-password" required>
+      <p id="pw-msg" class="error small" role="alert"></p>
+      <div class="pw-buttons"><button type="button" class="btn ghost" id="pw-cancel">Cancel</button><button type="submit" class="btn" id="pw-save">Save password</button></div>
+    </form>
+  </dialog>
   <div id="tip" class="tip" role="tooltip" hidden></div>
   <script src="/app.js" type="module"></script>
 </body>
