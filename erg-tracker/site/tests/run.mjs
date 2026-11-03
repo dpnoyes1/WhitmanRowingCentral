@@ -1655,6 +1655,48 @@ test('logbook sync: poll sends new results, skips repeats, survives one failure'
   assert.strictEqual((await bad.store.get('seen/122191976')), null, 'a failed send is retried next time');
 });
 
+test('logbook poll: more athletes than one run can check are covered by rotating batches', async () => {
+  const w = syncWorld();
+  for (let i = 1; i <= 7; i++) await C2.saveConnection(w.env, w.store, 'A9' + String(i).padStart(2, '0'), { access: 'a' + i, refresh: 'r' + i, expiresAt: Date.now() + 5 * 86400000 }, { id: 'u' + i, username: 'row' + i });
+  const asked = [];
+  const listed = w.fetchImpl;
+  w.fetchImpl = async (url, init = {}) => { if (String(url).includes('/results?')) asked.push(init.headers.authorization); return listed(url, init); };
+  let out = await LS.pollAll(w.env, w.store, w.fetchImpl, { batch: 3 });
+  assert.deepStrictEqual([out.athletes, out.checked], [7, 3], 'first run checks 3 of 7');
+  out = await LS.pollAll(w.env, w.store, w.fetchImpl, { batch: 3 });
+  assert.strictEqual(out.checked, 3);
+  out = await LS.pollAll(w.env, w.store, w.fetchImpl, { batch: 3 });
+  assert.strictEqual(out.checked, 3);
+  assert.strictEqual(new Set(asked).size, 7, 'three runs reach all 7 athletes');
+  assert.strictEqual(asked.length, 9, 'and the third run wraps to the start');
+  // few enough athletes: everyone every run, no cursor needed
+  const small = syncWorld();
+  await connectA901(small);
+  out = await LS.pollAll(small.env, small.store, small.fetchImpl, { batch: 3 });
+  assert.deepStrictEqual([out.athletes, out.checked], [1, 1]);
+  assert.strictEqual(await small.store.get('poll/cursor'), null);
+});
+
+test('feed: visitors who arrive while the Sheet is being asked share that one call', async () => {
+  clearFeedCache();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  let calls = 0;
+  const fetchImpl = async () => { calls++; await new Promise((r) => setTimeout(r, 20)); return new Response(JSON.stringify(feed)); };
+  const all = await Promise.all(Array.from({ length: 40 }, () => getFeed(env, { fetchImpl, shared: null })));
+  assert.strictEqual(calls, 1, '40 simultaneous visitors, one Sheet call');
+  assert.ok(all.every((r) => r.data.athletes.length === 30 && !r.stale));
+  clearFeedCache();
+  const failing = async () => { calls++; throw new Error('down'); };
+  calls = 0;
+  const bad = await Promise.allSettled(Array.from({ length: 10 }, () => getFeed(env, { fetchImpl: failing, shared: null })));
+  assert.strictEqual(calls, 1);
+  assert.ok(bad.every((r) => r.status === 'rejected'), 'a failed load fails every waiter, then the next visit tries again');
+  clearFeedCache();
+  calls = 0;
+  await getFeed(env, { fetchImpl: async () => { calls++; return new Response(JSON.stringify(feed)); }, shared: null });
+  assert.strictEqual(calls, 1);
+});
+
 test('logbook confirm: pending list is read fresh from the Sheet after a sync, confirm goes to the Sheet', async () => {
   const w = syncWorld();
   const pendingRows = [];

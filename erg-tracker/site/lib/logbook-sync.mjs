@@ -140,12 +140,28 @@ export async function syncAthlete(env, store, fetchImpl, athleteId, { now = Date
   return out;
 }
 
-/** The backup poll: every connected athlete's results from the last few days. */
-export async function pollAll(env, store, fetchImpl, { now = Date.now(), days = 3 } = {}) {
-  const ids = (await store.list('conn/')).map((k) => k.slice(5));
-  const out = { athletes: ids.length, sent: 0, same: 0, skipped: 0, failed: 0 };
-  for (const id of ids) {
+const POLL_BATCH = 30;   // athletes per run: one at a time at ~0.6 s each fits Netlify's 30 s scheduled-function limit (QA 2026-11-03)
+const CURSOR_KEY = 'poll/cursor';
+
+/**
+ * The backup poll: connected athletes' results from the last few days. A run checks up to `batch`
+ * athletes and the next run carries on after the last one, wrapping around, so with more athletes
+ * than fit in one run everyone is still covered within a few runs.
+ */
+export async function pollAll(env, store, fetchImpl, { now = Date.now(), days = 3, batch = POLL_BATCH } = {}) {
+  const ids = (await store.list('conn/')).map((k) => k.slice(5)).sort();
+  const out = { athletes: ids.length, checked: 0, sent: 0, same: 0, skipped: 0, failed: 0 };
+  let todo = ids;
+  if (ids.length > batch) {
+    const last = await store.get(CURSOR_KEY);
+    let start = ids.findIndex((id) => last && id > String(last));
+    if (start < 0) start = 0;
+    todo = Array.from({ length: batch }, (_, i) => ids[(start + i) % ids.length]);
+    await store.set(CURSOR_KEY, todo[todo.length - 1]);
+  }
+  for (const id of todo) {
     const one = await syncAthlete(env, store, fetchImpl, id, { now, days });
+    out.checked++;
     for (const k of ['sent', 'same', 'skipped', 'failed']) out[k] += one[k];
   }
   try {   // unchanged sessions count after 20 hours (David, 2026-10-25)
