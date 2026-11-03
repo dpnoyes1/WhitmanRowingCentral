@@ -45,7 +45,7 @@ const split = (r) => {
 let SESSION = null;   // { kind: 'athlete' | 'team', athlete: { id, name, squad } | null }
 
 function setSession(s) {
-  SESSION = s && { kind: s.kind, athlete: s.athlete };
+  SESSION = s && { kind: s.kind, athlete: s.athlete, coachName: s.coachName || null };
   store.set(SESSION_KEY, SESSION ? JSON.stringify(SESSION) : null);
 }
 
@@ -92,7 +92,8 @@ async function api(path) {
 const isCoach = () => !!SESSION && SESSION.kind === 'team';
 
 function setNav(active) {
-  showPractice();
+  // Today's practice shows only on the page each person lands on after signing in: Team for coaches, Me for athletes.
+  if (active === (isCoach() ? 'team' : 'me')) showPractice(); else practiceBox.hidden = true;
   document.getElementById('nav').hidden = false;
   document.getElementById('menu').hidden = false;
   document.getElementById('log-top').hidden = false;
@@ -104,13 +105,16 @@ function setNav(active) {
   link.hidden = !m;
   document.getElementById('tab-me').hidden = !m;
   if (m) link.querySelector('.t').textContent = m.name.split(' ')[0];
+  const coachName = isCoach() && SESSION.coachName ? SESSION.coachName : '';
   const who = m ? m.name : (isCoach() ? 'Coach' : '');
   const card = document.getElementById('usercard');
   card.hidden = !who;
   if (who) {
-    document.getElementById('user-name').textContent = who;
-    document.getElementById('user-role').textContent = isCoach() ? 'Coach' : 'Athlete';
-    document.getElementById('user-av').textContent = who.trim().charAt(0).toUpperCase();
+    // Coaches: "Coach" on the first line and the full name under it (David, 2026-11-03).
+    document.getElementById('user-name').textContent = isCoach() ? 'Coach' : who;
+    document.getElementById('user-role').textContent = isCoach() ? coachName : 'Athlete';
+    document.getElementById('user-av').textContent = (coachName || who).trim().charAt(0).toUpperCase();
+    document.getElementById('um-password').hidden = !isCoach();
   }
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
@@ -192,7 +196,38 @@ function footer(meta) {
     <button class="linkish" id="signout">Sign out</button></p>`;
 }
 
-document.getElementById('usercard-out').onclick = () => signOut();
+// Click the name card for the menu: Log out, and for coaches Change password.
+const userMenu = document.getElementById('user-menu'), userBtn = document.getElementById('usercard-btn');
+function setUserMenu(open) { userMenu.hidden = !open; userBtn.setAttribute('aria-expanded', String(open)); }
+userBtn.onclick = (ev) => { ev.stopPropagation(); setUserMenu(userMenu.hidden); };
+document.addEventListener('click', (ev) => { if (!userMenu.hidden && !ev.target.closest('#user-menu')) setUserMenu(false); });
+document.addEventListener('keydown', (ev) => { if (ev.key === 'Escape' && !userMenu.hidden) { setUserMenu(false); userBtn.focus(); } });
+document.getElementById('um-logout').onclick = () => { setUserMenu(false); signOut(); };
+const pwDialog = document.getElementById('pw-dialog'), pwMsg = document.getElementById('pw-msg');
+document.getElementById('um-password').onclick = () => {
+  setUserMenu(false); closeMenu();
+  document.getElementById('pw-form').reset(); pwMsg.textContent = ''; pwMsg.className = 'error small';
+  pwDialog.showModal ? pwDialog.showModal() : pwDialog.setAttribute('open', '');
+  document.getElementById('pw-current').focus();
+};
+document.getElementById('pw-cancel').onclick = () => pwDialog.close();
+document.getElementById('pw-form').onsubmit = async (ev) => {
+  ev.preventDefault();
+  const cur = document.getElementById('pw-current').value, nx = document.getElementById('pw-new').value, again = document.getElementById('pw-again').value;
+  pwMsg.className = 'error small';
+  if (nx !== again) { pwMsg.textContent = 'The two new passwords do not match.'; return; }
+  const btn = document.getElementById('pw-save'); btn.disabled = true; pwMsg.textContent = '';
+  try {
+    const res = await fetch('/api/password', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ current: cur, next: nx }) });
+    const body = await res.json().catch(() => ({}));
+    if (res.status === 401) { pwDialog.close(); setSession(null); showLogin('You were signed out. Please sign in again.'); return; }
+    if (!res.ok) { pwMsg.textContent = body.error || 'Could not save the password.'; return; }
+    pwMsg.className = 'good-text small'; pwMsg.textContent = 'Saved. Use it the next time you sign in.';
+    document.getElementById('pw-form').reset();
+    setTimeout(() => { if (pwDialog.open) pwDialog.close(); }, 1500);
+  } catch { pwMsg.textContent = 'Could not reach the site. Check your connection and try again.'; }
+  finally { btn.disabled = false; }
+};
 
 function wireFooter() {
   const b = document.getElementById('signout');

@@ -29,14 +29,18 @@ export function passwordMatches(env, given) {
   return !!team && sameText(team, String(given || ''));
 }
 
-/** who: 'team' (coach password) or an athlete ID. */
-export function makeToken(secret, who = 'team', now = Date.now()) {
+/**
+ * who: 'team' (coach) or an athlete ID. A coach who signed in with a name carries it (name), so the
+ * menu can show it and the password change knows whose password it is. The name is signed, not secret.
+ */
+export function makeToken(secret, who = 'team', now = Date.now(), name = '') {
   const exp = Math.floor(now / 1000) + SESSION_DAYS * 86400;
-  const payload = (who === 'team' ? 'team' : 'ath:' + who) + '.' + exp;
+  const label = who !== 'team' ? 'ath:' + who : name ? 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url') : 'team';
+  const payload = label + '.' + exp;
   return payload + '.' + sign(secret, payload);
 }
 
-/** { kind: 'team' } or { kind: 'athlete', id } for a good, unexpired token, else null. */
+/** { kind: 'team', name? } or { kind: 'athlete', id } for a good, unexpired token, else null. */
 export function readToken(secret, token, now = Date.now()) {
   if (!secret || !token) return null;
   const parts = String(token).split('.');
@@ -44,6 +48,8 @@ export function readToken(secret, token, now = Date.now()) {
   const payload = parts[0] + '.' + parts[1];
   if (!sameText(sign(secret, payload), parts[2]) || Number(parts[1]) * 1000 <= now) return null;
   if (parts[0] === 'team') return { kind: 'team' };
+  const c = parts[0].match(/^coach:([A-Za-z0-9_-]+)$/);
+  if (c) return { kind: 'team', name: Buffer.from(c[1], 'base64url').toString('utf8') };
   const m = parts[0].match(/^ath:([A-Za-z0-9-]+)$/);
   return m ? { kind: 'athlete', id: m[1] } : null;
 }
@@ -53,6 +59,12 @@ export function tokenValid(secret, token, now = Date.now()) {
 }
 
 // ---- athlete sign-in --------------------------------------------------------
+
+/** A typed name tidied for display: "dAVID  noyes" -> "David Noyes". */
+export function displayName(name) {
+  return String(name || '').replace(/[^\p{L}\p{M}' .-]/gu, '').replace(/\s+/g, ' ').trim()
+    .split(' ').map((w) => (w ? w[0].toUpperCase() + w.slice(1).toLowerCase() : w)).join(' ').slice(0, 80);
+}
 
 /** Name as typed, for matching: lower case letters only ("Mary-Kate O'Neil" = "marykate oneil"). */
 export function nameKey(name) {

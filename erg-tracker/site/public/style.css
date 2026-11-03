@@ -84,6 +84,8 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .side-foot { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; }
 .usercard { display: flex; align-items: center; gap: 10px; background: var(--hover); border-radius: 16px; padding: 10px; margin-top: 8px; }
 .usercard .av { width: 34px; height: 34px; flex: none; border-radius: 10px; background: var(--accent); color: var(--accent-ink); display: grid; place-items: center; font-weight: 700; }
+.usercard { position: relative; }
+.usercard-btn { display: flex; align-items: center; gap: 10px; flex: 1; min-width: 0; padding: 0; border: 0; background: none; font: inherit; color: inherit; text-align: left; cursor: pointer; border-radius: 10px; }
 .usercard .who { flex: 1; min-width: 0; line-height: 1.25; }
 .usercard .who b, .usercard .who small { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .usercard .who small { color: var(--muted); font-size: .78rem; }
@@ -398,7 +400,19 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
   main { max-width: none; }
 }
 
-.usercard .signout { font-size: .78rem; padding: 0; min-height: 0; }
+
 
 /* Coach tables scroll sideways on phones: keep the rower's name in view */
 table.insights th:first-child, table.insights td:first-child { position: sticky; left: 0; background: var(--surface); z-index: 1; box-shadow: 1px 0 0 var(--border); }
+
+.user-menu { position: absolute; left: 0; bottom: calc(100% + 6px); min-width: 200px; z-index: 40; display: grid; padding: 6px; background: var(--surface); border: 1px solid var(--border); border-radius: 14px; box-shadow: 0 8px 24px rgba(0, 0, 0, .18); }
+.user-menu[hidden] { display: none; }
+.user-menu button { font: inherit; text-align: left; padding: 10px 12px; min-height: 44px; border: 0; border-radius: 10px; background: none; color: var(--text); cursor: pointer; }
+.user-menu button:hover { background: var(--hover); }
+dialog#pw-dialog { border: 1px solid var(--border); border-radius: 16px; padding: 20px; background: var(--surface); color: var(--text); width: min(420px, calc(100vw - 32px)); }
+dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
+#pw-form { display: grid; gap: 10px; }
+#pw-form h2 { margin: 0; }
+#pw-form input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--bg); color: var(--text); min-height: 44px; }
+.pw-buttons { display: flex; gap: 8px; justify-content: flex-end; }
+@media print { dialog, .user-menu { display: none !important; } }

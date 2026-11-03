@@ -11,6 +11,7 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
+import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -631,7 +632,7 @@ test('login: wrong password 401, right one sets the cookie, logout clears it', a
 test('login: athletes sign in with name and birthday, typed any common way', async () => {
   clearFeedCache();
   const env = (k) => ({ TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
-  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0 };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0, coachStore: null };
   const a = feed.athletes.find((x) => x.active);
   const day = dummyBirthday(a.id);
   const [y, m, d] = day.split('-');
@@ -656,7 +657,7 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: sign('coach:pat example', '1980-02-03') }] };
   const cdeps = { ...deps, fetchImpl: async () => new Response(JSON.stringify(withCoach)) };
   clearFeedCache();
-  assert.deepStrictEqual(who(await handleLogin(post({ name: 'Pat Example', password: '2/3/1980' }), env, cdeps)), { kind: 'team' });
+  assert.deepStrictEqual(who(await handleLogin(post({ name: 'pat  EXAMPLE', password: '2/3/1980' }), env, cdeps)), { kind: 'team', name: 'Pat Example' }, 'a coach carries her tidied full name');
   assert.strictEqual((await handleLogin(post({ name: 'Pat Example', password: '2/4/1980' }), env, cdeps)).status, 401);
   // An athlete with two codes (her birthday and the shared test date) signs in with either.
   const two = { ...feed, logins: [...feed.logins, { id: a.id, code: sign(a.id, '2010-01-01') }] };
@@ -667,6 +668,64 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   // The coach password works with or without a name.
   assert.deepStrictEqual(who(await handleLogin(post({ password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
   assert.deepStrictEqual(who(await handleLogin(post({ name: a.name, password: 'fake-team-pw' }), env, deps)), { kind: 'team' });
+  clearFeedCache();
+});
+
+test('coach password: set from the menu, replaces the birthday, hashed, coaches with a name only', async () => {
+  const { setCoachPassword, checkCoachPassword, passwordProblem } = await import('../lib/coachpw.mjs');
+  const vals = { TEAM_PASSWORD: 'fake-team-pw', FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const coachStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); } };
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore, shared: null, today: TODAY };
+  const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  const cookieOf = (res) => (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))?.[1];
+  const as = (token) => A.COOKIE + '=' + token;
+  clearFeedCache();
+  // The session names her; the team password never does, whatever name is typed with it.
+  let res = await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, deps);
+  const patCookie = as(cookieOf(res));
+  let sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).json();
+  assert.deepStrictEqual([sess.kind, sess.coachName], ['team', 'Pat Example']);
+  res = await handleLogin(post('/api/login', { name: 'Pat Example', password: 'fake-team-pw' }), env2, deps);
+  sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: as(cookieOf(res)) } }), env2, deps)).json();
+  assert.strictEqual(sess.coachName, null, 'team password sign-in carries no name');
+  // Rules for a new password.
+  assert.ok(passwordProblem('short'), 'too short');
+  assert.ok(passwordProblem('03/14/2010xx') === '' && passwordProblem('2/3/1980'), 'a date is refused');
+  assert.strictEqual(passwordProblem('a long enough one'), '');
+  const change = (body, cookie) => handlePassword(post('/api/password', body, cookie), env2, deps);
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'a long enough one' })).status, 401, 'signed out');
+  const athleteCookie = as(A.makeToken(A.sessionSecret(env2), feed.athletes[0].id));
+  assert.strictEqual((await change({ current: 'x', next: 'a long enough one' }, athleteCookie)).status, 403, 'athletes cannot');
+  const noName = as(cookieOf(await handleLogin(post('/api/login', { password: 'fake-team-pw' }), env2, deps)));
+  assert.strictEqual((await change({ current: 'fake-team-pw', next: 'a long enough one' }, noName)).status, 400, 'a coach without a name cannot');
+  assert.strictEqual((await change({ current: '2/4/1980', next: 'a long enough one' }, patCookie)).status, 403, 'wrong current password');
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'short' }, patCookie)).status, 400);
+  assert.strictEqual(mem.size, 0, 'nothing saved yet');
+  // First change: the current password is her birthday.
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'a long enough one' }, patCookie)).status, 200);
+  const rec = mem.get('pat example');
+  assert.ok(rec && rec.hash && rec.salt && !JSON.stringify(rec).includes('a long enough one'), 'stored as a salted hash');
+  assert.strictEqual(await checkCoachPassword(coachStore, 'pat example', 'a long enough one'), true);
+  // Now the birthday stops working and the new password works.
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, deps)).status, 401, 'birthday no longer signs her in');
+  res = await handleLogin(post('/api/login', { name: 'pat example', password: 'a long enough one' }), env2, deps);
+  assert.strictEqual(res.status, 200);
+  sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: as(cookieOf(res)) } }), env2, deps)).json();
+  assert.strictEqual(sess.coachName, 'Pat Example');
+  // A second change needs the personal password, not the birthday.
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'another long one!' }, patCookie)).status, 403);
+  assert.strictEqual((await change({ current: 'a long enough one', next: 'another long one!' }, patCookie)).status, 200);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: 'another long one!' }), env2, deps)).status, 200);
+  // A store that fails closes the door rather than falling back to the birthday.
+  const broken = { ...deps, coachStore: { get: async () => { throw new Error('blobs down'); }, set: async () => {} } };
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, broken)).status, 502);
+  // Athletes never touch the coach store.
+  const a = feed.athletes.find((x) => x.active);
+  const [y, m, d] = dummyBirthday(a.id).split('-');
+  assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, broken)).status, 200);
   clearFeedCache();
 });
 

@@ -1,4 +1,5 @@
-import { passwordMatches, sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey } from '../lib/auth.mjs';
+import { passwordMatches, sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey, displayName } from '../lib/auth.mjs';
+import { defaultCoachStore, checkCoachPassword } from '../lib/coachpw.mjs';
 import { getFeed } from '../lib/feed.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -24,10 +25,25 @@ export async function handleLogin(req, envFn, deps = {}) {
     return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, 'team')) });
   }
   let athlete = null;
+  let coachName = '';
   if (body.name) {
     try {
       const feed = (await getFeed(envFn, deps)).data;
-      athlete = athleteFor(envFn, feed, body.name, body.password);
+      const key = nameKey(body.name);
+      // Only a name that is not on the Roster can be a coach, so athletes never touch the coach password store.
+      if (!feed.athletes.some((a) => nameKey(a.name) === key)) {
+        // A coach with a personal password signs in with that, and her birthday no longer works.
+        const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
+        const own = await checkCoachPassword(store, key, body.password);
+        if (own === true) { athlete = 'team'; coachName = displayName(body.name); }
+        else if (own === false) athlete = null;
+        if (own === null) {
+          athlete = athleteFor(envFn, feed, body.name, body.password);
+          if (athlete === 'team') coachName = displayName(body.name);
+        }
+      } else {
+        athlete = athleteFor(envFn, feed, body.name, body.password);
+      }
       // Counts only (no names, dates or codes), to tell a missing Settings row from a typo.
       if (!athlete) {
         const logins = feed.logins || [];
@@ -46,7 +62,7 @@ export async function handleLogin(req, envFn, deps = {}) {
     await new Promise((r) => setTimeout(r, deps.failDelayMs ?? 600));   // slows down guessing
     return json({ error: "That name and password don't match. Check the spelling of your first and last name, and type your birthday as MM/DD/YYYY. Coaches: leave Name empty." }, 401);
   }
-  return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete === 'team' ? 'team' : athlete.id)) });
+  return json({ ok: true }, 200, { 'set-cookie': sessionCookie(makeToken(secret, athlete === 'team' ? 'team' : athlete.id, Date.now(), coachName)) });
 }
 
 export default (req) => handleLogin(req, env);

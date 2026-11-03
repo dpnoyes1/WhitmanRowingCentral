@@ -27,7 +27,7 @@ export async function handle(req, envFn, deps = {}) {
 
   if (path === '/api/session') {
     const a = who.kind === 'athlete' && data.athletes.find((x) => x.id === who.id);
-    return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, meta });
+    return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, coachName: who.kind === 'team' ? who.name || null : null, meta });
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
   if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today), notLogged: notLoggedView(data, today) } : {}), meta });
