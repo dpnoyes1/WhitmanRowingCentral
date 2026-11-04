@@ -347,6 +347,27 @@ export default function photoTests(test) {
     assert.deepStrictEqual(res.issues, [], JSON.stringify(res.issues));
   });
 
+  test('photo: a 20:00 piece with a running clock (4:00, 8:00 ... 20:00) is one piece, not 60 minutes of pieces', () => {
+    // from the athlete's 2026-11-03 screen: 20:00.0, 4436 m, per-split meters, clock column running
+    const r = read({
+      title: '20:00',
+      total: { time: '20:00.0', meters: 4436, avg_split: '2:15.2', avg_rate: 27 },
+      meters_column: 'per_piece',
+      pieces: [piece('4:00.0', 898, '2:13.6', 28), piece('8:00.0', 886, '2:15.4', 27), piece('12:00.0', 885, '2:15.5', 27), piece('16:00.0', 879, '2:16.5', 28), piece('20:00.0', 889, '2:14.9', 28)],
+    });
+    assert.deepStrictEqual(r.pieces.map((p) => p.timeS), [240, 240, 240, 240, 240], 'checkpoints become split times');
+    const res = C.runChecks(r, { today: TODAY });
+    assert.deepStrictEqual(res.issues, [], JSON.stringify(res.issues));
+    assert.strictEqual(res.status, 'clean');
+    assert.strictEqual(R.decumulateTimes([60, 120], 130), null, 'last must be the total');
+    assert.strictEqual(R.decumulateTimes([120, 120, 240], 240), null, 'must strictly rise');
+    assert.strictEqual(R.decumulateTimes([240], 240), null, 'one row is already the piece');
+    // interval rows that are real pieces stay as read
+    const iv = read({ title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
+      pieces: [0, 1, 2, 3].map(() => piece('1:40.0', 500, '1:40.0')) });
+    assert.deepStrictEqual(iv.pieces.map((p) => p.timeS), [100, 100, 100, 100]);
+  });
+
   // ---- the kept copy (step 6): made-up pixels only, no real photos ----
   const noisy = async (w, h, extra = {}) => {
     const px = Buffer.alloc(w * h * 3);

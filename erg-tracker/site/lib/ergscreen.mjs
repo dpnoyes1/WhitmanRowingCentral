@@ -18,6 +18,7 @@ Rules:
 - "split_label" is the unit printed next to the split column: "/500m" or "/1000m". If you cannot see it, use "".
 - "pieces" are the rows of the detail list under the line, in order: one per split for a single piece, one per interval for an interval workout. Never include the summary row above the line (it is the sum of the rows beneath it) as a piece. Include only rows you can see. Never invent rows.
 - The meters column on a single-piece detail screen is often a running total (500, 1000, 1500, 2000). Set "meters_column" to "cumulative" when each row is larger than the one before it and ends at the total, "per_piece" when each row is that piece's own distance, and "none" if there is no meters column. Report the numbers as shown either way.
+- The time column of a single-piece detail screen can also be a running clock (4:00.0, 8:00.0, 12:00.0 ... ending at the total time). Those rows are checkpoints of one piece, not separate pieces: copy them as shown.
 - A time can lose its leading digits on screen (":56.7"). Copy what you see.
 - "total_time_incl_rest" is the header "Total Time" only when it differs from the totals row (interval workouts); otherwise "".
 - "rest_meters" is the number after "r" at the bottom of an interval screen (for example r741), or null.
@@ -86,6 +87,19 @@ export function decumulate(meters, total) {
   return meters.map((m, i) => m - (i ? meters[i - 1] : 0));
 }
 
+/**
+ * A single piece's detail list can show a running clock in the time column (4:00, 8:00, 12:00,
+ * 16:00, 20:00), the same way the meters column can run (David, 2026-10-27 rule 1, bug 2026-11-03).
+ * The rows are checkpoints of one piece, so when the times only go up and the last one is the
+ * total, they become per-split times. Null when it is not a running clock.
+ */
+export function decumulateTimes(times, totalS) {
+  if (times.length < 2 || times.some((t) => t == null) || totalS == null) return null;
+  for (let i = 1; i < times.length; i++) if (times[i] <= times[i - 1]) return null;
+  if (Math.abs(times[times.length - 1] - totalS) > 0.3) return null;
+  return times.map((t, i) => tenths(t - (i ? times[i - 1] : 0)));
+}
+
 // ---- reading the model's answer --------------------------------------------
 
 /**
@@ -109,11 +123,14 @@ export function normalizeRead(raw) {
     if (per) pieces = pieces.map((p, i) => ({ ...p, meters: per[i] }));
     else { flags.push('meters column not a clean running total'); metersAs = 'unclear'; }
   }
+  const totalTimeS = parseClock(total.time);
+  const perTime = decumulateTimes(pieces.map((p) => p.timeS), totalTimeS);
+  if (perTime) pieces = pieces.map((p, i) => ({ ...p, timeS: perTime[i] }));
   return {
     title: String(raw.title || '').trim(),
     date: String(raw.date || '').trim(),
     machine: label,
-    totalTimeS: parseClock(total.time),
+    totalTimeS,
     totalMeters,
     avgSplitS: parseClock(total.avg_split),
     avgRate: Number.isFinite(total.avg_rate) ? total.avg_rate : null,
