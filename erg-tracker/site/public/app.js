@@ -32,9 +32,9 @@ const fmtTime = (s) => {
   const t = Math.round(s * 10) / 10, m = Math.floor(t / 60), sec = t - m * 60;
   return `${m}:${sec.toFixed(1).padStart(4, '0')}`;
 };
-const fmtDate = (d, opts = { month: 'short', day: 'numeric' }) =>
+const fmtDate = (d, opts = { month: 'short', day: 'numeric', year: 'numeric' }) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', opts);
-const fmtDay = (d) => fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' });
+const fmtDay = (d) => fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 const fmtResult = (r) => (r.test === '20min' || r.test === '30r20' ? `${fmtNum(r.meters)} m` : fmtTime(r.timeS));
 const split = (r) => {
   const sec = r.test === '20min' ? 1200 : r.test === '30r20' ? 1800 : r.timeS;
@@ -172,11 +172,11 @@ function showPractice() {
   loadPractice().then((p) => {
     // Girls only (David, 2026-11-02): "Monday 11/2" then "Early Shift: 3:30–5:30 PM". No big Yes; No and Partial still say so.
     const d = new Date(p.iso + 'T12:00:00');
-    const when = `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${d.getMonth() + 1}/${d.getDate()}`;
+    const when = `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
     const head = p.status === 'YES' ? '' : `<p class="status">${p.status === 'NO' ? 'No practice' : 'Partial practice'}</p>`;
     const line = p.shifts ? `${p.shifts.girlsEarly ? 'Early' : 'Late'} Shift: ${esc(p.shifts.girls)}` : esc(p.note);
     practiceBox.innerHTML = `<div class="card practice st-${p.status.toLowerCase()}">
-      <h2>${esc(when)}</h2>${head}<p class="note">${line}</p>${p.cachedAt ? `<p class="muted small">Saved copy from ${esc(new Date(p.cachedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }))}. Check Slack for changes.</p>` : ''}</div>`;
+      <h2>${esc(when)}</h2>${head}<p class="note">${line}</p>${p.cachedAt ? `<p class="muted small">Saved copy from ${esc(new Date(p.cachedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))}. Check Slack for changes.</p>` : ''}</div>`;
     practiceAt = Date.now();
   }).catch(() => {
     // Quiet failure: no error line above a page that loaded fine; try again in a minute, not on every tab.
@@ -982,7 +982,7 @@ async function showWeek(id = null, prev = false) {
   const q = coach && prev ? '?week=prev' : '';
   const v = await api((id ? '/api/week/' + encodeURIComponent(id) : '/api/week') + q);
   setNav('week');
-  const range = `${fmtDate(v.weekStart, { month: 'short', day: 'numeric' })} to ${fmtDate(v.weekEnd, { month: 'short', day: 'numeric' })}`;
+  const range = `${fmtDate(v.weekStart)} to ${fmtDate(v.weekEnd)}`;
   const any = v.days.some((d) => d.sessions.length);
   const hash = (who, back) => '#/week' + (who ? '/' + encodeURIComponent(who) : '') + (back ? '/prev' : '');
   // Coaches pick any athlete to see her targets, and switch between last week and this one.
@@ -1020,7 +1020,7 @@ async function showBoards() {
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Leaderboards</h1>
-      <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div></div>
+      <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart)}.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div></div>
       <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
         ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
         ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div>
