@@ -20,6 +20,25 @@ export default function askTests(test) {
   const ATHLETE = { role: 'athlete', athleteId: me.id, name: me.name };
   const run = (asker, tool, input) => runLookup(feed, asker, tool, input, TODAY).text;
 
+  test('ask lookups: best in each grade ("top athlete in each class and their 20\' average", David 2026-11-07)', () => {
+    const site = leaderboardsView(feed, TODAY).tests.find((t) => t.test === '20min').season;
+    const byName = Object.fromEntries(feed.athletes.map((a) => [a.name, a]));
+    const text = run(COACH, 'by_grade', { test: '20min', period: 'season', school_year: null, grades: null, per_grade: null });
+    const lines = text.split('\n').slice(1);
+    assert.ok(/^\*Seniors \(12th\)\*: /.test(lines[0]) && lines.some((l) => l.startsWith('*Freshmen (9th)*: ')), text);
+    lines.forEach((l) => {
+      const name = l.split('*: ')[1].split(/ \d★|:/)[0];
+      const grade = byName[name].grade;
+      const best = site.filter((r) => byName[r.name].grade === grade)[0];
+      assert.strictEqual(best.name, name, `fastest ${grade}`);
+      assert.ok(/\(\d:\d\d\.\d\)/.test(l), 'each line has her split');
+    });
+    const seniors = run(ATHLETE, 'by_grade', { test: '20min', period: 'season', school_year: null, grades: [12], per_grade: 3 });
+    assert.ok(seniors.includes('1. ') && seniors.includes('Average of these 3') && !seniors.includes('Juniors'), seniors);
+    assert.ok(TOOLS.find((t) => t.name === 'by_grade').strict);
+    assert.ok(systemPrompt(feed, COACH, TODAY).includes('by_grade'));
+  });
+
   test('ask lookups: boards match the site, athletes see the same boards plus their own place', () => {
     const site = leaderboardsView(feed, TODAY).tests.find((t) => t.test === '20min').season;
     const text = run(COACH, 'board', { test: '20min', period: 'season', school_year: null, group: 'all', limit: 3 });
