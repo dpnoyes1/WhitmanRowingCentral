@@ -9,8 +9,8 @@
 //   athlete's lookups only reach her own numbers, the boards she already sees on
 //   the site, and team totals of 4 or more rowers. Athletes are off until
 //   ERGBOT_ATHLETE_QUESTIONS = on (coaches first, David 2026-11-07).
-// - Where: a DM, or @ErgBot in SLACK_COACH_CHANNEL. Anywhere else the bot says
-//   "Ask me in a DM", because athletes are in those channels.
+// - Where: a DM, or @ErgBot in SLACK_COACH_CHANNEL (answered as a normal message there).
+//   Anywhere else the bot says "Ask me in a DM", because athletes are in those channels.
 // - Cost: at most ERGBOT_MONTHLY_CAP_USD (default $10) a month and 20 questions
 //   a person a day. At 80% of the cap one note goes to the coaches' channel.
 // - Log: every question is kept for the month; coaches can ask for it, and an
@@ -120,12 +120,14 @@ export async function handleQuestion(event, envFn, deps = {}, ctx = {}) {
   const store = deps.store || await defaultStore();
   const user = event.user;
   const channel = ctx.channel || null;
+  // In the coaches' channel the answer is a normal message, like a DM (David, 2026-11-07); a question asked inside a thread is answered in that thread.
   const say = (text) => (channel
-    ? postInThread(envFn, fetchImpl, channel, event.thread_ts || event.ts, text)
+    ? postInThread(envFn, fetchImpl, channel, event.thread_ts || null, text)
     : dmUser(envFn, fetchImpl, user, text));
   if (!user || event.bot_id) return { ignored: 'not a person' };
   const coachChannel = envFn('SLACK_COACH_CHANNEL');
-  if (channel && channel !== coachChannel) { await say('Ask me in a DM.'); return { status: 'wrong_channel' }; }
+  // Other channels have athletes in them: a short pointer under the question, so the channel stays quiet.
+  if (channel && channel !== coachChannel) { await postInThread(envFn, fetchImpl, channel, event.thread_ts || event.ts, 'Ask me in a DM.'); return { status: 'wrong_channel' }; }
   const question = cleanText(event.text);
   if (!question) { await say(HELP); return { status: 'help' }; }
 
