@@ -1014,6 +1014,19 @@ test('slack /log background: Sheet call with member ID and view ID, then a DM', 
   assert.ok(/Slack member ID/.test(w.calls[1].body.text));
 });
 
+test('slack background: a crash while handling a DM tells her instead of going silent', async () => {
+  const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE' })[k];
+  const NOW = 1_800_000_000;
+  const raw = JSON.stringify({ type: 'event_callback', event: { type: 'message', channel_type: 'im', user: 'UC1', text: 'Olivia' } });
+  const req = new Request('https://x/.netlify/functions/slack-background', { method: 'POST', body: raw, headers: { 'x-slack-request-timestamp': String(NOW),
+    'x-slack-signature': 'v0=' + createHmac('sha256', 'fake-secret').update(`v0:${NOW}:${raw}`).digest('hex') } });
+  const sent = [];
+  const out = await handleSlackAction(req, env, { nowS: NOW, store: { get: async () => { throw new Error('store down'); }, set: async () => {}, delete: async () => {} },
+    fetchImpl: async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return Response.json({ ok: true }); } });
+  assert.strictEqual(out.status, 'crashed');
+  assert.ok(sent.some((c) => c.url === 'https://slack.com/api/chat.postMessage' && c.body.channel === 'UC1' && /Something went wrong/.test(c.body.text)));
+});
+
 test('slack photo: coach sends a screen, bot asks which athlete, card saves with one-tap RPE', async () => {
   const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
