@@ -6,7 +6,8 @@ export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 export const MAX_INTERVALS = 10;
 export const TIME_RE = /^\s*\d{1,3}:[0-5]\d(\.\d)?\s*$/;
 
-const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice']];
+const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice'], ['test', "Test (2k / 20')"]];
+const TEST_WHERE = [['practice', 'At practice'], ['oyo', 'On my own']];
 const STATUSES = [['full', 'Full'], ['modified', 'Modified (e.g. BikeErg instead)'], ['out', 'Out']];
 
 /** Today's date (YYYY-MM-DD) in the team's time zone. */
@@ -36,6 +37,8 @@ export function logModal(today = todayEastern()) {
         hint: 'Athletes: leave this blank, it saves for you. Coaches: the athlete you are logging for.' }),
       input('date', 'Date of session', { type: 'datepicker', initial_date: today }),
       input('type', 'What are you logging?', select(TYPES, 'practice')),
+      input('test_where', 'Test only: where did you do it?', select(TEST_WHERE, 'practice'), { optional: true,
+        hint: "Test: put the whole 2000 m or 20:00 on ONE piece line. Only the RowErg counts." }),
       input('status', 'Practice only: how did you do practice?', select(STATUSES, 'full'), { optional: true,
         hint: 'Choose Out and nothing below is needed except an optional note.' }),
       input('makeup_for', 'Make-up only: date of the practice you missed', { type: 'datepicker' }, { optional: true }),
@@ -91,6 +94,17 @@ export function piecesError(textValue) {
   return '';
 }
 
+const toSeconds = (t) => { const m = /^(\d+):([0-5]\d(?:\.\d)?)$/.exec(String(t).trim()); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
+
+/** What's wrong with a Test's pieces box (one piece of exactly 2000 m or 20:00), or ''. Call after piecesError is ''. */
+export function testPieceError(textValue) {
+  const lines = String(textValue || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
+  if (lines.length !== 1) return 'A test is one piece: put the whole 2000 m or 20:00 on one line';
+  const [time, meters] = lines[0].split(',').map((x) => x.trim());
+  if (Number(meters) !== 2000 && toSeconds(time) !== 1200) return "Only a 2000 m or a 20:00 piece can be a test here (use the Form for other tests)";
+  return '';
+}
+
 /** { block_id: message } for Slack to show next to the fields, or {} when it's fine to save. */
 export function validateLogForm(f, today = todayEastern()) {
   const errors = {};
@@ -102,6 +116,7 @@ export function validateLogForm(f, today = todayEastern()) {
     else if (f.makeup_for >= f.date) errors.makeup_for = 'The missed practice is before the make-up';
   }
   if (type === 'practice' && (f.status || 'full') === 'out') return errors;   // nothing else is needed
+  const isTest = type === 'test';
   const number = (id, what, min, max, whole = true) => {
     const v = f[id];
     if (v === undefined || v === '') return;
@@ -121,11 +136,16 @@ export function validateLogForm(f, today = todayEastern()) {
   number('hr', 'Heart rate', 40, 230);
   number('drag', 'Drag factor', 50, 250);
   if (!f.drag) errors.drag = 'Required (usually 105)';
-  if (!f.main_set) errors.main_set = 'Describe the workout';
-  if (!f.zone) errors.zone = 'Pick a zone';
+  if (isTest && f.activity && f.activity !== 'Erg (RowErg)') errors.activity = "A 2k or 20' test is on the RowErg";
+  if (!isTest && !f.main_set) errors.main_set = 'Describe the workout';
+  if (!isTest && !f.zone) errors.zone = 'Pick a zone';
   if (!f.rpe) errors.rpe = 'Pick an RPE';
   const pe = piecesError(f.pieces);
   if (pe) errors.pieces = pe;
+  else if (isTest) {
+    const te = testPieceError(f.pieces);
+    if (te) errors.pieces = te;
+  }
   return errors;
 }
 
@@ -136,6 +156,7 @@ export const NOT_ON_ROSTER = ':lock: I don\'t know this Slack account yet. Ask a
 export function logReply(result) {
   if (result.status === 'ok') {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
+    if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
     const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
     return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It doesn\'t match today\'s plan, so a coach will take a look.' : '');
   }
