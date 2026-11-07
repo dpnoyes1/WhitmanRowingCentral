@@ -214,6 +214,11 @@ export default function photoTests(test) {
     // a real misread is still caught: 2 s off on the same screen holds
     const bad = C.runChecks(screen({ total: { time: '20:02.0', meters: 4471, avg_split: '2:14.1', avg_rate: 25 } }), { today: '2025-10-23' });
     assert.ok(codes(bad).includes('pace_mismatch'), JSON.stringify(bad.issues));
+    // one-sided: a screen time SHORTER than the split predicts is a misread, longer by the cut-off is normal
+    const short = C.runChecks(screen({ total: { time: '19:58.0', meters: 4471, avg_split: '2:14.1', avg_rate: 25 } }), { today: '2025-10-23' });
+    assert.ok(codes(short).includes('pace_mismatch'), 'about 1 s shorter than predicted holds');
+    const nov = C.runChecks(read({ title: '20:00', total: { time: '20:00.0', meters: 4890, avg_split: '2:02.6', avg_rate: 30 }, pieces: [] }), { today: TODAY });
+    assert.ok(!codes(nov).includes('pace_mismatch'), 'Nov 3 screen (cut split, 1.0 s) passes');
     // and a one-digit slip on a 2k is still caught
     assert.deepStrictEqual(codes(C.runChecks(read({ total: { time: '8:06.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, pieces: [] }), { today: TODAY })), ['pace_mismatch']);
   });
