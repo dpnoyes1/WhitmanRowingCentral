@@ -10,7 +10,7 @@ lib/         concept2.mjs (Logbook OAuth, encrypted token storage in Blobs store
              auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
              ergscreen.mjs, ergchecks.mjs (photo reader and its checks), slackphoto.mjs (the Slack photo flow), photocopy.mjs (shrinks the kept photo to ~150 KB with sharp, metadata gone); /api/photo/:id hands the kept copy to its owner or a coach
-             ask.mjs (ErgBot questions: who is asking, the model picks a lookup, limits and the question log, Blobs store `ergbot-ask`), asklookups.mjs (the lookups and their replies, who may use each)
+             ask.mjs (ErgBot questions: who is asking, the model picks a lookup, limits and the question log, Blobs store `ergbot-ask`), asklookups.mjs (the lookups and their replies, who may use each), askfree.mjs (step 2: written answers for coaches from the data, with the number check)
 netlify.toml short links: /logworkout goes to the Google Form, /guide to the logging guide (a Google Doc).
              Both are linked from the sign-in page, the menu and the Today card.
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests
@@ -39,6 +39,8 @@ The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster no
 | `ERGBOT_ATHLETE_QUESTIONS` | `on` lets athletes ask ErgBot questions (their own numbers, the boards, team averages of 4+). Anything else: coaches only. |
 | `ERGBOT_MONTHLY_CAP_USD` | Optional. Questions pause for the month at this spend. Default 10. |
 | `ERGBOT_ASK_MODEL` | Optional. The model that picks the lookup. Default `claude-haiku-5-5`. |
+| `ERGBOT_FREE_ANSWERS` | Optional. `off` stops written answers (step 2) for coaches; on by default. |
+| `ERGBOT_FREE_MODEL` | Optional. The model that writes those answers. Default `claude-sonnet-5-5`. |
 | `CONCEPT2_TOKEN_KEY` | 64 random hex characters (`openssl rand -hex 32`). Encrypts the athletes' stored Logbook tokens; changing it disconnects everyone. Mark as secret. |
 
 ## One-time setup

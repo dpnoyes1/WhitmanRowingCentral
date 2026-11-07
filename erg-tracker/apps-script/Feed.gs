@@ -3,7 +3,7 @@
  * functions call it, with a POST body {"key": "..."}. The key lives in Script
  * Properties (menu: Site feed key), never in the repo or a Sheet cell.
  *
- * Weight and birthdays never leave the Sheet. GMS %, stars and next-star gaps
+ * Weight and birthdays never leave the Sheet in the feed (ErgBot fetches weights for a coach's question by its own action, ergbot-weights). GMS %, stars and next-star gaps
  * are worked out here and only those go out. Coach notes, Slack IDs, Roster
  * notes and heart rate are left out too. siteFeed() is pure so it is tested
  * in Node; the site applies multipliers and OYO goals when it reads.
@@ -21,6 +21,7 @@ function doPost(e) {
   if (body.action === PLAN_FLAG_ACTION) return feedJson_(applyPlanFlagAction_(body));
   if (body.action === SLACK_LOG_ACTION) return feedJson_(processSlackLog_(body));
   if (body.action === SLACK_ACCESS_ACTION) return feedJson_(processSlackAccess_(body));
+  if (body.action === ERGBOT_WEIGHTS_ACTION) return feedJson_(processErgbotWeights_(body));
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
   if (body.action === PHOTO_GET_ACTION) return feedJson_(processPhotoGet_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());

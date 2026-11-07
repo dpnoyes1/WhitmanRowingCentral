@@ -1406,4 +1406,13 @@ test('setup: retired Settings rows are found, last first, and no live setting is
   g.RETIRED_SETTING_KEYS.forEach((k) => assert.ok(!live.includes(k) && !g.settingsPageField_(k), k + ' is still used'));
 });
 
+test('ergbot-weights: rows for ErgBot, blank and dateless rows skipped', () => {
+  const rows = JSON.parse(JSON.stringify(g.ergbotWeightRows_([
+    { Date: new Date(2026, 9, 5), 'Athlete ID': 'A1', Athlete: 'Dummy Rower', 'Weight lb': 141 },
+    { Date: '', 'Athlete ID': 'A1', Athlete: 'Dummy Rower', 'Weight lb': 140 },
+    { Date: new Date(2026, 9, 6), 'Athlete ID': 'A2', Athlete: 'Dummy Two', 'Weight lb': '' }
+  ])));
+  assert.deepStrictEqual(rows, [{ date: '2026-10-05', athlete: 'Dummy Rower', lb: 141 }]);
+});
+
 console.log(`${passed} tests passed`);

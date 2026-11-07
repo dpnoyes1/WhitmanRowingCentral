@@ -5,6 +5,7 @@ import { createHmac } from 'node:crypto';
 import { createRequire } from 'node:module';
 import { runLookup, latestTestDay, TOOLS, MIN_GROUP, SCHEDULE_URL } from '../lib/asklookups.mjs';
 import { handleQuestion, costUsd, systemPrompt, cleanText, DAILY_LIMIT } from '../lib/ask.mjs';
+import { getRows, weightRows, calculate, uncheckedNumbers, FREE_TOOLS } from '../lib/askfree.mjs';
 import { leaderboardsView, teamSplitsView } from '../lib/views.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -19,6 +20,25 @@ export default function askTests(test) {
   const me = feed.athletes.find((a) => a.name === 'Avery Callahan');
   const ATHLETE = { role: 'athlete', athleteId: me.id, name: me.name };
   const run = (asker, tool, input) => runLookup(feed, asker, tool, input, TODAY).text;
+
+  test('ask lookups: best in each grade ("top athlete in each class and their 20\' average", David 2026-11-07)', () => {
+    const site = leaderboardsView(feed, TODAY).tests.find((t) => t.test === '20min').season;
+    const byName = Object.fromEntries(feed.athletes.map((a) => [a.name, a]));
+    const text = run(COACH, 'by_grade', { test: '20min', period: 'season', school_year: null, grades: null, per_grade: null });
+    const lines = text.split('\n').slice(1);
+    assert.ok(/^\*Seniors \(12th\)\*: /.test(lines[0]) && lines.some((l) => l.startsWith('*Freshmen (9th)*: ')), text);
+    lines.forEach((l) => {
+      const name = l.split('*: ')[1].split(/ \d★|:/)[0];
+      const grade = byName[name].grade;
+      const best = site.filter((r) => byName[r.name].grade === grade)[0];
+      assert.strictEqual(best.name, name, `fastest ${grade}`);
+      assert.ok(/\(\d:\d\d\.\d\)/.test(l), 'each line has her split');
+    });
+    const seniors = run(ATHLETE, 'by_grade', { test: '20min', period: 'season', school_year: null, grades: [12], per_grade: 3 });
+    assert.ok(seniors.includes('1. ') && seniors.includes('Average of these 3') && !seniors.includes('Juniors'), seniors);
+    assert.ok(TOOLS.find((t) => t.name === 'by_grade').strict);
+    assert.ok(systemPrompt(feed, COACH, TODAY).includes('by_grade'));
+  });
 
   test('ask lookups: boards match the site, athletes see the same boards plus their own place', () => {
     const site = leaderboardsView(feed, TODAY).tests.find((t) => t.test === '20min').season;
@@ -195,13 +215,105 @@ export default function askTests(test) {
 
   test('ask: follow-ups within 30 minutes carry the last question; no tool picked = a fixed "didn\'t follow"', async () => {
     const w = world({ picks: [['board', { test: '20min', period: 'season', school_year: null, group: 'all', limit: null }], null] });
-    await handleQuestion(dm('20 min rankings'), env(), w.deps);
-    await handleQuestion(dm('and last year?'), env(), w.deps);
+    const off = env({ ERGBOT_FREE_ANSWERS: 'off' });
+    await handleQuestion(dm('20 min rankings'), off, w.deps);
+    await handleQuestion(dm('and last year?'), off, w.deps);
     assert.ok(/Earlier question .*"20 min rankings" - answered with board/.test(w.model[1].messages[0].content) && /New question: and last year\?/.test(w.model[1].messages[0].content));
     assert.ok(/I didn't follow that/.test(w.posts()[1].text) && !/Data as of/.test(w.posts()[1].text));
     w.store.set('last:UC1', { ...w.store.get('last:UC1'), at: Date.now() - 31 * 60000 });
-    await handleQuestion(dm('something else'), env(), w.deps);
+    await handleQuestion(dm('something else'), off, w.deps);
     assert.ok(!/Earlier question/.test(w.model[2].messages[0].content), 'older than 30 minutes is forgotten');
+  });
+
+  // ---- step 2: written answers for coaches (David, 2026-11-07) ---------------
+
+  test('askfree: rows carry names not ids, no birthdays or sign-in codes; calculate and the number check', () => {
+    const t = getRows(feed, { table: 'tests', athlete: 'Avery Callahan', from: null, to: null, test: '20min', limit: 2 }, TODAY);
+    assert.ok(t.total >= t.shown && t.shown === 2 && t.rows.every((r) => r.athlete === 'Avery Callahan' && r.test === "20'" && r.split500S > 0));
+    assert.ok(t.rows[0].date >= t.rows[1].date, 'newest first');
+    const all = JSON.stringify(['roster', 'tests', 'workouts', 'plans', 'practices', 'team_gms'].map((table) => getRows(feed, { table, athlete: null, from: '2026-10-01', to: null, test: null, limit: 50 }, TODAY)));
+    assert.ok(!/birthday|athleteId|"A\d{3}"|code/i.test(all), 'no ids, birthdays or sign-in codes');
+    assert.ok(/No rower called/.test(getRows(feed, { table: 'tests', athlete: 'Nobody Here', from: null, to: null, test: null, limit: null }, TODAY).error));
+    const wts = [{ date: '2026-10-05', athlete: 'Avery Callahan', lb: 141 }, { date: '2026-10-19', athlete: 'Avery Callahan', lb: 142 }, { date: '2026-10-19', athlete: 'Harper Delgado', lb: 130 }];
+    assert.deepStrictEqual(weightRows(wts, feed, { athlete: 'avery callahan', from: null, to: null, limit: null }, TODAY).rows.map((r) => r.lb), [142, 141]);
+    assert.ok(/could not be loaded/.test(weightRows(null, feed, {}, TODAY).error));
+    assert.strictEqual(calculate({ op: 'mean', values: [4900, 5000, 5100] }).result, 5000);
+    assert.strictEqual(calculate({ op: 'difference', values: [456.2, 460] }).result, -3.8);
+    const seen = [4966, 120.8, { rows: [{ timeS: 456.2 }] }].flatMap((v) => (typeof v === 'number' ? [v] : [v.rows[0].timeS]));
+    assert.deepStrictEqual(uncheckedNumbers('Jane: 4,966 m at 2:00.8, 2k 7:36.2', seen), []);
+    assert.deepStrictEqual(uncheckedNumbers('Jane: 5,012 m at 1:59.9', seen), ['1:59.9', '5,012 m']);
+    assert.ok(FREE_TOOLS.every((x) => x.strict) && FREE_TOOLS[0].input_schema.properties.table.enum.includes('weights'));
+  });
+
+  const freeWorld = (steps) => {
+    const w = world();
+    let i = 0;
+    w.deps.client = { messages: { create: async (body) => {
+      w.model.push(JSON.parse(JSON.stringify(body)));
+      const s = steps[Math.min(i++, steps.length - 1)];
+      const usage = { input_tokens: 3000, output_tokens: 200 };
+      if (s.pick) return { stop_reason: 'tool_use', content: [{ type: 'tool_use', id: 'r' + i, name: s.pick[0], input: s.pick[1] }], usage };
+      if (s.tools) return { stop_reason: 'tool_use', content: [{ type: 'thinking', thinking: 'x', signature: 'sig' }, ...s.tools.map((t, k) => ({ type: 'tool_use', id: `u${i}_${k}`, name: t[0], input: t[1] }))], usage };
+      return { stop_reason: 'end_turn', content: [{ type: 'text', text: s.text }], usage };
+    } } };
+    const sheet = w.deps.fetchImpl;
+    w.deps.fetchImpl = async (url, init) => {
+      const body = init && init.body ? JSON.parse(init.body) : null;
+      if (url === 'https://script.example/exec' && body.action === 'ergbot-weights') {
+        w.calls.push({ url, body });
+        return Response.json(body.slackUserId === 'UC1' ? { status: 'ok', weights: [{ date: '2026-10-19', athlete: 'Avery Callahan', lb: 142 }] } : { status: 'not_allowed' });
+      }
+      return sheet(url, init);
+    };
+    return w;
+  };
+
+  test('ask: a coach question no lookup fits gets a written answer from the data, costed, checked and logged', async () => {
+    const t = getRows(feed, { table: 'tests', athlete: 'Avery Callahan', from: null, to: null, test: '20min', limit: 1 }, TODAY).rows[0];
+    const w = freeWorld([
+      { pick: ['search_data', {}] },
+      { tools: [['get_rows', { table: 'tests', athlete: 'Avery Callahan', from: null, to: null, test: '20min', limit: 1 }], ['get_rows', { table: 'weights', athlete: 'Avery Callahan', from: null, to: null, test: null, limit: null }]] },
+      { text: `Avery's latest 20' is ${t.meters.toLocaleString('en-US')} m. She weighed 142 lb on Oct 19. Her 2k is 6:59.9.` }
+    ]);
+    const out = await handleQuestion(dm('how does Avery\'s 20\' compare with her weight?'), env(), w.deps);
+    assert.strictEqual(out.status, 'answered');
+    assert.strictEqual(out.tool, 'search_data');
+    const [looking, reply] = w.posts();
+    assert.strictEqual(looking.text, 'Looking that up...');
+    assert.ok(reply.text.includes('142 lb') && /Check this: I couldn't match 6:59\.9/.test(reply.text) && /Data as of/.test(reply.text), reply.text);
+    assert.strictEqual(w.model[1].model, 'claude-sonnet-5-5');
+    assert.ok(/Roster: .*Avery Callahan/.test(w.model[1].system));
+    assert.strictEqual(w.model[2].messages[1].content[0].type, 'thinking', 'the model\'s turn goes back whole, thinking included');
+    assert.ok(w.model[2].messages[2].content.every((c) => c.type === 'tool_result'));
+    assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'ergbot-weights').length, 1, 'weights fetched once, for this coach');
+    const spend = w.store.get('spend:2026-10');
+    assert.ok(Math.abs(spend.usd - (costUsd('claude-haiku-5-5', { input_tokens: 3000, output_tokens: 200 }) + 2 * costUsd('claude-sonnet-5-5', { input_tokens: 3000, output_tokens: 200 }))) < 1e-9);
+    const log = w.store.get('log:2026-10');
+    assert.strictEqual(log[0].tool, 'search_data');
+    assert.deepStrictEqual(log[0].input.unchecked, ['6:59.9']);
+  });
+
+  test('ask: written answers are for coaches only, and can be switched off', async () => {
+    let w = freeWorld([{ pick: ['search_data', {}] }, { text: 'should not be used' }]);
+    await handleQuestion(dm('team RPE trend', 'UA1'), env({ ERGBOT_ATHLETE_QUESTIONS: 'on' }), w.deps);
+    assert.strictEqual(w.model.length, 1, 'an athlete never reaches step 2');
+    assert.ok(/only show you your own numbers/.test(w.posts()[0].text));
+    w = freeWorld([{ pick: ['cannot_answer', { reason: 'not_in_data' }] }, { text: 'should not be used' }]);
+    await handleQuestion(dm('team RPE trend'), env({ ERGBOT_FREE_ANSWERS: 'off' }), w.deps);
+    assert.strictEqual(w.model.length, 1);
+    assert.ok(/only answer questions about the tracker's data/.test(w.posts()[0].text));
+    // A coach's "not in the data" pick goes to step 2, which can still say no.
+    w = freeWorld([{ pick: ['cannot_answer', { reason: 'not_in_data' }] }, { text: "I can only answer questions about the tracker's data." }]);
+    await handleQuestion(dm('what is the capital of France'), env(), w.deps);
+    assert.strictEqual(w.model.length, 2);
+    assert.ok(/^I can only answer questions about the tracker's data\./.test(w.posts()[1].text));
+  });
+
+  test('ask: a written answer stops after six model calls', async () => {
+    const w = freeWorld([{ pick: ['search_data', {}] }, { tools: [['calculate', { op: 'sum', values: [1, 2] }]] }]);
+    await handleQuestion(dm('everything about everyone'), env(), w.deps);
+    assert.strictEqual(w.model.length, 1 + 6);
+    assert.ok(/more looking up than I can do/.test(w.posts()[1].text));
   });
 
   test('ask: athletes are off until switched on; then scoped by Slack ID, told about the log once', async () => {

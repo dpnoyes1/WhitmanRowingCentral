@@ -13,6 +13,11 @@
 //   Anywhere else the bot says "Ask me in a DM", because athletes are in those channels.
 // - Cost: at most ERGBOT_MONTHLY_CAP_USD (default $10) a month and 20 questions
 //   a person a day. At 80% of the cap one note goes to the coaches' channel.
+// - Step 2 (David, 2026-11-07, "look up any and all information in the sheet"):
+//   a coach's question no fixed lookup fits goes to askfree.mjs, where a stronger
+//   model searches the data (weights included, for coaches) and writes the answer,
+//   with a number check. ERGBOT_FREE_ANSWERS = off turns it off; ERGBOT_FREE_MODEL
+//   picks the model. The log marks these "written answer".
 // - Log: every question is kept for the month; coaches can ask for it, and an
 //   athlete is told so the first time she asks.
 import { callSheet, dmUser } from './slack.mjs';
@@ -21,6 +26,7 @@ import { todayIn, schoolYearStart, schoolYearLabel } from './stats.mjs';
 import { TOOLS, TOOL_NAMES, runLookup, shortDate } from './asklookups.mjs';
 import { anthropicClient } from './slackphoto.mjs';
 import { NOT_ON_ROSTER } from './slacklog.mjs';
+import { answerFreely, FREE_MODEL } from './askfree.mjs';
 
 export const ASK_MODEL = 'claude-haiku-5-5';
 export const DAILY_LIMIT = 20;
@@ -65,12 +71,13 @@ export function systemPrompt(feed, asker, today) {
     '- Tests: 2k = 2000m. 20\', 20 min, 20 minute = 20min. 500 = 500m. 100 = 100m. 30r20 = 30r20.',
     '- "latest" or "most recent" test = latest_test (the team\'s most recent test day). "my latest 2k" = athlete with name null.',
     '- "season PR", "year PR", "this season", "this year" = period season. "career PR", "all-time", "ever" = all_time. "last year" = school_year with last year\'s number.',
-    '- Varsity = group varsity. Freshman, Fr/Nov, novice = group freshman. Otherwise group all.',
+    '- Each grade or class, seniors, juniors, sophomores, 12th/11th/10th/9th/8th/7th grade, "top athlete in each class", "fastest senior" = by_grade (grades null for all of them, or the grades named). "Freshmen" listed next to other classes means 9th grade. "Their average" for one result means its split, which by_grade shows.',
+    '- Varsity = group varsity. A Freshman board, Fr/Nov, novice = group freshman (7th-9th). Otherwise group all.',
     '- "top 8", "first 8", "best 8" on a board = limit 8. Comparing years or the best N without names = top_average. Second 8, top 16 or group averages = group_averages.',
     '- Pacing, targets, "what split should I hold today", "what should I pull" = todays_plan. How a test was paced, splits from a test = test_pacing.',
     '- Whether there is practice, practice times, places, the calendar = schedule_link.',
     asker.role === 'coach'
-      ? '- A coach may ask about any athlete by name.'
+      ? '- A coach may ask about any athlete by name. A coach\'s question about the tracker\'s data that no other lookup fits = search_data, including weights (never cannot_answer with not_in_data for a question about the team\'s results, workouts, plans, weights or logging).'
       : '- This athlete may ask about her own numbers (name null), the leaderboards and team averages. A question about a named teammate\'s results, plan or pacing = cannot_answer with other_athlete.',
     '- Anything that is not about the tracker\'s data (results, boards, stars, GMS, targets, logging) = cannot_answer with not_in_data. Training, health or injury advice = cannot_answer with advice.',
     '- If an earlier question is shown, use it to fill in what a short follow-up leaves out ("and last year?").'
@@ -188,9 +195,36 @@ export async function handleQuestion(event, envFn, deps = {}, ctx = {}) {
   await store.set(spendKey, nextSpend);
 
   let reply;
-  const tool = routed.tool || 'cannot_answer';
-  const input = routed.tool ? routed.input : { reason: 'unclear' };
-  if (tool === 'question_log' && asker.role === 'coach') reply = await logText(store, month);
+  let tool = routed.tool || 'cannot_answer';
+  let input = routed.tool ? routed.input : { reason: 'unclear' };
+  let usd = routed.usd;
+  const free = asker.role === 'coach' && envFn('ERGBOT_FREE_ANSWERS') !== 'off' &&
+    (tool === 'search_data' || (tool === 'cannot_answer' && ['not_in_data', 'unclear'].includes(input.reason)));
+  if (free) {
+    await say('Looking that up...');
+    try {
+      const out = await answerFreely({
+        client: deps.client || anthropicClient(key, fetchImpl), model: envFn('ERGBOT_FREE_MODEL') || FREE_MODEL,
+        feed, today, question, previous, budgetUsd: cap - nextSpend.usd,
+        loadWeights: async () => {
+          const r = await callSheet(envFn, fetchImpl, { action: 'ergbot-weights', slackUserId: user });
+          return r && r.status === 'ok' ? r.weights : null;
+        }
+      });
+      reply = out.text; usd += out.usd; input = { from: tool, turns: out.turns, unchecked: out.unchecked };
+    } catch (err) {
+      console.log('ask: written answer failed', err.message);
+      reply = ':warning: Something went wrong looking that up. Please ask again in a minute.';
+      input = { from: tool, error: err.message };
+    }
+    tool = 'search_data';
+    nextSpend.usd = spend.usd + usd;
+    if (!nextSpend.warned && nextSpend.usd >= WARN_AT * cap) {
+      nextSpend.warned = true;
+      if (coachChannel) await postInThread(envFn, fetchImpl, coachChannel, null, `:money_with_wings: ErgBot questions have used $${nextSpend.usd.toFixed(2)} of the $${cap} budget for ${month}. At $${cap} they pause until the 1st.`).catch(() => false);
+    }
+    await store.set(spendKey, nextSpend);
+  } else if (tool === 'question_log' && asker.role === 'coach') reply = await logText(store, month);
   else reply = runLookup(feed, asker, tool, input, today).text;
 
   const dataTools = !['cannot_answer', 'schedule_link', 'question_log'].includes(tool);
@@ -201,9 +235,9 @@ export async function handleQuestion(event, envFn, deps = {}, ctx = {}) {
   }
   const sent = await say(text);
   await store.set(lastKey, { at: Date.now(), question, tool, input });
-  await addToLog(store, month, { at: new Date().toISOString(), user, role: asker.role, name: asker.name, where: channel ? 'channel' : 'dm', question, tool, input, usd: Math.round(routed.usd * 1e6) / 1e6 });
-  console.log('ask:', asker.role, tool, JSON.stringify(input), '$' + routed.usd.toFixed(5), sent ? 'sent' : 'send failed');
-  return { status: 'answered', tool, input, usd: routed.usd };
+  await addToLog(store, month, { at: new Date().toISOString(), user, role: asker.role, name: asker.name, where: channel ? 'channel' : 'dm', question, tool, input, usd: Math.round(usd * 1e6) / 1e6 });
+  console.log('ask:', asker.role, tool, JSON.stringify(input), '$' + usd.toFixed(5), sent ? 'sent' : 'send failed');
+  return { status: 'answered', tool, input, usd };
 }
 
 /** Coach or athlete for a Slack ID, kept for an hour so a question doesn't wait on the Sheet every time. */
@@ -225,7 +259,7 @@ async function addToLog(store, month, row) {
 async function logText(store, month) {
   const log = ((await store.get(`log:${month}`)) || []).slice(-20).reverse();
   if (!log.length) return 'No questions yet this month.';
-  return `*Latest questions* (${month})\n` + log.map((r) => `${r.at.slice(5, 16).replace('T', ' ')} ${r.role === 'coach' ? 'coach' : r.name}: "${r.question}" (${r.tool})`).join('\n');
+  return `*Latest questions* (${month})\n` + log.map((r) => `${r.at.slice(5, 16).replace('T', ' ')} ${r.role === 'coach' ? 'coach' : r.name}: "${r.question}" (${r.tool === 'search_data' ? 'written answer' : r.tool})`).join('\n');
 }
 
 /** A message in a channel, in the thread under the question when thread is given. True when Slack said ok. */

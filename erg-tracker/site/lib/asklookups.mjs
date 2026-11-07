@@ -2,7 +2,8 @@
 // who may use each one, and the reply text. The model only picks a lookup and
 // its settings (ask.mjs); everything here is plain code over the same feed and
 // views as the team site, so every number matches the site. Nothing here ever
-// shows a weight (the feed has none) or a birthday.
+// shows a weight (the feed has none) or a birthday; a coach's weight question
+// goes to search_data (askfree.mjs).
 //
 // Who may see what (David, 2026-11-07):
 // - Coaches: everything.
@@ -10,7 +11,7 @@
 //   site, and team totals (averages, totals, counts) that cover at least
 //   MIN_GROUP rowers. Never another athlete's details.
 
-import { TESTS, TEST_LABELS, resultValue, better, schoolYearStart, schoolYearLabel, boardGroup, addDays, weekStart } from './stats.mjs';
+import { TESTS, TEST_LABELS, resultValue, better, schoolYearStart, schoolYearLabel, boardGroup, gradeAt, addDays, weekStart } from './stats.mjs';
 import { testBoard, athleteView, teamSplitsView, notLoggedView, starsView, dayPlan, activeRowers, isAlum } from './views.mjs';
 import { formatClock } from './ergchecks.mjs';
 import { resolveName } from './slackphoto.mjs';
@@ -31,6 +32,12 @@ export const TOOLS = [
       school_year: nullable({ type: 'integer', description: 'Starting calendar year of the school year when period is school_year, e.g. 2025 for 2025-26; otherwise null' }),
       group: { type: 'string', enum: GROUP_ENUM, description: 'varsity = pieces done in 10th-12th grade, freshman = 7th-9th (Fr/Nov)' },
       limit: nullable({ type: 'integer', description: 'Only the top N (e.g. "top 8"); null for everyone. A top-N board also shows the average result and split of those N.' }) } } },
+  { name: 'by_grade', description: 'The best rower(s) in each grade (class) for one test: seniors (12th), juniors (11th), sophomores (10th), freshmen (9th), 8th, 7th. "Top athlete in each class/grade", "fastest senior", "best junior 2k". For season and school_year, the grade she was in that year; for all_time, her grade now (alumni left out).',
+    input_schema: { type: 'object', additionalProperties: false, required: ['test', 'period', 'school_year', 'grades', 'per_grade'], properties: {
+      test: { type: 'string', enum: TEST_ENUM }, period: { type: 'string', enum: ['season', 'all_time', 'school_year'] },
+      school_year: nullable({ type: 'integer', description: 'Starting calendar year of the school year when period is school_year; otherwise null' }),
+      grades: nullable({ type: 'array', items: { type: 'integer', enum: [7, 8, 9, 10, 11, 12] }, description: 'Only these grades (e.g. [12] for "fastest senior"); null for every grade' }),
+      per_grade: nullable({ type: 'integer', description: 'How many per grade ("top 3 in each class" = 3); null = 1' }) } } },
   { name: 'latest_test', description: 'Results of the most recent team test day for one test (the latest 2k, the latest 20\'), ranked, with each rower\'s change from her previous best.',
     input_schema: { type: 'object', additionalProperties: false, required: ['test', 'group'], properties: { test: { type: 'string', enum: TEST_ENUM }, group: { type: 'string', enum: GROUP_ENUM } } } },
   { name: 'athlete', description: 'One athlete\'s summary: season and career PRs, latest tests, stars, GMS %, this week\'s practices and OYO minutes. name null = the person asking.',
@@ -50,6 +57,8 @@ export const TOOLS = [
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'day'], properties: { name: nullable({ type: 'string' }), day: { type: 'string', enum: ['today', 'tomorrow'] } } } },
   { name: 'test_pacing', description: 'How an athlete paced her most recent 2k or 20\' test, part by part, and her best this season. name null = the person asking.',
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'test'], properties: { name: nullable({ type: 'string' }), test: { type: 'string', enum: ['2000m', '20min'] } } } },
+  { name: 'search_data', description: 'Coaches only: any other question about the tracker\'s data that no lookup above fits (comparisons, trends, counts, workouts logged, RPE, meters, attendance, plans, weights, a mix of these). A stronger model searches the data and writes the answer.',
+    input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
   { name: 'question_log', description: 'The most recent questions people asked ErgBot (coaches only).',
     input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
   { name: 'schedule_link', description: 'Any question about whether there is practice, practice times, places or the calendar.',
@@ -145,6 +154,40 @@ function board(feed, asker, input, today) {
     lines.push(`Average of these ${shown.length}: ${resultText(test, avg)}${splitOf(test, avg) !== null && test !== '500m' ? `, split ${formatClock(isMeters(test) ? mean(shown.map((r) => splitOf(test, r.result))) : splitOf(test, avg))}` : ''}`);
   }
   return { text: `${head}\n${lines.join('\n')}` };
+}
+
+const GRADE_NAMES = { 12: 'Seniors (12th)', 11: 'Juniors (11th)', 10: 'Sophomores (10th)', 9: 'Freshmen (9th)', 8: '8th grade', 7: '7th grade' };
+
+/** Best rower(s) in each grade (David, 2026-11-07: "top athlete in each class and their average for 20'"). */
+function byGrade(feed, asker, input, today) {
+  const { test, period } = input;
+  const st = feed.settings.schoolYearStart;
+  let from, to = today, title, pastYear = false, gradeDay = today;
+  if (period === 'all_time') { from = ALL_TIME; title = 'all time, by grade now'; }
+  else if (period === 'school_year' && input.school_year && input.school_year !== thisSchoolYear(feed, today)) {
+    from = yearStartOf(feed, input.school_year); to = yearEndOf(feed, input.school_year); pastYear = true; gradeDay = from;
+    title = schoolYearLabel(from, st);
+    if (from > today) return { text: `The ${title} school year hasn't started yet.` };
+  } else { from = schoolYearStart(today, st); title = `${schoolYearLabel(today, st)} season`; }
+  const n = Math.max(1, Math.min(10, input.per_grade || 1));
+  const wanted = input.grades && input.grades.length ? input.grades : [12, 11, 10, 9, 8, 7];
+  const byId = Object.fromEntries(rowers(feed).map((a) => [a.id, a]));
+  const rows = testBoard(feed, test, { from, to, group: null, today, pastYear });
+  const lines = [];
+  [12, 11, 10, 9, 8, 7].filter((g) => wanted.includes(g)).forEach((g) => {
+    const mine = rows.filter((r) => byId[r.id] && gradeAt(byId[r.id].gradYear, gradeDay, st) === g).slice(0, n);
+    if (!mine.length) { if (input.grades && input.grades.length) lines.push(`*${GRADE_NAMES[g]}*: no results`); return; }
+    const row = (r) => `${r.name}${starText(r.stars)}: ${withSplit(test, r.result)}, ${r.dateApprox ? r.schoolYear : shortDate(r.date)}`;
+    if (n === 1) { lines.push(`*${GRADE_NAMES[g]}*: ${row(mine[0])}`); return; }
+    lines.push(`*${GRADE_NAMES[g]}*`);
+    mine.forEach((r, i) => lines.push(`${i + 1}. ${r.name}${starText(r.stars)}: ${withSplit(test, r.result)}, ${r.dateApprox ? r.schoolYear : shortDate(r.date)}`));
+    if (mine.length > 1) {
+      const avg = mean(mine.map((r) => r.result));
+      lines.push(`Average of these ${mine.length}: ${withSplit(test, avg)}`);
+    }
+  });
+  const head = `*${label(test)}, best ${n > 1 ? n + ' ' : ''}in each grade, ${title}*`;
+  return { text: lines.length ? `${head}\n${lines.join('\n')}` : `${head}\nNo results yet.` };
 }
 
 /** The most recent day with at least 3 results for the test (a single re-test is not a test day), else the latest day with any. */
@@ -310,6 +353,7 @@ const REFUSE = {
 /** What each lookup does, and who may use it. */
 export const LOOKUPS = {
   board: { run: board, athletes: true },
+  by_grade: { run: byGrade, athletes: true },
   latest_test: { run: latestTest, athletes: true },
   athlete: { run: athlete, athletes: true },
   top_average: { run: topAverage, athletes: true },
@@ -318,6 +362,7 @@ export const LOOKUPS = {
   stars_ranking: { run: starsRanking, athletes: false },
   todays_plan: { run: todaysPlan, athletes: true },
   test_pacing: { run: testPacing, athletes: true },
+  search_data: { run: null, athletes: false },   // ask.mjs hands it to askfree.mjs
   question_log: { run: null, athletes: false },   // ask.mjs answers it from the log store
   schedule_link: { run: () => ({ text: `For practice times and whether there's practice, see ${SCHEDULE_URL}` }), athletes: true },
   cannot_answer: { run: (feed, asker, input) => ({ text: input.reason === 'other_athlete' && asker.role === 'coach' ? REFUSE.not_in_data : REFUSE[input.reason] || REFUSE.unclear }), athletes: true }
