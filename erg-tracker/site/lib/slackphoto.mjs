@@ -6,7 +6,7 @@
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES, MAX_DOWNLOAD_BYTES } from './ergscreen.mjs';
-import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
+import { runChecks, parseScreenDate, parseTitle, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
 import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
 import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { getFeed } from './feed.mjs';
@@ -95,6 +95,31 @@ export function benchmarkShape(machine, pieces) {
   return '';
 }
 const TEST_NAME = { '2000m': '2k', '20min': "20'" };
+
+const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+export const dateLabel = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${MONTH_NAMES[m - 1]} ${d}, ${y}`; };
+const cardIntro = (card) => `*For ${card.athlete}:* ${card.summary}, ${dateLabel(card.date)}.`;
+const dayDiff = (a, b) => Math.round((Date.parse(a) - Date.parse(b)) / 86400000);
+
+/** The date question: the screen's date is far from today (a dead battery resets the monitor clock). */
+export function dateBlocks(text, token, card) {
+  const btn = (id, label, style) => ({ type: 'button', action_id: id, value: token, text: { type: 'plain_text', text: label }, ...(style ? { style } : {}) });
+  const els = [];
+  if (card.dateAsk && card.dateAsk.shown) els.push(btn('photo_date_screen', `Use ${dateLabel(card.dateAsk.shown)}`));
+  els.push(btn('photo_date_today', `Use today (${dateLabel(card.today)})`, 'primary'), btn('photo_cancel', 'Cancel'));
+  return [{ type: 'section', text: { type: 'mrkdwn', text } }, { type: 'actions', elements: els }];
+}
+const dateQuestion = (card) => `*For ${card.athlete}:* ${card.summary}.\nThe date on the erg screen is *${card.dateAsk.screen}*, which is far from today. Monitor clocks reset when the batteries change. Tap the right date, or reply with it (for example 11/3/2026).`;
+
+/** What comes next on a card whose date is settled: the test question or Save. */
+function nextBlocks(card, token) {
+  if (card.ask) {
+    const text = `${cardIntro(card)}\nThis is exactly ${card.ask === '2000m' ? '2000 m' : '20:00'}. Was it a ${TEST_NAME[card.ask]} test? A test counts toward the best ${TEST_NAME[card.ask]}, stars and the boards. Tapping Yes or No saves it.`;
+    return { text, blocks: askBlocks(text, token) };
+  }
+  const text = `${cardIntro(card)}\nTap Save to log it.`;
+  return { text, blocks: cardBlocks(text, token) };
+}
 
 /** The question card: is this one a test? */
 export function askBlocks(text, token) {
@@ -212,14 +237,17 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum');
     const pieces = unsure ? [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }] : entryPieces(read);
     if (pieces.length > MAX_PIECES) { await say(`:warning: That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { status: 'too_many' }; }
+    // The entry takes the date on the screen (David, 2026-11-07). Over 2 weeks from today, or one that can't be read, is asked about.
     const shown = parseScreenDate(read.date, today);
-    const useShown = shown && Math.abs(Math.round((Date.parse(today) - Date.parse(shown)) / 86400000)) <= 3;   // a clock-reset date is flagged, not used
+    const useShown = shown && Math.abs(dayDiff(today, shown)) <= DATE_OK_DAYS && shown <= today;
+    const dateAsk = !useShown && String(read.date || '').trim() ? { screen: String(read.date).trim().slice(0, 40), shown: shown && shown <= today ? shown : null } : null;
     const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
     if (pieces.length === 1 && read.pieces.length > 1 && !unsure) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
     // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
     let copy = '';
     try { copy = (await (deps.makeCopy || makeKeepCopy)(bytes)).bytes.toString('base64'); } catch (err) { notes.push('No photo copy kept (' + err.message + ').'); }
-    await store.set('pending:' + user, { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, check: unsure, note: notes.join(' | ').slice(0, 400) });
+    await store.delete('datewait:' + user);
+    await store.set('pending:' + user, { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, check: unsure, today, dateAsk, note: notes.join(' | ').slice(0, 400) });
     if (who.role === 'athlete') return nameStep(who.athlete, user, event, envFn, fetchImpl, store, say, deps, true);   // only ever herself
     const caption = String(event.text || '').trim();
     if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with her name (first name is enough).`); return { status: 'asked' }; }
@@ -228,6 +256,20 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
 
   const name = String(event.text || '').trim();
   if (!name) return { ignored: 'empty' };
+  const wait = await store.get('datewait:' + user);
+  if (wait && Date.now() - wait.at <= TOO_OLD_MS) {   // she is answering the date question by typing
+    const card = await store.get('card:' + wait.token);
+    if (card && card.dateAsk) {
+      const typed = parseScreenDate(name, card.today);
+      if (!typed || typed > card.today) { await say(`I couldn't use "${name}" as a date. Reply with a date that is not in the future, like 11/3/2026, or tap a button above.`); return { status: 'bad_date' }; }
+      const done = { ...card, date: typed, dateAsk: null };
+      await store.set('card:' + wait.token, done);
+      await store.delete('datewait:' + user);
+      const next = nextBlocks(done, wait.token);
+      await say(next.text, next.blocks);
+      return { status: 'date_set', date: typed };
+    }
+  }
   const pending = await store.get('pending:' + user);
   if (!pending || Date.now() - pending.at > TOO_OLD_MS) return { ignored: 'nothing pending' };
   return nameStep(name, user, event, envFn, fetchImpl, store, say, deps);
@@ -258,16 +300,18 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
   if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the name again in a minute.'); return { status: 'error' }; }
   const token = randomBytes(9).toString('hex');
   const shape = benchmarkShape(pending.machine, pending.pieces);
-  await store.set('card:' + token, { user, athlete: who.athlete, ...pending, ask: shape });   // keeps the photo copy until she saves
+  const card = { user, athlete: who.athlete, ...pending, ask: shape };   // keeps the photo copy until she saves
+  await store.set('card:' + token, card);
   await store.delete('pending:' + user);
-  if (shape) {
-    const text = `*For ${who.athlete}:* ${pending.summary}.\nThis is exactly ${shape === '2000m' ? '2000 m' : '20:00'}. Was it a ${TEST_NAME[shape]} test? A test counts toward the best ${TEST_NAME[shape]}, stars and the boards. Tapping Yes or No saves it.`;
-    await say(text, askBlocks(text, token));
-    return { status: 'card', athlete: who.athlete, asked: shape };
+  if (card.dateAsk) {   // the date comes first; a typed date answers it too
+    await store.set('datewait:' + user, { token, at: Date.now() });
+    const text = dateQuestion(card);
+    await say(text, dateBlocks(text, token, card));
+    return { status: 'card', athlete: who.athlete, asked: 'date' };
   }
-  const text = `*For ${who.athlete}:* ${pending.summary}.\nTap Save to log it.`;
-  await say(text, cardBlocks(text, token));
-  return { status: 'card', athlete: who.athlete };
+  const next = nextBlocks(card, token);
+  await say(next.text, next.blocks);
+  return { status: 'card', athlete: who.athlete, ...(shape ? { asked: shape } : {}) };
 }
 
 /** A press on a card: Save (or a test Yes/No) saves, Cancel drops it, a name button picks the athlete. */
@@ -304,9 +348,22 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   if (card.user !== payload.user.id) { await sendReply(envFn, fetchImpl, payload, note('Only the person who sent the photo can save it.')); return { status: 'not_owner' }; }
   if (id === 'photo_cancel') {
     await store.delete('card:' + token);
+    await store.delete('datewait:' + payload.user.id);
     await sendReply(envFn, fetchImpl, payload, replace(':x: Cancelled, nothing was saved.'));
     return { status: 'cancelled' };
   }
+  if (id === 'photo_date_screen' || id === 'photo_date_today') {
+    if (!card.dateAsk) { await sendReply(envFn, fetchImpl, payload, note('The date is already set.')); return { status: 'gone' }; }
+    const date = id === 'photo_date_screen' ? card.dateAsk.shown : card.today;
+    if (!date) return { ignored: 'no screen date' };
+    const done = { ...card, date, dateAsk: null };
+    await store.set('card:' + token, done);
+    await store.delete('datewait:' + payload.user.id);
+    const next = nextBlocks(done, token);
+    await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: next.text, blocks: next.blocks });
+    return { status: 'date_set', date };
+  }
+  if (card.dateAsk) { await sendReply(envFn, fetchImpl, payload, note('First confirm the date.')); return { status: 'asking_date' }; }
   let benchmark = card.benchmark || '';
   let yesNo = null;
   if (id === 'photo_test_yes' || id === 'photo_test_no') {
@@ -336,7 +393,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   if (result.status === 'ok') {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
-    await done(`:white_check_mark: Saved for ${result.athlete}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
+    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
       (card.check ? ' The split rows on the photo didn\'t add up to the total, so a coach will check it.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : ''));
   } else if (result.status === 'merged') {

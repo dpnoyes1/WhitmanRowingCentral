@@ -8,6 +8,7 @@
 //   flag - saves, but coaches see it
 //   note - saves, shown on the athlete's Confirm card ("calculated, please check")
 
+export const DATE_OK_DAYS = 14;
 const tenths = (n) => Math.round(n * 10) / 10;
 
 /** Seconds -> m:ss.0, for messages only (data stays in seconds). */
@@ -137,7 +138,7 @@ export function runChecks(input, ctx) {
   if (read.machine && read.avgSplitS && !read.calculated.length) {
     const d = splitUnit(read.machine);
     const expect = (read.totalMeters / d) * read.avgSplitS;
-    const tol = 0.05 * (read.totalMeters / d) + 0.3;
+    const tol = 0.1 * (read.totalMeters / d) + 0.3;   // the same allowance as the pace check below: a time that check accepts is never swapped (a 20:00 screen read as 19:59.0, 2026-11-07)
     const interval = (title && title.kind === 'intervals') || read.restMeters != null ||
       (!title && pieces.length > 1 && read.metersColumn === 'per_piece');
     if (interval && read.totalTimeS - expect > tol) {
@@ -207,12 +208,13 @@ export function runChecks(input, ctx) {
     }
   }
 
-  // Date: only a screen more than 3 days from today is questioned (David, 2026-10-27).
+  // Date (David, 2026-11-07): the entry takes the date on the screen. One more than 2 weeks from today is
+  // asked about (monitor clocks reset when batteries change), so the athlete confirms or types the right one.
   const shown = parseScreenDate(read.date, ctx.today);
   if (shown) {
     const days = Math.round((toUTC(ctx.today) - toUTC(shown)) / 86400000);
-    if (Math.abs(days) > 3) {   // flag only: monitor clocks reset (a dead battery gives an old date), and the entry uses the day sent
-      issues.push(issue('date_off', 'flag', '', `Screen date ${shown} is ${Math.abs(days)} days ${days > 0 ? 'before' : 'after'} the day sent; logged on the day sent`, true));
+    if (Math.abs(days) > DATE_OK_DAYS) {
+      issues.push(issue('date_off', 'flag', '', `Screen date ${shown} is ${Math.abs(days)} days ${days > 0 ? 'before' : 'after'} today; the athlete was asked to confirm the date`, true));
     }
   }
 

@@ -300,17 +300,25 @@ export default function photoTests(test) {
     assert.strictEqual(res.status, 'clean', 'a flag for coaches, not a hold');
   });
 
-  test('photo: only a date more than 3 days off is questioned', () => {
+  test('photo: only a date more than 2 weeks off is questioned', () => {
     const at = (date) => C.runChecks(read({ date }), { today: TODAY });
     assert.deepStrictEqual(at('Oct 28 2026').issues, []);
-    assert.deepStrictEqual(at('Oct 25 2026').issues, [], 'exactly 3 days is fine');
-    const old = at('Oct 24 2026');
+    assert.deepStrictEqual(at('Oct 14 2026').issues, [], 'exactly 14 days is fine');
+    const old = at('Oct 13 2026');
     assert.strictEqual(old.status, 'clean', 'a flag for coaches, never a block: monitor clocks reset');
     assert.deepStrictEqual(old.issues.map((i) => [i.code, i.level]), [['date_off', 'flag']]);
-    assert.ok(/4 days before/.test(old.issues[0].coach) && /logged on the day sent/.test(old.issues[0].coach));
-    assert.strictEqual(at('Nov 2 2026').issues[0].code, 'date_off', 'a future date too');
+    assert.ok(/15 days before/.test(old.issues[0].coach) && /asked to confirm/.test(old.issues[0].coach));
+    assert.strictEqual(at('Nov 20 2026').issues[0].code, 'date_off', 'a future date too');
     assert.deepStrictEqual(at('Mar 15 2105').issues, [], 'an unreadable year is ignored');
     assert.deepStrictEqual(at('').issues, []);
+  });
+
+  test('photo: a 20:00 total is not swapped for the pace-implied 19:59.0 when the title is unreadable', () => {
+    const screen = read({ title: 'View Detail', meters_column: 'per_piece', total: { time: '20:00.0', meters: 4890, avg_split: '2:02.6', avg_rate: 30 },
+      pieces: [piece('2:00.0', 493, '2:01.7'), piece('2:00.0', 490, '2:02.4'), piece('2:00.0', 490, '2:02.4'), piece('2:00.0', 491, '2:02.1')] });
+    const res = C.runChecks(screen, { today: TODAY });
+    assert.strictEqual(res.read.totalTimeS, 1200);
+    assert.ok(!codes(res).includes('working_time'));
   });
 
   test('photo: summary row above the line is not a piece, and Total Time with rest is not working time', () => {
