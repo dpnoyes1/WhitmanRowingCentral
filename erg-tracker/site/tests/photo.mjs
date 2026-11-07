@@ -178,7 +178,7 @@ export default function photoTests(test) {
     assert.strictEqual(res.status, 'clean');
   });
 
-  test('photo: splits that do not add up are held and both sides are told', () => {
+  test('photo: splits that do not add up are saved and flagged for the coach', () => {
     const doctored = read({
       total: { time: '6:06.5', meters: 1500, avg_split: '2:02.2', avg_rate: 28 },
       title: '1500m',
@@ -186,13 +186,11 @@ export default function photoTests(test) {
       meters_column: 'per_piece',
     });
     const res = C.runChecks(doctored, { today: TODAY });
-    assert.strictEqual(res.status, 'hold');
+    assert.strictEqual(res.status, 'clean', 'the total row reads cleanly, so it is not refused');
     const i = res.issues.find((x) => x.code === 'splits_sum');
-    assert.ok(i && i.level === 'hold' && i.coaches);
-    assert.ok(/splits total 6:00.8 but the screen says 6:06.5/.test(i.athlete), i.athlete);
-    assert.ok(/clearer photo, or type it in with \/log\. A coach has been told/.test(i.athlete));
-    assert.ok(!/cheat|fake|doctor|lie/i.test(i.athlete), 'neutral wording, no accusation');
-    assert.ok(/6:00.8/.test(i.coach) && /6:06.5/.test(i.coach));
+    assert.ok(i && i.level === 'flag' && i.coaches);
+    assert.ok(/split rows total 6:00.8 but the total row says 6:06.5/.test(i.coach), i.coach);
+    assert.strictEqual(i.athlete, '');
   });
 
   test('photo: time must match meters at the average split', () => {
@@ -289,7 +287,7 @@ export default function photoTests(test) {
     const r = intervals();
     r.pieces[2] = { ...r.pieces[2], meters: 450 };
     const res = C.runChecks(r, { today: TODAY });
-    assert.strictEqual(res.status, 'hold');
+    assert.strictEqual(res.status, 'clean', 'flagged for the coach, not refused');
     assert.ok(codes(res).includes('meters_sum'));
     assert.ok(codes(res).includes('pieces_vs_title'));
   });

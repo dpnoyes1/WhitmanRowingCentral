@@ -15,7 +15,7 @@ import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
-import { handlePhotoEvent, handlePhotoButton, benchmarkShape } from '../lib/slackphoto.mjs';
+import { handlePhotoEvent, handlePhotoButton, benchmarkShape, resolveName } from '../lib/slackphoto.mjs';
 import * as SL from '../lib/slacklog.mjs';
 import * as SLB from '../lib/slacklogbook.mjs';
 import { createHmac } from 'node:crypto';
@@ -1027,7 +1027,7 @@ test('slack background: a crash while handling a DM tells her instead of going s
   assert.ok(sent.some((c) => c.url === 'https://slack.com/api/chat.postMessage' && c.body.channel === 'UC1' && /Something went wrong/.test(c.body.text)));
 });
 
-test('slack photo: coach sends a screen, bot asks which athlete, card saves with one-tap RPE', async () => {
+test('slack photo: coach sends a screen, bot asks which athlete, Save button saves', async () => {
   const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
   const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xe1, 'Exif\0\0GPS'), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
@@ -1040,10 +1040,10 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   const bad = { ...single, total: { ...single.total, time: '9:30.0' } };   // time does not match meters at that split
   const intervals = { ...single, title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
     pieces: [0, 1, 2, 3].map(() => piece('1:40.0', 500, '1:40.0')) };
-  const world = ({ answers = [single], sheet = {}, copy = null } = {}) => {
+  const world = ({ answers = [single], sheet = {}, copy = null, names = ['Olivia Fake', 'Maya Sample', 'Priya Dummy'] } = {}) => {
     const calls = []; const store = new Map(); let ai = 0;
     const fake = { get: async (k) => store.get(k) || null, set: async (k, v) => { store.set(k, JSON.parse(JSON.stringify(v))); }, delete: async (k) => { store.delete(k); } };
-    const deps = { today: '2026-10-28', store: fake, makeCopy: copy || (async (b) => ({ bytes: Buffer.from('small-copy') })), fetchImpl: async (url, init) => {
+    const deps = { today: '2026-10-28', store: fake, athleteNames: async () => names, makeCopy: copy || (async (b) => ({ bytes: Buffer.from('small-copy') })), fetchImpl: async (url, init) => {
       const body = init && init.body ? JSON.parse(init.body) : null;
       calls.push({ url, body, headers: init && init.headers });
       if (url === 'https://script.example/exec') {
@@ -1058,7 +1058,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
       if (url === 'https://api.anthropic.com/v1/messages') return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers[Math.min(ai++, answers.length - 1)]) }], usage: { input_tokens: 1, output_tokens: 1 } });
       return Response.json({ ok: true });
     } };
-    const dms = () => calls.filter((c) => c.url === 'https://slack.com/api/chat.postMessage').map((c) => c.body);
+    const dms = () => calls.filter((c) => c.url === 'https://slack.com/api/chat.postMessage').map((c) => c.body).filter((b) => !/^:eyes: Got your photo/.test(b.text));
     return { calls, store, deps, dms };
   };
   const photoMsg = (over = {}) => ({ type: 'message', channel_type: 'im', subtype: 'file_share', user: 'UC1', text: '', files: [{ mimetype: 'image/jpeg', url_private_download: 'https://files.slack.example/p.jpg' }], ...over });
@@ -1080,33 +1080,35 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   // name -> card
   out = await handlePhotoEvent(textMsg('olivia fake'), env, w.deps);
   assert.strictEqual(out.status, 'card');
-  assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-access').pop().body.athleteName, 'olivia fake');
+  assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-access').pop().body.athleteName, 'Olivia Fake', 'the matched roster name goes to the Sheet');
   const card = w.dms()[1];
   assert.ok(/For Olivia Fake/.test(card.text));
-  assert.strictEqual(card.blocks[1].elements.length, 10);
-  assert.deepStrictEqual(card.blocks[2].elements.map((b) => b.action_id), ['photo_norpe', 'photo_cancel']);
+  assert.deepStrictEqual(card.blocks[1].elements.map((b) => b.action_id), ['photo_save', 'photo_cancel'], 'no RPE buttons any more');
   const token = card.blocks[1].elements[0].value;
   assert.ok(token && !w.store.has('pending:UC1') && w.store.has('card:' + token));
 
   // someone else cannot press, then RPE 7 saves
-  out = await handlePhotoButton(press('photo_rpe_7', token, { id: 'UC2', name: 'coach.two' }), env, w.deps);
+  out = await handlePhotoButton(press('photo_save', token, { id: 'UC2', name: 'coach.two' }), env, w.deps);
   assert.strictEqual(out.status, 'not_owner');
-  out = await handlePhotoButton(press('photo_rpe_7', token), env, w.deps);
+  out = await handlePhotoButton(press('photo_save', token), env, w.deps);
   assert.strictEqual(out.status, 'ok');
   const save = w.calls.filter((c) => c.body && c.body.action === 'slack-photo')[0].body;
   assert.strictEqual(save.token, token);
   assert.strictEqual(save.athlete, 'Olivia Fake');
   assert.strictEqual(save.slackName, 'coach.one');
-  assert.strictEqual(save.photo.rpe, '7');
+  assert.strictEqual(save.photo.rpe, '');
   assert.strictEqual(save.photo.date, '2026-10-28');
   assert.strictEqual(save.photo.machine, 'RowErg');
   assert.deepStrictEqual(save.photo.pieces, [{ timeS: 360, meters: 1500, rate: 24, restS: 0 }], 'single piece saves totals only');
   assert.ok(/Splits: 2:00\.0, 2:00\.0, 2:00\.0/.test(save.photo.note));
   assert.strictEqual(save.photo.image, Buffer.from('small-copy').toString('base64'), 'the small copy goes with the save, not the original');
   const sent = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
-  assert.ok(/Saved for Olivia Fake with RPE 7/.test(sent.text) && sent.replace_original);
+  assert.ok(/Saved for Olivia Fake\./.test(sent.text) && sent.replace_original);
+  const hooks = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').map((c) => c.body).slice(-2);
+  assert.ok(/Saving/.test(hooks[0].text), 'she sees "Saving" before the Sheet answers');
+  assert.ok(w.calls.findIndex((c) => c.url === 'https://hooks.slack.example/r') < w.calls.findIndex((c) => c.body && c.body.action === 'slack-photo'), 'Saving shows first');
   assert.ok(!w.dms().some((d) => d.channel === 'UO9'), 'no FYI when the Sheet names nobody');
-  out = await handlePhotoButton(press('photo_rpe_7', token), env, w.deps);
+  out = await handlePhotoButton(press('photo_save', token), env, w.deps);
   assert.strictEqual(out.status, 'gone', 'second press does nothing');
   assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-photo').length, 1);
 
@@ -1126,6 +1128,57 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.strictEqual(out.status, 'unknown_name');
   assert.ok(w.store.has('pending:UC1') && /can't find "Nobody"/.test(w.dms().pop().text));
   assert.deepStrictEqual(await handlePhotoEvent(textMsg('hello'), env, world().deps), { ignored: 'nothing pending' });
+
+  // names: first name alone, shared first names ask which, a typo gets a "Did you mean" button
+  const anyName = (b) => (b.slackUserId !== 'UC1' ? { status: 'not_allowed' } : b.athleteName ? { status: 'ok', athlete: b.athleteName } : { status: 'ok' });
+  const dupNames = ['Olivia Fake', 'Olivia Pretend', 'Maya Sample', 'Priya Dummy'];
+  w = world({ names: dupNames, sheet: { access: anyName } });
+  await handlePhotoEvent(photoMsg(), env, w.deps);
+  assert.strictEqual((await handlePhotoEvent(textMsg('maya'), env, w.deps)).status, 'card', 'a unique first name is enough');
+  assert.ok(/For Maya Sample|For Olivia Fake/.test(w.dms().pop().text));
+  assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-access').pop().body.athleteName, 'Maya Sample');
+  w = world({ names: dupNames, sheet: { access: anyName } });
+  await handlePhotoEvent(photoMsg(), env, w.deps);
+  out = await handlePhotoEvent(textMsg('Olivia'), env, w.deps);
+  assert.strictEqual(out.status, 'choose');
+  const ch = w.dms().pop();
+  assert.deepStrictEqual(ch.blocks[1].elements.map((e) => e.action_id), ['photo_pick_0', 'photo_pick_1', 'photo_pickno']);
+  assert.deepStrictEqual(ch.blocks[1].elements.slice(0, 2).map((e) => e.text.text), ['Olivia Fake', 'Olivia Pretend']);
+  assert.ok(w.store.has('pending:UC1') && !w.calls.some((c) => c.body && c.body.athleteName), 'nothing sent to the Sheet until she picks');
+  const chTok = ch.blocks[1].elements[0].value;
+  assert.strictEqual((await handlePhotoButton(press('photo_pick_1', chTok, { id: 'UC2', name: 'x' }), env, w.deps)).status, 'not_owner');
+  out = await handlePhotoButton(press('photo_pick_1', chTok), env, w.deps);
+  assert.strictEqual(out.picked, 'Olivia Pretend');
+  assert.strictEqual(out.status, 'card');
+  assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-access').pop().body.athleteName, 'Olivia Pretend');
+  assert.strictEqual((await handlePhotoButton(press('photo_pick_1', chTok), env, w.deps)).status, 'gone');
+  w = world({ names: ['Olivia Fake', 'Maya Sample'], sheet: { access: anyName } });
+  await handlePhotoEvent(photoMsg(), env, w.deps);
+  out = await handlePhotoEvent(textMsg('Olivia Fak'), env, w.deps);
+  assert.strictEqual(out.status, 'suggest');
+  const sg = w.dms().pop();
+  assert.ok(/Did you mean \*Olivia Fake\*/.test(sg.text) && sg.blocks[1].elements.map((e) => e.text.text).join() === 'Yes, Olivia Fake,No');
+  out = await handlePhotoButton(press('photo_pick_0', sg.blocks[1].elements[0].value), env, w.deps);
+  assert.strictEqual(out.status, 'card');
+  assert.ok(/For Olivia Fake/.test(w.dms().pop().text));
+  w = world({ names: ['Olivia Fake', 'Maya Sample'], sheet: { access: anyName } });
+  await handlePhotoEvent(photoMsg(), env, w.deps);
+  await handlePhotoEvent(textMsg('Maya Sampl'), env, w.deps);
+  assert.strictEqual((await handlePhotoButton(press('photo_pickno', w.dms().pop().blocks[1].elements[1].value), env, w.deps)).status, 'pick_no');
+  assert.ok(w.store.has('pending:UC1'), 'the photo still waits for the right name');
+  assert.strictEqual(resolveName('Zed', ['Olivia Fake']).kind, 'none');
+
+  // a scrolled single piece: the total row is read, the visible rows don't add up, so it saves from the total and tells the coach
+  const scrolled = { ...twenty, meters_column: 'per_piece', pieces: [0, 1, 2, 3, 4, 5, 6, 7].map(() => piece('2:00.0', 500, '2:00.0')) };
+  w = world({ answers: [scrolled], names: ['Olivia Fake'] });
+  out = await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  assert.strictEqual(out.asked, '20min', 'accepted, and still asked whether it was a test');
+  const sTok = w.dms().pop().blocks[1].elements[0].value;
+  await handlePhotoButton(press('photo_test_no', sTok), env, w.deps);
+  const sv = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo;
+  assert.deepStrictEqual(sv.pieces, [{ timeS: 1200, meters: 5000, rate: 22, restS: 0 }]);
+  assert.ok(/Check this one/.test(sv.note));
+  assert.ok(/a coach will check it/.test(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body.text));
 
   // a copy that cannot be made never blocks the workout; Logbook already having it says so
   w = world({ copy: async () => { throw new Error('bad image'); } });
@@ -1154,7 +1207,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   w = world({ sheet: { save: { status: 'error', error: 'boom' } } });
   await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
   const tok4 = w.dms()[0].blocks[1].elements[0].value;
-  assert.strictEqual((await handlePhotoButton(press('photo_rpe_5', tok4), env, w.deps)).status, 'error');
+  assert.strictEqual((await handlePhotoButton(press('photo_save', tok4), env, w.deps)).status, 'error');
   assert.ok(w.store.has('card:' + tok4), 'card kept for another try');
 
   // a coach's photo save with a Roster Slack ID on the athlete: she gets an FYI DM, then the coach is told
@@ -1174,7 +1227,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   const aCard = w.dms()[0];
   assert.ok(/For Olivia Fake/.test(aCard.text) && !/Which athlete/.test(aCard.text));
   const aTok = aCard.blocks[1].elements[0].value;
-  out = await handlePhotoButton(press('photo_rpe_6', aTok, { id: 'UA1', name: 'olivia.fake' }), env, w.deps);
+  out = await handlePhotoButton(press('photo_save', aTok, { id: 'UA1', name: 'olivia.fake' }), env, w.deps);
   assert.strictEqual(out.status, 'ok');
   const aSave = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body;
   assert.strictEqual(aSave.athlete, 'Olivia Fake');
@@ -1219,25 +1272,20 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   assert.ok(/Was it a 2k test/.test(q.text) && q.blocks[1].elements.map((e) => e.action_id).join() === 'photo_test_yes,photo_test_no,photo_cancel');
   const qTok = q.blocks[1].elements[0].value;
   const aboutAthlete = { id: 'UA1', name: 'olivia.fake' };
-  out = await handlePhotoButton(press('photo_rpe_6', qTok, aboutAthlete), env, w.deps);
+  out = await handlePhotoButton(press('photo_save', qTok, aboutAthlete), env, w.deps);
   assert.strictEqual(out.status, 'asking', 'cannot save before answering');
   assert.ok(!w.calls.some((c) => c.body && c.body.action === 'slack-photo'));
   out = await handlePhotoButton(press('photo_test_yes', qTok, { id: 'UA9', name: 'someone.else' }), env, w.deps);
   assert.strictEqual(out.status, 'not_owner');
   out = await handlePhotoButton(press('photo_test_yes', qTok, aboutAthlete), env, w.deps);
-  assert.strictEqual(out.status, 'test');
-  const rpeReply = JSON.parse(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body ? JSON.stringify(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body) : '{}');
-  assert.ok(rpeReply.replace_original && rpeReply.blocks[1].elements.length === 10, 'the card becomes the RPE card');
-  out = await handlePhotoButton(press('photo_rpe_8', qTok, aboutAthlete), env, w.deps);
-  assert.strictEqual(out.status, 'ok');
+  assert.strictEqual(out.status, 'ok', 'Yes saves at once, no second card');
   const tSave = w.calls.find((c) => c.body && c.body.action === 'slack-photo').body;
   assert.strictEqual(tSave.photo.benchmark, '2000m');
   assert.strictEqual(tSave.athlete, 'Olivia Fake');
   w = world({ answers: [twoK], sheet: { access: athleteAccess } });
   await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
   const nTok = w.dms()[0].blocks[1].elements[0].value;
-  assert.strictEqual((await handlePhotoButton(press('photo_test_no', nTok, aboutAthlete), env, w.deps)).status, 'not_test');
-  await handlePhotoButton(press('photo_norpe', nTok, aboutAthlete), env, w.deps);
+  assert.strictEqual((await handlePhotoButton(press('photo_test_no', nTok, aboutAthlete), env, w.deps)).test, false);
   assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo.benchmark, '', 'No means a normal workout');
   w = world({ answers: [twoK], sheet: { access: athleteAccess } });
   await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
@@ -1306,7 +1354,7 @@ test('slack background: a signed DM event and a photo button reach the photo flo
   const ev = JSON.stringify({ type: 'event_callback', event: { type: 'message', channel_type: 'im', user: 'UC1', text: 'hi' } });
   assert.deepStrictEqual(await handleSlackAction(req(ev), env, deps), { ignored: 'nothing pending' });
   assert.deepStrictEqual(await handleSlackAction(req(ev, 'wrong'), env, deps), { ignored: 'signature' });
-  const btn = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'UC1' }, response_url: 'https://hooks.slack.example/r', actions: [{ action_id: 'photo_rpe_5', value: 'nope' }] }) }).toString();
+  const btn = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'UC1' }, response_url: 'https://hooks.slack.example/r', actions: [{ action_id: 'photo_save', value: 'nope' }] }) }).toString();
   assert.strictEqual((await handleSlackAction(req(btn), env, deps)).status, 'gone');
 });
 
