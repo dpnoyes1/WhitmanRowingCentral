@@ -221,18 +221,21 @@ export default function askTests(test) {
     assert.strictEqual(out.status, 'not_allowed');
   });
 
-  test('ask: @ErgBot works in the coaches\' channel (in a thread), anywhere else says ask in a DM', async () => {
+  test('ask: @ErgBot works in the coaches\' channel (a normal message, or in the thread it was asked in), anywhere else says ask in a DM', async () => {
     const w = world();
     await handleQuestion(mention('rankings 20\''), env(), w.deps, { channel: 'CCOACH' });
     const [reply] = w.posts();
     assert.strictEqual(reply.channel, 'CCOACH');
-    assert.strictEqual(reply.thread_ts, '200.1');
+    assert.ok(!('thread_ts' in reply), 'a normal channel message, like a DM (David, 2026-11-07)');
     assert.ok(/20' board/.test(reply.text));
     assert.strictEqual(w.model[0].messages[0].content, 'rankings 20\'', 'the mention markup is gone');
+    await handleQuestion({ ...mention('and varsity?'), thread_ts: '150.1' }, env(), w.deps, { channel: 'CCOACH' });
+    assert.strictEqual(w.posts()[1].thread_ts, '150.1', 'asked inside a thread: answered there');
+    const before = w.posts().length;
     const out = await handleQuestion(mention('rankings 20\'', 'CTEAM'), env(), w.deps, { channel: 'CTEAM' });
     assert.strictEqual(out.status, 'wrong_channel');
-    assert.deepStrictEqual([w.posts()[1].channel, w.posts()[1].thread_ts, w.posts()[1].text], ['CTEAM', '200.1', 'Ask me in a DM.']);
-    assert.strictEqual(w.model.length, 1, 'no model call for the wrong channel');
+    assert.deepStrictEqual([w.posts()[before].channel, w.posts()[before].thread_ts, w.posts()[before].text], ['CTEAM', '200.1', 'Ask me in a DM.']);
+    assert.strictEqual(w.model.length, 2, 'no model call for the wrong channel');
     // Athletes never get answers in a channel, even the coaches' one.
     assert.strictEqual((await handleQuestion(mention('x', 'CCOACH', 'UA1'), env({ ERGBOT_ATHLETE_QUESTIONS: 'on' }), w.deps, { channel: 'CCOACH' })).status, 'wrong_channel');
   });
