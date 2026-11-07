@@ -30,7 +30,7 @@ export const TOOLS = [
       test: { type: 'string', enum: TEST_ENUM }, period: { type: 'string', enum: ['season', 'all_time', 'school_year'] },
       school_year: nullable({ type: 'integer', description: 'Starting calendar year of the school year when period is school_year, e.g. 2025 for 2025-26; otherwise null' }),
       group: { type: 'string', enum: GROUP_ENUM, description: 'varsity = pieces done in 10th-12th grade, freshman = 7th-9th (Fr/Nov)' },
-      limit: nullable({ type: 'integer', description: 'Only the top N (e.g. "top 8"); null for everyone' }) } } },
+      limit: nullable({ type: 'integer', description: 'Only the top N (e.g. "top 8"); null for everyone. A top-N board also shows the average result and split of those N.' }) } } },
   { name: 'latest_test', description: 'Results of the most recent team test day for one test (the latest 2k, the latest 20\'), ranked, with each rower\'s change from her previous best.',
     input_schema: { type: 'object', additionalProperties: false, required: ['test', 'group'], properties: { test: { type: 'string', enum: TEST_ENUM }, group: { type: 'string', enum: GROUP_ENUM } } } },
   { name: 'athlete', description: 'One athlete\'s summary: season and career PRs, latest tests, stars, GMS %, this week\'s practices and OYO minutes. name null = the person asking.',
@@ -139,6 +139,11 @@ function board(feed, asker, input, today) {
   const mine = asker.athleteId && rows.find((r) => r.id === asker.athleteId);
   const lines = shown.map((r) => `${r.rank}. ${r.name}${starText(r.stars)}: ${withSplit(test, r.result)}, ${r.dateApprox ? r.schoolYear : shortDate(r.date)}${r.alum ? ' (alum)' : ''}`);
   if (mine && !shown.includes(mine)) lines.push(`You: ${mine.rank} of ${rows.length}, ${withSplit(test, mine.result)}`);
+  // "Top 4 and their average split" (David, 2026-11-07): a top-N board also gives the average of those N.
+  if (input.limit && shown.length > 1) {
+    const avg = mean(shown.map((r) => r.result));
+    lines.push(`Average of these ${shown.length}: ${resultText(test, avg)}${splitOf(test, avg) !== null && test !== '500m' ? `, split ${formatClock(isMeters(test) ? mean(shown.map((r) => splitOf(test, r.result))) : splitOf(test, avg))}` : ''}`);
+  }
   return { text: `${head}\n${lines.join('\n')}` };
 }
 

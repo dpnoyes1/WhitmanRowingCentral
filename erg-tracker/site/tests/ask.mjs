@@ -26,6 +26,13 @@ export default function askTests(test) {
     assert.ok(/20' board, 2026-27 season, all rowers\*, top 3/.test(text), text);
     site.slice(0, 3).forEach((r) => assert.ok(text.includes(`${r.rank}. ${r.name}`) && text.includes(r.meters.toLocaleString('en-US') + ' m'), r.name));
     assert.ok(!text.includes(site[3].name), 'top 3 only');
+    // "top 4 20' tests this year, and the average split of the 4" (David, 2026-11-07).
+    const top4 = run(COACH, 'board', { test: '20min', period: 'season', school_year: null, group: 'all', limit: 4 });
+    const avgSplit = site.slice(0, 4).reduce((a, r) => a + 600000 / r.meters, 0) / 4;
+    const m = top4.match(/Average of these 4: ([\d,]+) m, split (\d):(\d\d\.\d)/);
+    assert.ok(m, top4);
+    assert.strictEqual(Number(m[1].replace(',', '')), Math.round(site.slice(0, 4).reduce((a, r) => a + r.meters, 0) / 4));
+    assert.ok(Math.abs(Number(m[2]) * 60 + Number(m[3]) - avgSplit) <= 0.05);
     const mine = run(ATHLETE, 'board', { test: '20min', period: 'season', school_year: null, group: 'all', limit: 3 });
     const myRank = site.find((r) => r.id === me.id).rank;
     assert.ok(mine.includes(`You: ${myRank} of ${site.length}`), mine);
