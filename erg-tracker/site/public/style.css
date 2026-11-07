@@ -282,6 +282,8 @@ a[hidden], .athletes a[hidden] { display: none; }
 
 /* layer 2 */
 .filters { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 16px; }
+.age-note { display: none; }
+@media (max-width: 560px) { .age-note { display: inline; } }
 .stars { color: #c58a00; letter-spacing: 1px; white-space: nowrap; }
 .star-off { color: var(--star-off); }
 .star-half { background: linear-gradient(90deg, #c58a00 50%, var(--star-off) 50%); -webkit-background-clip: text; background-clip: text; color: transparent; }
@@ -339,6 +341,11 @@ a.btn.log-btn { text-decoration: none; }
   .athletes a .pill { align-self: flex-start; }
   .workout-tools { display: grid; gap: 8px; }
   .seg { flex-wrap: wrap; }
+  /* Boards filters: three equal-width rows, no wrapping inside a row (the age ranges show in the page note instead) */
+  .filters { flex-direction: column; gap: 6px; margin-bottom: 12px; }
+  .filters .seg { display: flex; flex-wrap: nowrap; width: 100%; }
+  .filters .seg button { flex: 1 1 0; justify-content: center; padding: 6px 4px; min-width: 0; white-space: nowrap; }
+  .filters .age { display: none; }
 }
 
 .erg-photo { display: block; max-width: 100%; height: auto; border-radius: 8px; margin: 0 auto; }
