@@ -51,9 +51,16 @@ export async function handleSlackAction(req, envFn, deps = {}) {
   try { payload = raw.trimStart().startsWith('{') ? JSON.parse(raw) : JSON.parse(new URLSearchParams(raw).get('payload')); } catch { return { ignored: 'payload' }; }
   if (payload && payload.type === 'event_callback') {
     if (payload.event && payload.event.type === 'message' && payload.event.channel_type === 'im') {
-      const out = await handlePhotoEvent(payload.event, envFn, deps);
-      console.log('slack: message', JSON.stringify(out));
-      return out;
+      console.log('slack: message received', payload.event.files ? payload.event.files.length + ' file(s)' : 'text');
+      try {
+        const out = await handlePhotoEvent(payload.event, envFn, deps);
+        console.log('slack: message', JSON.stringify(out));
+        return out;
+      } catch (err) {   // never go silent: she is told, and the log says why (2026-11-07, a photo got no reply)
+        console.log('slack: message crashed', err && err.stack ? err.stack : String(err));
+        if (payload.event.user) await dmUser(envFn, deps.fetchImpl || fetch, payload.event.user, ':warning: Something went wrong reading that. Please send it again in a minute, or use /log.').catch(() => false);
+        return { status: 'crashed' };
+      }
     }
     return { ignored: 'event' };
   }

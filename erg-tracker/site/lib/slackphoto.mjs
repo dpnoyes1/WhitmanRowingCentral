@@ -139,11 +139,14 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the photo again in a minute.'); return { status: 'error' }; }
     const key = envFn('ANTHROPIC_API_KEY');
     if (!key) { await say(':warning: Photo reading is not set up yet (no API key). Use /log for now.'); return { status: 'no_key' }; }
+    console.log('slack: photo step download', image.size || '', image.mimetype || '');
     let bytes;
     try { bytes = await download(envFn, fetchImpl, image); } catch (err) { await say(`:warning: I couldn't get that photo (${err.message}). Please send it again.`); return { status: 'download_failed' }; }
+    console.log('slack: photo step downloaded', bytes.length);
     if (bytes.length > MAX_IMAGE_BYTES * 0.8) {   // too big for the reader: shrink it, she does nothing
       try { bytes = await (deps.shrink || shrinkForReading)(bytes); } catch (err) { await say(`:warning: I couldn't shrink that photo (${err.message}). Please send it again, or use /log.`); return { status: 'shrink_failed' }; }
     }
+    console.log('slack: photo step reading', bytes.length);
     const out = await readAndCheck({ client: anthropicClient(key, fetchImpl), bytes, today });
     if (out.fail) { await say(`:warning: I couldn't read that photo (${out.fail.message}). Please send a clearer one, or use /log.`); return { status: out.fail.reason }; }
     const { read, issues, status } = out.checked;
