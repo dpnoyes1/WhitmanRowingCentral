@@ -153,7 +153,9 @@ export function runChecks(input, ctx) {
   if (read.machine && read.avgSplitS) {
     const d = splitUnit(read.machine);
     const expect = (read.totalMeters / d) * read.avgSplitS;
-    const tol = 0.05 * (read.totalMeters / d) + 0.3;
+    // The PM5 cuts its average split to the tenth rather than rounding it (up to 0.1 s per 500 m, so a
+    // 20:00 piece can be 0.9 s off), and meters are whole numbers (David, 2026-11-07: a real 20:00 was refused).
+    const tol = 0.1 * (read.totalMeters / d) + 0.3;
     if (!read.calculated.length && Math.abs(expect - read.totalTimeS) > tol) {
       issues.push(issue('pace_mismatch', 'hold',
         `The numbers on this photo don't add up (${read.totalMeters} m at ${formatClock(read.avgSplitS)} should take ${formatClock(expect)} but the screen says ${formatClock(read.totalTimeS)}). ${resend} A coach has been told.`,

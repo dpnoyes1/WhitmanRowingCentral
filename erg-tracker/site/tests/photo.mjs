@@ -204,6 +204,20 @@ export default function photoTests(test) {
     assert.strictEqual(ok.status, 'clean', JSON.stringify(ok.issues));
   });
 
+  test('photo: a real 20:00 where the PM5 average split is cut, not rounded, still passes', () => {
+    // 2025-10-23 screen: 4471 m at 2:14.1 works out to 19:59.1, the screen says 20:00.0 (0.9 s off)
+    const rows = [['4:00.0', 908, '2:12.1', 26], ['8:00.0', 913, '2:11.4', 27], ['12:00.0', 890, '2:14.8', 26], ['16:00.0', 876, '2:16.9', 25], ['20:00.0', 885, '2:15.5', 25]];
+    const screen = (over = {}) => read({ title: '20:00', date: 'Oct 23 2025', total: { time: '20:00.0', meters: 4471, avg_split: '2:14.1', avg_rate: 25 },
+      meters_column: 'per_piece', pieces: rows.map(([t, m, s, r]) => piece(t, m, s, r)), ...over });
+    const res = C.runChecks(screen(), { today: '2025-10-23' });
+    assert.strictEqual(res.status, 'clean', JSON.stringify(res.issues));
+    // a real misread is still caught: 2 s off on the same screen holds
+    const bad = C.runChecks(screen({ total: { time: '20:02.0', meters: 4471, avg_split: '2:14.1', avg_rate: 25 } }), { today: '2025-10-23' });
+    assert.ok(codes(bad).includes('pace_mismatch'), JSON.stringify(bad.issues));
+    // and a one-digit slip on a 2k is still caught
+    assert.deepStrictEqual(codes(C.runChecks(read({ total: { time: '8:06.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, pieces: [] }), { today: TODAY })), ['pace_mismatch']);
+  });
+
   test('photo: BikeErg splits are per 1000 m', () => {
     const bike = read({ split_label: '/1000m', title: '4000m', total: { time: '8:00.0', meters: 4000, avg_split: '2:00.0', avg_rate: 80 }, pieces: [] });
     assert.strictEqual(bike.machine, 'BikeErg');
