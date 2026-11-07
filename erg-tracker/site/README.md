@@ -4,12 +4,13 @@ Athlete-facing pages for the erg tracker, behind a sign-in: athletes use their n
 
 ```
 public/      index.html, app.js, style.css (hash routes: #/team, #/week, #/boards, #/stars (coaches only), #/balance (coaches only), #/oyo, #/athletes, #/athlete/A001, #/week/A001 and #/week/prev for coaches, #/me, #/workout/E-ID)
-functions/   slack.mjs (/api/slack: the /log command and Interactivity URL, answers Slack and opens or checks the /log form), slack-background.mjs (the slow half: plan-flag buttons, saving /log, and erg-screen photos via lib/slackphoto.mjs), concept2.mjs (/api/concept2/connect, /status, /disconnect, /pending, /confirm), concept2-webhook.mjs (/api/concept2/webhook, called by Logbook), concept2-poll.mjs (every 15 minutes, backup), concept2-callback.mjs (the registered redirect URI /.netlify/functions/concept2-callback),
+functions/   slack.mjs (/api/slack: the /log command and Interactivity URL, answers Slack and opens or checks the /log form), slack-background.mjs (the slow half: plan-flag buttons, saving /log, erg-screen photos via lib/slackphoto.mjs, and questions via lib/ask.mjs), concept2.mjs (/api/concept2/connect, /status, /disconnect, /pending, /confirm), concept2-webhook.mjs (/api/concept2/webhook, called by Logbook), concept2-poll.mjs (every 15 minutes, backup), concept2-callback.mjs (the registered redirect URI /.netlify/functions/concept2-callback),
              refresh-feed.mjs (every 5 minutes), login.mjs (/api/login, /api/logout), api.mjs (/api/session, /api/team, /api/athlete/:id, /api/leaderboards, /api/stars (coaches only), /api/balance (coaches only), /api/oyo, /api/week, /api/week/:id, /api/workout/:id)
 lib/         concept2.mjs (Logbook OAuth, encrypted token storage in Blobs store `concept2`), logbook-sync.mjs (result -> Sheet),
              auth.mjs (password, signed cookie), feed.mjs (reads the Sheet via a shared Netlify Blobs copy),
              stats.mjs (minutes, completion, streaks, bests), views.mjs (what each page gets)
              ergscreen.mjs, ergchecks.mjs (photo reader and its checks), slackphoto.mjs (the Slack photo flow), photocopy.mjs (shrinks the kept photo to ~150 KB with sharp, metadata gone); /api/photo/:id hands the kept copy to its owner or a coach
+             ask.mjs (ErgBot questions: who is asking, the model picks a lookup, limits and the question log, Blobs store `ergbot-ask`), asklookups.mjs (the lookups and their replies, who may use each)
 netlify.toml short links: /logworkout goes to the Google Form, /guide to the logging guide (a Google Doc).
              Both are linked from the sign-in page, the menu and the Today card.
 scripts/     dummy-feed.js: the feed built from the dummy data, for local work and tests
@@ -33,6 +34,11 @@ The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster no
 | `COACH_PASSWORD` | For the coach view later. Not used yet. |
 | `CONCEPT2_CLIENT_ID` | Concept2 Logbook app client ID (read-only app, scope `user:read,results:read`). |
 | `CONCEPT2_CLIENT_SECRET` | Logbook app secret. Mark as secret. |
+| `ERGBOT_ANTHROPIC_API_KEY` | ErgBot questions' own Anthropic API key, with a $10 monthly spend limit set in the Anthropic Console, so questions never stop the photo reader. Falls back to `ANTHROPIC_API_KEY` when unset. Mark as secret. |
+| `SLACK_COACH_CHANNEL` | Channel ID of #ergbot-coaches (not a secret). @ErgBot answers there; anywhere else it says "Ask me in a DM". The 80% budget note goes there. |
+| `ERGBOT_ATHLETE_QUESTIONS` | `on` lets athletes ask ErgBot questions (their own numbers, the boards, team averages of 4+). Anything else: coaches only. |
+| `ERGBOT_MONTHLY_CAP_USD` | Optional. Questions pause for the month at this spend. Default 10. |
+| `ERGBOT_ASK_MODEL` | Optional. The model that picks the lookup. Default `claude-haiku-5-5`. |
 | `CONCEPT2_TOKEN_KEY` | 64 random hex characters (`openssl rand -hex 32`). Encrypts the athletes' stored Logbook tokens; changing it disconnects everyone. Mark as secret. |
 
 ## One-time setup

@@ -25,6 +25,7 @@ import { handleCallback } from '../functions/concept2-callback.mjs';
 import * as LS from '../lib/logbook-sync.mjs';
 import { handleWebhookRequest } from '../functions/concept2-webhook.mjs';
 import photoTests from './photo.mjs';
+import askTests from './ask.mjs';
 import * as PR from '../public/practice.mjs';
 
 const require = createRequire(import.meta.url);
@@ -1396,7 +1397,8 @@ test('slack background: a signed DM event and a photo button reach the photo flo
   const deps = { nowS: NOW, store: { get: async (k) => store.get(k) || null, set: async (k, v) => store.set(k, v), delete: async (k) => store.delete(k) },
     fetchImpl: async () => Response.json({ ok: true }) };
   const ev = JSON.stringify({ type: 'event_callback', event: { type: 'message', channel_type: 'im', user: 'UC1', text: 'hi' } });
-  assert.deepStrictEqual(await handleSlackAction(req(ev), env, deps), { ignored: 'nothing pending' });
+  // Text with no photo waiting is a question now (lib/ask.mjs); this fake Sheet can't say who is asking.
+  assert.strictEqual((await handleSlackAction(req(ev), env, deps)).status, 'error');
   assert.deepStrictEqual(await handleSlackAction(req(ev, 'wrong'), env, deps), { ignored: 'signature' });
   const btn = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'UC1' }, response_url: 'https://hooks.slack.example/r', actions: [{ action_id: 'photo_save', value: 'nope' }] }) }).toString();
   assert.strictEqual((await handleSlackAction(req(btn), env, deps)).status, 'gone');
@@ -2091,6 +2093,7 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
 });
 
 photoTests(test);
+askTests(test);
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }
