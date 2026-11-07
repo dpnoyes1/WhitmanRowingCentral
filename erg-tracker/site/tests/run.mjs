@@ -897,6 +897,18 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   const good = { athlete: 'Fake Athlete', date: '2026-10-28', type: 'practice', status: 'full', activity: 'Erg (RowErg)', warmup: '15:00', main_set: "3x10' r2'", zone: 'Aerobic', pieces: '10:00, 2400, 20', rpe: '6', drag: '105' };
   assert.deepStrictEqual(SL.validateLogForm(good, '2026-10-28'), {});
   assert.deepStrictEqual(SL.validateLogForm({ athlete: 'Fake Athlete', date: '2026-10-28', type: 'practice', status: 'out' }, '2026-10-28'), {}, 'Out needs nothing else');
+  // Test (2k / 20'): same rules as SlackLog.gs
+  const tst = { athlete: '', date: '2026-10-28', type: 'test', activity: 'Erg (RowErg)', warmup: '15:00', pieces: '7:30.4, 2000, 31', rpe: '9', drag: '105' };
+  assert.deepStrictEqual(SL.validateLogForm(tst, '2026-10-28'), {}, 'a test needs no main set or zone');
+  assert.deepStrictEqual(SL.validateLogForm({ ...tst, pieces: '20:00.0, 5400, 24' }, '2026-10-28'), {});
+  for (const box of ['3:00, 750', '3:45,1000\n3:45,1000', '20:00.0,5400', '7:30,2000,31']) {
+    const e = SL.validateLogForm({ ...tst, pieces: box }, '2026-10-28').pieces || '';
+    ctx.box = box;
+    const gs = vm.runInContext('(function () { try { slackLogAnswers({ type: "test", activity: "Erg (RowErg)", date: "2026-10-28", pieces: box }, "A"); return ""; } catch (e) { return e.message; } })()', ctx);
+    assert.strictEqual(!!e, !!gs, 'test pieces agree with Apps Script: ' + JSON.stringify(box));
+  }
+  assert.ok(SL.validateLogForm({ ...tst, activity: 'BikeErg' }, '2026-10-28').activity);
+  assert.ok(/2k test is on the boards/.test(SL.logReply({ status: 'ok', test: '2000m', athlete: 'Fake Athlete' })));
   const bad = SL.validateLogForm({ ...good, date: '2026-10-29', warmup: '15', hr: '300', drag: '20', pieces: '10:00', zone: '', main_set: '' }, '2026-10-28');
   assert.deepStrictEqual(Object.keys(bad).sort(), ['date', 'drag', 'hr', 'main_set', 'pieces', 'warmup', 'zone']);
   assert.deepStrictEqual(SL.validateLogForm({ ...good, athlete: '' }, '2026-10-28'), {}, 'athlete box is optional: athletes leave it blank');

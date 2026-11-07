@@ -1237,7 +1237,30 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   const mk = g.parseSubmission(g.slackLogAnswers({ ...form, type: 'makeup', makeup_for: '2026-01-10' }, 'Jane Smith'), ctxFor());
   assert.strictEqual(mk.entry['Session type'], 'Make-up');
   assert.strictEqual(mk.entry['Make-up for date'].getDate(), 10);
-  assert.throws(() => g.slackLogAnswers({ ...form, type: 'test' }, 'Jane Smith'), /Pick Practice/);
+  assert.throws(() => g.slackLogAnswers({ ...form, type: 'bogus' }, 'Jane Smith'), /Pick Practice/);
+
+  // Test (2k / 20') = the Form's Benchmark test path: linked Benchmarks + Entries rows (David, 2026-11-07)
+  const t2k = { date: '2026-01-12', type: 'test', activity: 'Erg (RowErg)', warmup: '15:00', cooldown: '5:00', pieces: '7:30.4, 2000, 31', rpe: '9', drag: '105', note: 'felt good' };
+  const slack2k = g.parseSubmission(g.slackLogAnswers(t2k, 'Jane Smith', 'Jane Smith'), ctxFor());
+  const form2k = g.parseSubmission({
+    [Q.ATHLETE]: 'Jane Smith', [Q.ENTERED_BY]: 'Jane Smith', [Q.DATE]: '2026-01-12', [Q.LOG_TYPE]: g.LOG_TYPES.BENCHMARK, [Q.B_WHERE]: g.TEST_WHERE.PRACTICE,
+    [Q.TEST]: '2000m', [Q.B_WARMUP]: '15:00', [Q.B_COOLDOWN]: '5:00', [Q.B_RPE]: '9', [Q.T_TIME]: '7:30.4', [Q.T_RATE]: '31', [Q.T_DRAG]: '105', [Q.T_NOTE]: 'felt good'
+  }, ctxFor());
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(slack2k)), JSON.parse(JSON.stringify(form2k)), '2k via /log = 2k via the Form');
+  assert.strictEqual(slack2k.benchmark.Test, '2000m');
+  assert.strictEqual(slack2k.benchmark['Time s'], 450.4);
+  assert.strictEqual(slack2k.benchmark['Drag check'], '', 'drag given, no flag');
+  assert.strictEqual(slack2k.entry['Benchmark ID'], slack2k.benchmark['Benchmark ID']);
+  assert.strictEqual(slack2k.benchmark['Entry ID'], slack2k.entry['Entry ID']);
+  assert.strictEqual(slack2k.entry['Session type'], 'Practice');
+  const t20 = g.parseSubmission(g.slackLogAnswers({ ...t2k, pieces: '20:00.0, 5400, 24', test_where: 'oyo' }, 'Jane Smith'), ctxFor());
+  assert.strictEqual(t20.benchmark.Test, '20min');
+  assert.strictEqual(t20.benchmark.Meters, 5400);
+  assert.strictEqual(t20.entry['Session type'], 'OYO');
+  assert.strictEqual(t20.entry['Benchmark ID'], t20.benchmark['Benchmark ID']);
+  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:00, 750' }, 'Jane Smith'), /2000 m or a 20:00/);
+  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:45, 1000\n3:45, 1000' }, 'Jane Smith'), /one piece/);
+  assert.throws(() => g.slackLogAnswers({ ...t2k, activity: 'BikeErg' }, 'Jane Smith'), /RowErg/);
 });
 
 test('slack photo: saved read becomes the same entry the Form would make', () => {
