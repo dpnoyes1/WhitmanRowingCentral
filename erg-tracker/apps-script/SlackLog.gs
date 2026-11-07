@@ -6,12 +6,13 @@
  * slack.coach_ids) type the athlete's name; Entered by is the coach. Athletes
  * (David, 2026-10-28) are found by the Slack member ID on their active Roster
  * row and can log only for themselves; Entered by is the athlete. Slack has
- * already proved who is pressing, so no birthday is asked. Tests and
- * Benchmarks stay on the Form.
+ * already proved who is pressing, so no birthday is asked. A Test (2k / 20')
+ * (David, 2026-11-07) goes the Form's Benchmark test path, so it writes the
+ * linked Benchmarks and Entries rows; 30r20, 500m and 100m stay on the Form.
  */
 
 var SLACK_LOG_ACTION = 'slack-log';
-var SLACK_LOG_TYPES = { practice: LOG_TYPES.PRACTICE, oyo: LOG_TYPES.OYO, makeup: LOG_TYPES.MAKEUP };
+var SLACK_LOG_TYPES = { practice: LOG_TYPES.PRACTICE, oyo: LOG_TYPES.OYO, makeup: LOG_TYPES.MAKEUP, test: LOG_TYPES.BENCHMARK };
 var SLACK_LOG_STATUSES = { full: STATUSES.FULL, modified: STATUSES.MODIFIED, out: STATUSES.OUT };
 
 // ---- Pure parts (tested in Node) ----
@@ -83,7 +84,8 @@ function parsePiecesText(text) {
  */
 function slackLogAnswers(form, athleteName, enteredBy) {
   var logType = SLACK_LOG_TYPES[form.type];
-  if (!logType) throw new Error('Pick Practice, OYO or Make-up');
+  if (!logType) throw new Error('Pick Practice, OYO, Make-up or Test');
+  if (form.type === 'test') return slackLogTestAnswers_(form, athleteName, enteredBy);
   var answers = {};
   answers[Q.ATHLETE] = athleteName;
   answers[Q.ENTERED_BY] = enteredBy || athleteName;
@@ -118,6 +120,44 @@ function slackLogAnswers(form, athleteName, enteredBy) {
     answers[t.REST_TIME] = p.REST_TIME;
     answers[t.REST_M] = p.REST_M;
   });
+  return answers;
+}
+
+/**
+ * A Test (2k / 20') typed into /log -> the Form's Benchmark test answers
+ * (David, 2026-11-07). One RowErg piece: exactly 2000 m is the 2k (its time is
+ * the score), exactly 20:00 is the 20' (its meters are the score). Anything
+ * else is refused with a sentence. Drag factor is required on /log, so no
+ * drag flag. Where is "At practice" unless form.test_where is 'oyo'.
+ */
+function slackLogTestAnswers_(form, athleteName, enteredBy) {
+  if (form.activity && form.activity !== 'Erg (RowErg)') throw new Error('A 2k or 20\' test is on the RowErg');
+  var pieces = parsePiecesText(form.pieces);
+  if (pieces.length !== 1) throw new Error('A test is one piece: put the whole 2000 m or 20:00 on one line');
+  var p = pieces[0];
+  var timed = Number(p.WORK_M) === 2000 && parseTime(p.WORK_TIME) !== 1200;
+  if (!timed && parseTime(p.WORK_TIME) !== 1200) throw new Error('Only a 2000 m or a 20:00 piece can be a test here (use the Form for other tests)');
+  var answers = {};
+  answers[Q.ATHLETE] = athleteName;
+  answers[Q.ENTERED_BY] = enteredBy || athleteName;
+  answers[Q.DATE] = form.date;
+  answers[Q.LOG_TYPE] = LOG_TYPES.BENCHMARK;
+  answers[Q.B_WHERE] = form.test_where === 'oyo' ? TEST_WHERE.OYO : TEST_WHERE.PRACTICE;
+  answers[Q.TEST] = timed ? '2000m' : "20' (20 min)";
+  answers[Q.B_WARMUP] = form.warmup;
+  answers[Q.B_COOLDOWN] = form.cooldown;
+  answers[Q.B_RPE] = form.rpe;
+  if (timed) {
+    answers[Q.T_TIME] = p.WORK_TIME;
+    answers[Q.T_RATE] = p.RATE;
+    answers[Q.T_DRAG] = form.drag;
+    answers[Q.T_NOTE] = form.note;
+  } else {
+    answers[Q.D_METERS] = p.WORK_M;
+    answers[Q.D_RATE] = p.RATE;
+    answers[Q.D_DRAG] = form.drag;
+    answers[Q.D_NOTE] = form.note;
+  }
   return answers;
 }
 
@@ -193,7 +233,7 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
     var flagged = pendingPlanFlags([result.entry], result.intervals, squads, planInputs_(), new Date(), []).length > 0;
     var e = result.entry;
     return { status: 'ok', entryId: e['Entry ID'], athlete: String(athlete.Name).trim(), sessionType: e['Session type'], entryStatus: e.Status,
-      activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged,
+      activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged, test: result.benchmark ? result.benchmark.Test : '',
       notifySlackId: slackFyiTarget_(access.role, athlete, body.slackUserId), by: e['Entered by'] };
   } catch (err) {
     logChange_({ Who: 'slack', Tab: '(slack)', 'Row ID': rid, Note: 'SLACK LOG ERROR: ' + err.message });
