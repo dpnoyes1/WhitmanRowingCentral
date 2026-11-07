@@ -242,3 +242,28 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
     lock.releaseLock();
   }
 }
+
+/**
+ * doPost action 'ergbot-weights' (David, 2026-11-07: coaches can ask ErgBot
+ * about weights). Body { slackUserId }. Only a coach's Slack ID gets rows; the
+ * site asks only for a coach's written answer and never stores them. Weights
+ * stay out of the feed.
+ */
+var ERGBOT_WEIGHTS_ACTION = 'ergbot-weights';
+function processErgbotWeights_(body) {
+  var id = String(body.slackUserId || '').trim();
+  if (!id || slackCoachIds_(getSettings()).indexOf(id) < 0) return { status: 'not_allowed' };
+  return { status: 'ok', weights: ergbotWeightRows_(readObjects_(TABS.WEIGHTS)) };
+}
+
+/** Weights tab rows -> [{ date: 'YYYY-MM-DD', athlete, lb }], skipping blank or dateless rows. Pure, tested in Node. */
+function ergbotWeightRows_(rows) {
+  var out = [];
+  rows.forEach(function (w) {
+    var lb = Number(w['Weight lb']);
+    var day = feedDay_(w.Date);
+    if (!lb || !day || !String(w.Athlete || '').trim()) return;
+    out.push({ date: day, athlete: String(w.Athlete).trim(), lb: lb });
+  });
+  return out;
+}

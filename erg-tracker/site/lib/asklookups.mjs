@@ -2,7 +2,8 @@
 // who may use each one, and the reply text. The model only picks a lookup and
 // its settings (ask.mjs); everything here is plain code over the same feed and
 // views as the team site, so every number matches the site. Nothing here ever
-// shows a weight (the feed has none) or a birthday.
+// shows a weight (the feed has none) or a birthday; a coach's weight question
+// goes to search_data (askfree.mjs).
 //
 // Who may see what (David, 2026-11-07):
 // - Coaches: everything.
@@ -56,6 +57,8 @@ export const TOOLS = [
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'day'], properties: { name: nullable({ type: 'string' }), day: { type: 'string', enum: ['today', 'tomorrow'] } } } },
   { name: 'test_pacing', description: 'How an athlete paced her most recent 2k or 20\' test, part by part, and her best this season. name null = the person asking.',
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'test'], properties: { name: nullable({ type: 'string' }), test: { type: 'string', enum: ['2000m', '20min'] } } } },
+  { name: 'search_data', description: 'Coaches only: any other question about the tracker\'s data that no lookup above fits (comparisons, trends, counts, workouts logged, RPE, meters, attendance, plans, weights, a mix of these). A stronger model searches the data and writes the answer.',
+    input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
   { name: 'question_log', description: 'The most recent questions people asked ErgBot (coaches only).',
     input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
   { name: 'schedule_link', description: 'Any question about whether there is practice, practice times, places or the calendar.',
@@ -359,6 +362,7 @@ export const LOOKUPS = {
   stars_ranking: { run: starsRanking, athletes: false },
   todays_plan: { run: todaysPlan, athletes: true },
   test_pacing: { run: testPacing, athletes: true },
+  search_data: { run: null, athletes: false },   // ask.mjs hands it to askfree.mjs
   question_log: { run: null, athletes: false },   // ask.mjs answers it from the log store
   schedule_link: { run: () => ({ text: `For practice times and whether there's practice, see ${SCHEDULE_URL}` }), athletes: true },
   cannot_answer: { run: (feed, asker, input) => ({ text: input.reason === 'other_athlete' && asker.role === 'coach' ? REFUSE.not_in_data : REFUSE[input.reason] || REFUSE.unclear }), athletes: true }
