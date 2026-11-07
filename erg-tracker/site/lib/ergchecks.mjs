@@ -3,7 +3,7 @@
 // Rules come from erg-slack-map/slack-alerts-and-logging-map.md ("Photo checks that don't add up").
 //
 // A check never fixes a number silently. It returns issues, each with a level:
-//   hold - numbers don't add up: held as "Check photo", athlete and coaches both told
+//   hold - total row itself is inconsistent: held as "Check photo", athlete and coaches both told
 //   ask  - the athlete must answer or resend before it can be saved
 //   flag - saves, but coaches see it
 //   note - saves, shown on the athlete's Confirm card ("calculated, please check")
@@ -180,17 +180,17 @@ export function runChecks(input, ctx) {
     if (times.every((t) => t != null)) {
       const sum = tenths(times.reduce((a, b) => a + b, 0));
       if (Math.abs(sum - read.totalTimeS) > 0.1 * pieces.length + 0.3) {
-        issues.push(issue('splits_sum', 'hold',
-          `The numbers on this photo don't add up (the splits total ${formatClock(sum)} but the screen says ${formatClock(read.totalTimeS)}). ${resend} A coach has been told.`,
-          `Splits total ${formatClock(sum)}, screen total ${formatClock(read.totalTimeS)}`));
+        issues.push(issue('splits_sum', 'flag',
+          '',
+          `Check this one: the split rows total ${formatClock(sum)} but the total row says ${formatClock(read.totalTimeS)} (rows may be scrolled off). Saved from the total row.`));
       }
     }
     if (read.metersColumn !== 'none' && read.metersColumn !== 'unclear' && pieces.every((p) => p.meters != null)) {
       const sum = pieces.reduce((a, p) => a + p.meters, 0);
       if (Math.abs(sum - read.totalMeters) > 2) {
-        issues.push(issue('meters_sum', 'hold',
-          `The numbers on this photo don't add up (the pieces total ${sum} m but the screen says ${read.totalMeters} m). ${resend} A coach has been told.`,
-          `Pieces total ${sum} m, screen total ${read.totalMeters} m`));
+        issues.push(issue('meters_sum', 'flag',
+          '',
+          `Check this one: the piece rows total ${sum} m but the total row says ${read.totalMeters} m (rows may be scrolled off). Saved from the total row.`));
       }
     }
     if (reps != null) {
