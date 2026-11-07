@@ -48,9 +48,11 @@ export async function handleSlack(req, envFn, deps = {}) {
     let body;
     try { body = JSON.parse(raw); } catch { return new Response('bad payload', { status: 400 }); }
     if (body.type === 'url_verification') return new Response(String(body.challenge || ''), { headers: { 'content-type': 'text/plain' } });
-    // A photo or a text in the bot's DM: hand on (not Slack's retries, which would repeat the work).
+    // A photo or a text in the bot's DM, or an @mention: hand on (not Slack's retries, which would repeat the work).
     const ev = body.event || {};
-    const mine = body.type === 'event_callback' && ev.type === 'message' && ev.channel_type === 'im' && !ev.bot_id && (!ev.subtype || ev.subtype === 'file_share');
+    // An @ErgBot in a channel is a question (lib/ask.mjs); the background function checks which channel.
+    const mine = body.type === 'event_callback' && !ev.bot_id && (
+      (ev.type === 'message' && ev.channel_type === 'im' && (!ev.subtype || ev.subtype === 'file_share')) || ev.type === 'app_mention');
     if (mine && !req.headers.get('x-slack-retry-num')) await forward(req, raw, fetchImpl, 'application/json').catch(() => false);
     return empty();
   }

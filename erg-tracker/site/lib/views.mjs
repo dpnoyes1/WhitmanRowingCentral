@@ -343,32 +343,11 @@ const STAR_TESTS = ['2000m', '20min'];
  * Raw erg scores only; no GMS on boards.
  */
 export function leaderboardsView(feed, today) {
-  const st = feed.settings.schoolYearStart;
-  const yearStart = schoolYearStart(today, st);
-  const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const starCache = {};
-  const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
-  // group: null = all pieces; 'freshman' / 'varsity' = pieces done in those grades.
+  const opts = (from, group) => ({ from, to: today, group, today, starCache });
   const all = '0000-00-00';
-  const board = (test, from, group) => {
-    const best = {};
-    feed.benchmarks.forEach((b) => {
-      const a = byId[b.athleteId];
-      if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
-      if (isAlum(a) && from !== all) return;   // Alum: All Time boards only (All, Varsity, Fr/Nov)
-      if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
-      if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
-    });
-    return Object.values(best)
-      .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
-      .map((b, i) => {
-        const a = byId[b.athleteId];
-        return {
-          rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
-          dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
-        };
-      });
-  };
+  const board = (test, from, group) => testBoard(feed, test, opts(from, group));
   return {
     today, yearStart,
     tests: TESTS.map((t) => ({
@@ -377,6 +356,38 @@ export function leaderboardsView(feed, today) {
       varsity: { season: board(t, yearStart, 'varsity'), allTime: board(t, all, 'varsity') }
     }))
   };
+}
+
+/**
+ * One board: best valid raw result per rower for `test` from `from` to `to`
+ * (dates inclusive), ranked. group: null = all pieces; 'freshman' / 'varsity' =
+ * pieces done in those grades. Alumni appear only on boards that start at the
+ * beginning of time (All Time), or, with opts.pastYear, on a past school year's
+ * board, since they were on the team then (ErgBot questions, 2026-11-07).
+ */
+export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false }) {
+  const st = feed.settings.schoolYearStart;
+  const yearStart = schoolYearStart(today, st);
+  const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+  const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
+  const allTime = from === '0000-00-00';
+  const best = {};
+  feed.benchmarks.forEach((b) => {
+    const a = byId[b.athleteId];
+    if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > to || b.date > today) return;
+    if (isAlum(a) && !allTime && !pastYear) return;   // Alum: All Time boards only (All, Varsity, Fr/Nov)
+    if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
+    if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
+  });
+  return Object.values(best)
+    .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
+    .map((b, i) => {
+      const a = byId[b.athleteId];
+      return {
+        rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
+        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
+      };
+    });
 }
 
 // ---- coach split averages (David, 2026-10-25) --------------------------------

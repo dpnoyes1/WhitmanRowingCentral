@@ -3,12 +3,15 @@
 // once and keeps running, so the Sheet's few seconds don't hit Slack's 3-second
 // limit. Handles the coach buttons on plan-flag messages (apps-script/PlanFlags.gs)
 // the saved /log modal (apps-script/SlackLog.gs), erg-screen photos sent to the bot
-// (lib/slackphoto.mjs) and the Logbook DM buttons. Needs SLACK_SIGNING_SECRET,
-// SLACK_BOT_TOKEN, FEED_URL, FEED_KEY and, for photos, ANTHROPIC_API_KEY.
+// (lib/slackphoto.mjs), questions (lib/ask.mjs: a DM text with no photo waiting,
+// or @ErgBot in the coaches' channel) and the Logbook DM buttons. Needs SLACK_SIGNING_SECRET,
+// SLACK_BOT_TOKEN, FEED_URL, FEED_KEY, for photos ANTHROPIC_API_KEY, and for
+// questions ERGBOT_ANTHROPIC_API_KEY and SLACK_COACH_CHANNEL (see lib/ask.mjs).
 import { signatureValid, callSheet, planOp, planFlagReply, sendReply, dmUser, chatUpdate } from '../lib/slack.mjs';
 import { readLogForm, logReply, fyiText } from '../lib/slacklog.mjs';
 import { readChange, changeRequest, confirmRequest, confirmReply } from '../lib/slacklogbook.mjs';
 import { handlePhotoEvent, handlePhotoButton } from '../lib/slackphoto.mjs';
+import { handleQuestion } from '../lib/ask.mjs';
 
 async function handleLogSubmission(payload, envFn, fetchImpl) {
   let result;
@@ -55,10 +58,27 @@ export async function handleSlackAction(req, envFn, deps = {}) {
       try {
         const out = await handlePhotoEvent(payload.event, envFn, deps);
         console.log('slack: message', JSON.stringify(out));
+        // Text with no photo waiting for a name or a date is a question (David, 2026-11-07: photo replies come first).
+        if (out && out.ignored === 'nothing pending') {
+          const q = await handleQuestion(payload.event, envFn, deps.ask || deps);
+          console.log('slack: question', JSON.stringify(q));
+          return q;
+        }
         return out;
       } catch (err) {   // never go silent: she is told, and the log says why (2026-11-07, a photo got no reply)
         console.log('slack: message crashed', err && err.stack ? err.stack : String(err));
         if (payload.event.user) await dmUser(envFn, deps.fetchImpl || fetch, payload.event.user, ':warning: Something went wrong reading that. Please send it again in a minute, or use /log.').catch(() => false);
+        return { status: 'crashed' };
+      }
+    }
+    // An @mention in the bot's own DM also arrives as a DM message, which answers it; skip the duplicate.
+    if (payload.event && payload.event.type === 'app_mention' && !/^D/.test(payload.event.channel || '')) {
+      try {
+        const q = await handleQuestion(payload.event, envFn, deps.ask || deps, { channel: payload.event.channel });
+        console.log('slack: mention', JSON.stringify(q));
+        return q;
+      } catch (err) {
+        console.log('slack: mention crashed', err && err.stack ? err.stack : String(err));
         return { status: 'crashed' };
       }
     }
