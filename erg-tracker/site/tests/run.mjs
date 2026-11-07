@@ -1192,6 +1192,38 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
   assert.ok(/Check this one/.test(sv.note));
   assert.ok(/a coach will check it/.test(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body.text));
 
+  // the date on the screen is what gets logged; one over 2 weeks away is asked about (buttons or a typed date)
+  const dated = (date) => ({ ...single, date });
+  w = world({ answers: [dated('Oct 24 2026')], names: ['Olivia Fake'] });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const dTok = w.dms().pop().blocks[1].elements[0].value;
+  await handlePhotoButton(press('photo_save', dTok), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo.date, '2026-10-24', 'the screen date, not the day sent');
+  w = world({ answers: [dated('Jan 01 2010')], names: ['Olivia Fake'] });
+  out = await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  assert.strictEqual(out.asked, 'date');
+  const dq = w.dms().pop();
+  assert.ok(/Jan 01 2010/.test(dq.text) && dq.blocks[1].elements.map((e) => e.action_id).join() === 'photo_date_today,photo_cancel', 'a date too old to trust only offers today');
+  const dqTok = dq.blocks[1].elements[0].value;
+  assert.strictEqual((await handlePhotoButton(press('photo_save', dqTok), env, w.deps)).status, 'asking_date', 'cannot save before the date is confirmed');
+  assert.strictEqual((await handlePhotoEvent(textMsg('not a date'), env, w.deps)).status, 'bad_date');
+  assert.strictEqual((await handlePhotoEvent(textMsg('10/3/2026'), env, w.deps)).date, '2026-10-03');
+  assert.ok(/Oct 3, 2026/.test(w.dms().pop().text), 'a typed date is used for the card');
+  await handlePhotoButton(press('photo_save', dqTok), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo.date, '2026-10-03');
+  w = world({ answers: [dated('Mar 05 2025')], names: ['Olivia Fake'] });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const dq3 = w.dms().pop();
+  assert.strictEqual(dq3.blocks[1].elements[0].action_id, 'photo_date_screen');
+  assert.ok(/Use Mar 5, 2025/.test(dq3.blocks[1].elements[0].text.text));
+  assert.strictEqual((await handlePhotoButton(press('photo_date_screen', dq3.blocks[1].elements[0].value), env, w.deps)).date, '2025-03-05');
+  w = world({ answers: [dated('Jan 01 2010')], names: ['Olivia Fake'] });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const dq2 = w.dms().pop().blocks[1].elements[0].value;
+  assert.strictEqual((await handlePhotoButton(press('photo_date_today', dq2), env, w.deps)).date, '2026-10-28');
+  await handlePhotoButton(press('photo_save', dq2), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'slack-photo').body.photo.date, '2026-10-28');
+
   // a copy that cannot be made never blocks the workout; Logbook already having it says so
   w = world({ copy: async () => { throw new Error('bad image'); } });
   await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);

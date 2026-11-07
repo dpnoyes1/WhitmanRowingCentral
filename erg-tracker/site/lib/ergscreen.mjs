@@ -16,6 +16,7 @@ export const PROMPT = `You read a photo of a Concept2 PM3, PM4 or PM5 monitor (a
 Rules:
 - Copy numbers exactly as shown, as text. Do not round, convert or fix them.
 - "total" is the summary row above the line, with the WORKING time (rest is never in it) and the total work meters. On an interval screen the header "Total Time" includes rest: never use it for "total". Heart rate, stroke rate on the big live display and the large live pace are a single instant: ignore them.
+- "title" is the workout name printed under the screen's own heading (for example "20:00", "2000m" or "4x500m/2:00r"). The words "View Detail" at the top of the screen are the screen heading, never the title. If no workout name is printed, use "".
 - "split_label" is the unit printed next to the split column: "/500m" or "/1000m". If you cannot see it, use "".
 - "pieces" are the rows of the detail list under the line, in order: one per split for a single piece, one per interval for an interval workout. Never include the summary row above the line (it is the sum of the rows beneath it) as a piece. Include only rows you can see. Never invent rows.
 - The meters column on a single-piece detail screen is often a running total (500, 1000, 1500, 2000). Set "meters_column" to "cumulative" when each row is larger than the one before it and ends at the total, "per_piece" when each row is that piece's own distance, and "none" if there is no meters column. Report the numbers as shown either way.
