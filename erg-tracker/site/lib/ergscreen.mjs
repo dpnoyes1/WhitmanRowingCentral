@@ -8,7 +8,8 @@
 
 export const MODELS = { primary: 'claude-haiku-5-5', retry: 'claude-sonnet-5-5' };
 export const MAX_OUTPUT_TOKENS = 4000;
-export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;
+export const MAX_IMAGE_BYTES = 5 * 1024 * 1024;   // the reader's own limit; bigger photos are shrunk first (slackphoto.mjs)
+export const MAX_DOWNLOAD_BYTES = 25 * 1024 * 1024;
 
 export const PROMPT = `You read a photo of a Concept2 PM3, PM4 or PM5 monitor (a rowing or BikeErg result screen) and return what is printed on it.
 

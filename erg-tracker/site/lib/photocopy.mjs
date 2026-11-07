@@ -36,3 +36,19 @@ export async function makeKeepCopy(input, { sharp } = {}) {
   if (best.bytes.length > HARD_MAX_BYTES) throw new Error('Could not shrink the photo');
   return best;
 }
+
+// A phone photo too big for the reader (David, 2026-11-07: an athlete's photo was refused as over 5 MB).
+// Shrunk to a JPEG that reads the same: longest side 2000 px, quality stepped down until it is under the cap.
+export const READ_TARGET_BYTES = 3 * 1024 * 1024;
+export async function shrinkForReading(input, { sharp } = {}) {
+  const lib = sharp || await loadSharp();
+  let out;
+  for (const quality of [85, 75, 65, 55]) {
+    out = await lib(input, { failOn: 'error' }).rotate()
+      .resize({ width: 2000, height: 2000, fit: 'inside', withoutEnlargement: true })
+      .flatten({ background: '#ffffff' })
+      .jpeg({ quality }).toBuffer();
+    if (out.length <= READ_TARGET_BYTES) return out;
+  }
+  throw new Error('Could not shrink the photo');
+}

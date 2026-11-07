@@ -1170,6 +1170,34 @@ test('slack photo: coach sends a screen, bot asks which athlete, card saves with
   w = world({ sheet: { access: athleteAccess } });
   assert.strictEqual((await handlePhotoEvent(textMsg('Someone Else', 'UA1'), env, w.deps)).ignored, 'nothing pending');
 
+  // a phone photo over 5 MB is shrunk, not refused; over 25 MB or a failed shrink is a clear message
+  w = world({ answers: [single], sheet: { access: athleteAccess } });
+  const baseFetch = w.deps.fetchImpl;
+  let shrunkFrom = 0;
+  w.deps.fetchImpl = async (url, init) => (url === 'https://files.slack.example/p.jpg' ? new Response(Buffer.alloc(6 * 1024 * 1024, 1), { status: 200 }) : baseFetch(url, init));
+  w.deps.shrink = async (b) => { shrunkFrom = b.length; return jpeg; };
+  out = await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
+  assert.strictEqual(out.status, 'card', 'a 6 MB photo is read after shrinking');
+  assert.strictEqual(shrunkFrom, 6 * 1024 * 1024);
+  const readerImage = w.calls.find((c) => c.url === 'https://api.anthropic.com/v1/messages').body.messages[0].content[0].source.data;
+  assert.ok(Buffer.from(readerImage, 'base64').length < 1024, 'the reader got the shrunk copy, not the original');
+  let small = 0;
+  w = world({ answers: [single], sheet: { access: athleteAccess } });
+  w.deps.shrink = async (b) => { small++; return b; };
+  await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
+  assert.strictEqual(small, 0, 'a normal photo is not touched');
+  w = world({ answers: [single], sheet: { access: athleteAccess } });
+  const f2 = w.deps.fetchImpl;
+  w.deps.fetchImpl = async (url, init) => (url === 'https://files.slack.example/p.jpg' ? new Response(Buffer.alloc(6 * 1024 * 1024, 1), { status: 200 }) : f2(url, init));
+  w.deps.shrink = async () => { throw new Error('boom'); };
+  assert.strictEqual((await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps)).status, 'shrink_failed');
+  assert.ok(/couldn't shrink/.test(w.dms()[0].text) && !w.calls.some((c) => c.url.includes('anthropic')));
+  w = world({ answers: [single], sheet: { access: athleteAccess } });
+  const f3 = w.deps.fetchImpl;
+  w.deps.fetchImpl = async (url, init) => (url === 'https://files.slack.example/p.jpg' ? new Response(Buffer.alloc(26 * 1024 * 1024, 1), { status: 200 }) : f3(url, init));
+  assert.strictEqual((await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps)).status, 'download_failed');
+  assert.ok(/over 25 MB/.test(w.dms()[0].text));
+
   // exactly 2000 m or exactly 20:00 on the RowErg: ask whether it is a test before the RPE card (athlete and coach alike)
   w = world({ answers: [twoK], sheet: { access: athleteAccess } });
   out = await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps);
