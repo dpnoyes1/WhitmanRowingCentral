@@ -153,8 +153,12 @@ export function runChecks(input, ctx) {
   if (read.machine && read.avgSplitS) {
     const d = splitUnit(read.machine);
     const expect = (read.totalMeters / d) * read.avgSplitS;
-    const tol = 0.05 * (read.totalMeters / d) + 0.3;
-    if (!read.calculated.length && Math.abs(expect - read.totalTimeS) > tol) {
+    // The PM5 cuts its average split to the tenth rather than rounding it, so the shown split is never
+    // slower than the true one: the screen's time can be up to 0.1 s per 500 m LONGER than the split predicts
+    // (a 20:00 piece can be 0.9 s off), never noticeably shorter. Meters are whole numbers, hence the 0.3 s
+    // cushion. Time and meters are the truth; the split only catches a misread digit (David, 2026-11-07).
+    const gap = read.totalTimeS - expect;
+    if (!read.calculated.length && (gap > 0.1 * (read.totalMeters / d) + 0.3 || gap < -0.3)) {
       issues.push(issue('pace_mismatch', 'hold',
         `The numbers on this photo don't add up (${read.totalMeters} m at ${formatClock(read.avgSplitS)} should take ${formatClock(expect)} but the screen says ${formatClock(read.totalTimeS)}). ${resend} A coach has been told.`,
         `Time ${formatClock(read.totalTimeS)} vs ${formatClock(expect)} from ${read.totalMeters} m at ${formatClock(read.avgSplitS)}`));
