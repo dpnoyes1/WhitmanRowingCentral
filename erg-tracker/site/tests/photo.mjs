@@ -3,7 +3,7 @@
 import assert from 'node:assert';
 import * as R from '../lib/ergscreen.mjs';
 import * as C from '../lib/ergchecks.mjs';
-import { makeKeepCopy, TARGET_BYTES } from '../lib/photocopy.mjs';
+import { makeKeepCopy, shrinkForReading, READ_TARGET_BYTES, TARGET_BYTES } from '../lib/photocopy.mjs';
 import sharp from 'sharp';
 
 const TODAY = '2026-10-28';
@@ -385,6 +385,18 @@ export default function photoTests(test) {
     assert.strictEqual(meta.format, 'jpeg');
     assert.ok(!meta.exif && !meta.xmp && !meta.icc && !out.bytes.includes(Buffer.from('FakeCam')), 'no EXIF, GPS or camera name left');
   });
+  test('photo shrink: a phone photo over the reader limit comes down under 3 MB as an upright JPEG with no tags', async () => {
+    const big = await noisy(5000, 4000);
+    assert.ok(big.length > R.MAX_IMAGE_BYTES, 'the test photo starts over 5 MB: ' + big.length);
+    const out = await shrinkForReading(big);
+    assert.ok(out.length <= READ_TARGET_BYTES && out.length < R.MAX_IMAGE_BYTES, 'size ' + out.length);
+    const meta = await sharp(out).metadata();
+    assert.strictEqual(meta.format, 'jpeg');
+    assert.ok(Math.max(meta.width, meta.height) <= 2000);
+    assert.ok(!meta.exif, 'no tags');
+    await assert.rejects(() => shrinkForReading(Buffer.from('not an image')));
+  });
+
   test('photo copy: a rotated phone photo comes out upright', async () => {
     const px = Buffer.alloc(200 * 100 * 3, 128);
     const tilted = await sharp(px, { raw: { width: 200, height: 100, channels: 3 } }).jpeg().withMetadata({ orientation: 6 }).toBuffer();

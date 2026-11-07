@@ -5,10 +5,10 @@
 // through the Sheet (apps-script/SlackPhoto.gs). Pending photos and cards are kept
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
-import { readErgScreen, MODELS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
+import { readErgScreen, MODELS, MAX_IMAGE_BYTES, MAX_DOWNLOAD_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, parseTitle, formatClock } from './ergchecks.mjs';
 import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
-import { makeKeepCopy } from './photocopy.mjs';
+import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
@@ -117,7 +117,7 @@ async function download(envFn, fetchImpl, file) {
   const res = await fetchImpl(file.url_private_download || file.url_private, { headers: { authorization: `Bearer ${envFn('SLACK_BOT_TOKEN')}` } });
   if (!res.ok) throw new Error('Slack file download ' + res.status);
   const bytes = Buffer.from(await res.arrayBuffer());
-  if (bytes.length > MAX_IMAGE_BYTES) throw new Error('Photo is over 5 MB');
+  if (bytes.length > MAX_DOWNLOAD_BYTES) throw new Error('Photo is over 25 MB');
   return bytes;
 }
 
@@ -141,6 +141,9 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     if (!key) { await say(':warning: Photo reading is not set up yet (no API key). Use /log for now.'); return { status: 'no_key' }; }
     let bytes;
     try { bytes = await download(envFn, fetchImpl, image); } catch (err) { await say(`:warning: I couldn't get that photo (${err.message}). Please send it again.`); return { status: 'download_failed' }; }
+    if (bytes.length > MAX_IMAGE_BYTES * 0.8) {   // too big for the reader: shrink it, she does nothing
+      try { bytes = await (deps.shrink || shrinkForReading)(bytes); } catch (err) { await say(`:warning: I couldn't shrink that photo (${err.message}). Please send it again, or use /log.`); return { status: 'shrink_failed' }; }
+    }
     const out = await readAndCheck({ client: anthropicClient(key, fetchImpl), bytes, today });
     if (out.fail) { await say(`:warning: I couldn't read that photo (${out.fail.message}). Please send a clearer one, or use /log.`); return { status: out.fail.reason }; }
     const { read, issues, status } = out.checked;
