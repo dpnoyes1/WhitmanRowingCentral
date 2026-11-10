@@ -365,6 +365,8 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
 
 /* Test pacing look-back and the GMS summary line */
 .callout { background: var(--track); border-radius: 8px; padding: 10px 12px; font-size: .875rem; line-height: 1.5; margin: 12px 0 8px; }
+.gms-total { font-size: 1.1rem; margin: 4px 0 10px; }
+.gms-total b { font-size: 1.5rem; }
 .pace-head { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; margin: 8px 0; }
 .pace-row { display: grid; grid-template-columns: 5.5em 3.2em minmax(0, 1fr) 3.2em; gap: 8px; align-items: center; font-size: .8125rem; margin: 6px 0; }
 .pace-bar { display: flex; height: 16px; }

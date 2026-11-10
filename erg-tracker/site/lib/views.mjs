@@ -4,7 +4,7 @@
 
 import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
-  practiceStreak, openMakeups, pacingFor, teamRank, gmsSummary, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
+  practiceStreak, openMakeups, pacingFor, teamRank, gmsSummary, combinedGms, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
   resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal,
   balanceGap, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT
 } from './stats.mjs';
@@ -167,6 +167,7 @@ export function athleteView(feed, id, today) {
     tests,
     gms,
     gmsSummary: gmsSummary(gms),
+    gmsCombined: combinedGms(gms),
     pacing,
     madeUp: record.filter((r) => r.how === 'Make-up').slice(-3).reverse().map((r) => ({ date: r.date, makeupDate: r.makeupDate })),
     insights: athleteInsights(feed, a, mine, record, weeks, yearStart, today),   // her own page and coaches only (api.mjs)

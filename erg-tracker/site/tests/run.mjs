@@ -203,7 +203,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
       assert.strictEqual(b.allTime.result, best);
     });
-    const { gms, gmsSummary, pacing, ...rest } = v;
+    const { gms, gmsSummary, gmsCombined, pacing, ...rest } = v;
     assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(rest)), a.name);
     assert.ok(!/"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(gms)), a.name);
   });
@@ -362,6 +362,9 @@ test('team rank: best valid result among active rowers; null for others', () => 
 
 test('GMS summary: strongest and weakest test, none with fewer than two', () => {
   assert.strictEqual(S.gmsSummary([{ test: '2000m', gmsPct: 99 }]), null);
+  assert.deepStrictEqual(S.combinedGms([{ test: '2000m', gmsPct: 99, stars: 4 }, { test: '20min', gmsPct: 98, stars: 3 }, { test: '500m', gmsPct: 50, stars: null }]), { pct: 98.5, stars: 3.5, tests: ['2000m', '20min'] });
+  assert.deepStrictEqual(S.combinedGms([{ test: '20min', gmsPct: 97.04, stars: 4 }]), { pct: 97, stars: 4, tests: ['20min'] });
+  assert.strictEqual(S.combinedGms([{ test: '500m', gmsPct: 90, stars: null }]), null);
   assert.match(S.gmsSummary([{ test: '2000m', gmsPct: 99.5 }, { test: '20min', gmsPct: 98.4 }, { test: '500m', gmsPct: 98.8 }]), /^2k is your strongest .*20' has the most room to grow\.$/);
   assert.match(S.gmsSummary([{ test: '2000m', gmsPct: 99.5 }, { test: '20min', gmsPct: 99.1 }]), /close to the same level/);
 });

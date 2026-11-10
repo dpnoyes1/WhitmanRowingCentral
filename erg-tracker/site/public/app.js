@@ -540,7 +540,7 @@ async function showAthlete(id) {
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
-    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary) : starsLine(v.gms)}
+    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.gmsCombined) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     ${v.own || v.coach ? pacingCard(v.pacing) : ''}
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes', v.insights && v.insights.load)}
@@ -741,11 +741,12 @@ function nextStarText(g) {
 }
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
-function gmsCard(gms, coach = false, summary = null) {
+function gmsCard(gms, coach = false, summary = null, combined = null) {
   if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="empty">No tests with a GMS yet this season.</p></div>';
   // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
+    ${combined ? `<p class="gms-total"><b>${combined.pct.toFixed(1)}%</b> of GMS <span class="stars" role="img" aria-label="${starWord(combined.stars)}">${starText(combined.stars)}</span><span class="muted small"> ${combined.tests.length > 1 ? 'average of your best 2k and 20\u2019' : `from your ${TEST_LABELS[combined.tests[0]]} only`}</span></p>` : ''}
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best GMS this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}

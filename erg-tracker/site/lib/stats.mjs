@@ -496,6 +496,19 @@ export function teamRank(test, athleteId, benchmarks, activeIds) {
 }
 
 /** One sentence naming her strongest and weakest GMS test this season, from fixed rules. Null with fewer than two tests. */
+/**
+ * One overall GMS % for the star tests (2k and 20'): the average of her best
+ * % in each, with the matching average stars (David, 2026-11-10). One test:
+ * that test alone. None: null.
+ */
+export function combinedGms(gms) {
+  const list = (gms || []).filter((g) => g.gmsPct !== null && g.gmsPct !== undefined && g.stars !== null && g.stars !== undefined);
+  if (!list.length) return null;
+  const pct = Math.round((list.reduce((x, g) => x + g.gmsPct, 0) / list.length) * 10) / 10;
+  const stars = Math.round((2 * list.reduce((x, g) => x + g.stars, 0)) / list.length) / 2;
+  return { pct, stars, tests: list.map((g) => g.test) };
+}
+
 export function gmsSummary(gms, labels = TEST_LABELS) {
   const list = (gms || []).filter((g) => g.gmsPct !== null && g.gmsPct !== undefined);
   if (list.length < 2) return null;
