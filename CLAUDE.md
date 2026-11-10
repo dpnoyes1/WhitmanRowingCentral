@@ -11,5 +11,6 @@ Each tool keeps its own rules in its folder's `CLAUDE.md`. Read it before changi
 `netlify.toml` at the repo root builds the whitmanrowingcentral.netlify.app site from `erg-tracker/site/`.
 
 Repo-wide rules:
+- Verify before every commit: `node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs` (run `npm install` once first for sharp). A change is not done until both pass.
 - Never commit passwords, API keys or tokens. Netlify sites read them from environment variables.
 - Athlete data (names, results, weights) never goes in the repo. It lives in the Google Sheet, which only coaches can open. Dummy data for testing is fine and must be clearly fake.

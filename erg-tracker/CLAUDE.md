@@ -183,6 +183,7 @@ Wellness check-ins, menstrual tracking, visible weight anywhere, XBoat, excused/
 
 - Apps Script source: `apps-script/*.gs`. Paste into the Sheet's Extensions > Apps Script, or push with `clasp` (see `docs/SETUP.md`).
 - Tests: `node erg-tracker/tests/run.js` (no dependencies). Run before every commit. Keep pure logic (parsing, GMS, schedule) free of Sheet/Form calls so it stays testable and portable to the Netlify site.
+- New Apps Script logic goes in a pure function with a test in `tests/run.js`, because the Sheet, Form and Slack calls have no automated check.
 - Site tests: `node erg-tracker/site/tests/run.mjs` (uses the dummy feed from `site/scripts/dummy-feed.js`). Netlify runs both suites as its build command.
 - Netlify deploy credits (David, 2026-10-23): batch a session's work into one PR and merge once, not a PR per item; every PR preview and every merge is a build. `netlify.toml` `ignore` skips every deploy preview (David turned them off) and skips production builds when nothing under `erg-tracker/site/` or `netlify.toml` changed (Apps Script-only changes don't build). So test locally (both suites plus the dev server) before merging; the first live check is after the merge.
 - Publishing My workouts (David, 2026-10-25): `Feed.gs` must go to the Sheet in the same publish (clasp push of all `apps-script/` files), then the Team site feed needs a new web app version, or the splits don't reach the site. The school-year Settings change (`school_year_start` = `07-01`) is already done in the Sheet.
