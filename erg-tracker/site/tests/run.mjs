@@ -1774,11 +1774,41 @@ const syncWorld = (opts = {}) => {
 };
 const connectA901 = (w) => C2.saveConnection(w.env, w.store, 'A901', { access: 'access-1', refresh: 'refresh-1', expiresAt: Date.now() + 5 * 86400000 }, { id: '777', username: 'fake-rower' });
 
+test('logbook sync: every Logbook field is carried (calories, heart rate, targets, splits, flags)', () => {
+  const n = LS.normalizeResult(lbApi({
+    calories_total: 412, stroke_count: 1900, stroke_rate: 24, verified: false, ranked: true, source: 'ErgData', timezone: 'US/Eastern',
+    date_utc: '2026-10-28 15:23:00', privacy: 'partners', rest_time: 1200,
+    heart_rate: { average: 150, min: 90, max: 181, ending: 160, rest: 70, recovery: 120 },
+    workout: { targets: { pace: 1020, watts: 200 }, splits: [{ time: 1200, distance: 300, stroke_rate: 22, calories_total: 30, wattminutes_total: 99, heart_rate: { ending: 140 } }],
+      intervals: [{ type: 'time', time: 300, distance: 87, rest_time: 300, calories_total: 20, wattminutes_total: 88, heart_rate: { average: 151, max: 170 }, targets: { pace: 1010, heart_rate_zone: 4, stroke_rate: 22, calories: 25 }, machine: 'rower' }] }
+  }));
+  assert.deepStrictEqual([n.calories, n.strokeCount, n.verified, n.ranked, n.logbookSource, n.timezone, n.dateUtc, n.privacy, n.restTimeTotalS], [412, 1900, 'No', 'Yes', 'ErgData', 'US/Eastern', '2026-10-28 15:23:00', 'partners', 120]);
+  assert.deepStrictEqual([n.hrAvg, n.hrMin, n.hrMax, n.hrEnding, n.hrRest, n.hrRecovery], [150, 90, 181, 160, 70, 120]);
+  assert.deepStrictEqual(n.targets, { pace: 1020, watts: 200 });
+  assert.strictEqual(n.splits.length, 1);
+  assert.deepStrictEqual([n.splits[0].calories, n.splits[0].wattMinutes, n.splits[0].hrEnding], [30, 99, 140]);
+  const iv = n.intervals[0];
+  assert.deepStrictEqual([iv.calories, iv.wattMinutes, iv.hrAvg, iv.hrMax, iv.targetPaceS, iv.targetHrZone, iv.targetRate, iv.targetCalories, iv.machine], [20, 88, 151, 170, 101, 4, 22, 25, 'rower']);
+});
+
+test('logbook sync: a new result is sent with its full JSON and stroke data', async () => {
+  const w = syncWorld(); await connectA901(w);
+  const full = { ...w.results[122191976], calories_total: 50 };
+  const strokes = [{ t: 23, d: 155, p: 971, spm: 35, hr: 129 }];
+  const f = async (url, init) => (String(url).endsWith('/results/122191976/strokes') ? Response.json({ data: strokes }) : w.fetchImpl(url, init));
+  assert.strictEqual(await LS.syncResult(w.env, w.store, f, 'A901', full, 'access-1'), 'sent');
+  const sent = w.sheet[0].result;
+  assert.deepStrictEqual(sent.raw.strokes, strokes);
+  assert.strictEqual(sent.raw.result.calories_total, 50);
+  assert.strictEqual(sent.calories, 50);
+});
+
 test('logbook sync: normalize intervals, totals, bike and bad results', () => {
   const n = LS.normalizeResult(lbApi());
   assert.deepStrictEqual([n.localDate, n.localTime, n.machine, n.dragFactor, n.name], ['2026-10-28', '11:23', 'rower', 98, '3x0:30/0:30r row']);
   assert.strictEqual(n.intervals.length, 3);
-  assert.deepStrictEqual(n.intervals[0], { timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48 });
+  assert.deepStrictEqual(n.intervals[0], { timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48, calories: '', wattMinutes: '', type: 'time', machine: '',
+    hrAvg: '', hrMin: '', hrMax: '', hrEnding: '', hrRest: '', hrRecovery: '', targetPaceS: '', targetWatts: '', targetRate: '', targetHrZone: '', targetCalories: '' });
   const just = LS.normalizeResult(lbApi({ workout: undefined, workout_type: 'JustRow', time: 648, distance: 222, comments: '' }));
   assert.deepStrictEqual([just.intervals.length, just.timeS, just.distanceM, just.name], [0, 64.8, 222, 'JustRow']);
   // splits on a continuous piece are not intervals

@@ -39,6 +39,7 @@ function setup() {
   seedSettings_();
   removeDefaultSheet_();
   tab_(TABS.WEIGHTS).hideSheet();   // coach-only; hidden so it never shows up on a shared screen
+  tab_(TABS.LOGBOOK_RAW).hideSheet();   // raw Logbook JSON and strokes, coach-only
 
   var settings = getSettings();
   var form = settings['form.id'] ? tryOpenForm_(settings['form.id']) : null;

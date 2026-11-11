@@ -119,7 +119,7 @@ test('parse practice with intervals', () => {
   assert.strictEqual(r.intervals[2]['Rest s'], '');
   const headers = g.HEADERS[g.TABS.ENTRIES];
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
-  assert.strictEqual(headers.slice(-3).join(), 'Warmup m,Cooldown m,Photo link');
+  assert.strictEqual(headers.slice(headers.indexOf('Warmup m'), headers.indexOf('Warmup m') + 3).join(), 'Warmup m,Cooldown m,Photo link');
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
 });
 
@@ -1078,6 +1078,34 @@ test('logbook: interval result becomes a pending entry with pieces', () => {
   assert.ok(!JSON.stringify(r).match(/weight/i));
 });
 
+test('logbook: every Logbook field lands in a column; the raw copy is split into chunks', () => {
+  const r = g.logbookRows(lbResult({
+    calories: 412, strokeCount: 1900, hrAvg: 150, hrMin: 90, hrMax: 181, hrEnding: 160, hrRest: 70, hrRecovery: 120, logbookSource: 'ErgData',
+    verified: 'No', ranked: 'Yes', timezone: 'US/Eastern', dateUtc: '2026-10-28 15:23:00', privacy: 'partners', comments: 'hi',
+    restTimeTotalS: 120, restDistanceTotalM: 40, targets: { pace: 1020 }, splits: [{ timeS: 30 }],
+    intervals: [{ timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48, calories: 9, wattMinutes: 70, hrAvg: 140, hrMax: 160, targetPaceS: 101, targetWatts: 200, type: 'time', machine: 'rower' }]
+  }), lbCtx());
+  const e = r.entry, iv = r.intervals[0];
+  assert.deepStrictEqual([e['Avg HR'], e['HR min'], e['HR max'], e['HR ending'], e['HR rest'], e['HR recovery'], e['Calories'], e['Stroke count']], [150, 90, 181, 160, 70, 120, 412, 1900]);
+  assert.deepStrictEqual([e['Logbook source'], e['Verified'], e['Ranked'], e['Timezone'], e['Date UTC'], e['Privacy'], e['Rest s total'], e['Rest m total']], ['ErgData', 'No', 'Yes', 'US/Eastern', '2026-10-28 15:23:00', 'partners', 120, 40]);
+  assert.strictEqual(e['Targets JSON'], '{"pace":1020}');
+  assert.strictEqual(e['Splits JSON'], '[{"timeS":30}]');
+  assert.deepStrictEqual([iv['Calories'], iv['Watt-min'], iv['Avg HR'], iv['HR max'], iv['Target pace s'], iv['Target watts'], iv['Piece type'], iv['Machine']], [9, 70, 140, 160, 101, 200, 'time', 'rower']);
+  // a totals-only result puts its calories and heart rate on its one piece
+  const tot = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, calories: 12, hrAvg: 130 }), lbCtx());
+  assert.deepStrictEqual([tot.intervals[0]['Calories'], tot.intervals[0]['Avg HR']], [12, 130]);
+  // raw copy: result JSON plus strokes, long text split at the chunk size, and nothing without a raw copy
+  assert.strictEqual(g.logbookRawRows(1, 'A001', null, 'now').length, 0);
+  const now = new Date();
+  const small = g.logbookRawRows(122191976, 'A001', { result: { id: 122191976 }, strokes: [{ t: 1 }] }, now);
+  assert.strictEqual(JSON.stringify(small.map((x) => [x.Kind, x.Part, x['Result ID']])), '[["Result",1,"122191976"],["Strokes",1,"122191976"]]');
+  const big = g.logbookRawRows(1, 'A001', { result: {}, strokes: Array.from({ length: 5000 }, () => ({ t: 100, d: 1000, p: 1000, spm: 30, hr: 140 })) }, now);
+  const parts = big.filter((x) => x.Kind === 'Strokes');
+  assert.ok(parts.length >= 2 && parts.every((x) => x.JSON.length <= g.LOGBOOK_RAW_CHUNK));
+  assert.strictEqual(JSON.parse(parts.map((x) => x.JSON).join('')).length, 5000);
+  Object.keys(big[0]).forEach((k) => assert.ok(g.HEADERS[g.TABS.LOGBOOK_RAW].includes(k), 'raw column ' + k));
+});
+
 test('logbook: totals only, just row, possible make-up, benchmark shape, unsupported machine', () => {
   const totals = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, workoutType: 'JustRow', name: '' }), lbCtx());
   assert.strictEqual(totals.intervals.length, 1);
@@ -1315,7 +1343,7 @@ test('photos: Drive link, same-workout match, Logbook wins, feed says only that 
   assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');
   assert.strictEqual(g.photoFileId_(''), '');
   assert.strictEqual(g.photoFileId_('hello'), '');
-  assert.ok(g.HEADERS['Entries'].slice(-1)[0] === 'Photo link', 'the new column is last');
+  assert.ok(g.HEADERS['Entries'].indexOf('Photo link') === g.HEADERS['Entries'].indexOf('Cooldown m') + 1, 'Photo link keeps its place');
   const mine = { athleteId: 'A001', date: '2026-10-28', workS: 480, workM: 2000 };
   const twin = (over) => g.photoSameWorkout_(mine, { ...mine, ...over });
   assert.ok(twin({}) && twin({ workS: 482.3, workM: 2008 }), 'close totals match');

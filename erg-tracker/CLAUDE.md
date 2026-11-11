@@ -23,7 +23,7 @@ Owner: David Noyes (Head Coach). Coaches: David, Forrest, Greta. David prefers c
 
 ## Sheet tabs
 
-Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule, Squad history, Races (coach-only). Full column list in `docs/sheet-schema.md`.
+Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log, Workouts, Schedule, Squad history, Races (coach-only). Plus Logbook raw (hidden, coach-only): each Logbook result's full JSON and stroke data, so no field the API sends is lost. Full column list in `docs/sheet-schema.md`.
 
 - Settings page (David, 2026-11-01): coaches edit Settings on the site (`#/settings`, coaches only) instead of in the Sheet, so a stray edit can't break the tab. The field list is `apps-script/SettingsPage.gs` (one source: the site draws from it, the Sheet validates against it); saves go site function `/api/settings` -> feed-key action `settings-save` -> the same Settings rows, each change written to the Change log (Who = Settings page). Keys not in the list (site.coaches, site.test_password, slack.coach_ids, alerts.email, form.*, backup.*, GMS formula constants, target.*, timezone) stay Sheet-only; sign-in dates never reach the browser. Go live only with the Apps Script push + new feed version (needs David's phrase). `setup()` also deletes retired Settings rows (`RETIRED_SETTING_KEYS` in Setup.gs: old OYO Performance, gms.star*_s, UT2/UT1/AT/AN targets, default_warmup, spike_threshold_pct, modified_multiplier); when retiring a setting, add its key there.
 - Roster: one row per athlete, stable `Athlete ID` (A001...) auto-assigned. `Active = No` keeps history but drops them from the form. Role Coxswain appears in "Entered by" but not "Athlete".

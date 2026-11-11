@@ -16,7 +16,8 @@ var TABS = {
   WORKOUTS: 'Workouts',
   SCHEDULE: 'Schedule',
   SQUAD_HISTORY: 'Squad history',
-  RACES: 'Races'
+  RACES: 'Races',
+  LOGBOOK_RAW: 'Logbook raw'
 };
 
 var HEADERS = {};
@@ -30,10 +31,17 @@ HEADERS[TABS.ENTRIES] = [
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
   'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID',
-  'Warmup m', 'Cooldown m', 'Photo link'
+  'Warmup m', 'Cooldown m', 'Photo link',
+  // Everything else the Concept2 Logbook API sends (added 2026-11-11; blank for Form and Slack rows).
+  'Calories', 'Stroke count', 'HR min', 'HR max', 'HR ending', 'HR rest', 'HR recovery',
+  'Logbook type', 'Logbook source', 'Verified', 'Ranked', 'Timezone', 'Date UTC', 'Privacy',
+  'Logbook comments', 'Rest s total', 'Rest m total', 'Splits JSON', 'Targets JSON'
 ];
 HEADERS[TABS.INTERVALS] = [
-  'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'
+  'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m',
+  // Per piece, from Logbook (added 2026-11-11).
+  'Calories', 'Watt-min', 'Avg HR', 'HR min', 'HR max', 'HR ending', 'HR rest', 'HR recovery',
+  'Target pace s', 'Target watts', 'Target rate', 'Target HR zone', 'Target calories', 'Piece type', 'Machine'
 ];
 HEADERS[TABS.BENCHMARKS] = [
   'Benchmark ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
@@ -71,6 +79,11 @@ HEADERS[TABS.RACES] = [
 ];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
+// Full Logbook result as JSON, and its stroke-by-stroke data, one row per chunk (a cell holds at most 50,000 characters).
+// Coach-only and hidden. Nothing reads it yet; it exists so no Logbook field is ever lost.
+HEADERS[TABS.LOGBOOK_RAW] = ['Result ID', 'Athlete ID', 'Received at', 'Kind', 'Part', 'JSON'];
+var LOGBOOK_RAW_CHUNK = 40000;
+
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
@@ -79,6 +92,7 @@ TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
 TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
 TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
+TEXT_COLUMNS[TABS.LOGBOOK_RAW] = ['Result ID', 'JSON'];
 
 /**
  * Columns the Sheet fills itself with one array formula in the header cell.
