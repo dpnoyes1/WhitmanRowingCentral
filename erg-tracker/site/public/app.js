@@ -1126,13 +1126,15 @@ async function showLogFor() {
   const athletes = [...team.athletes].sort((x, y) => x.name.localeCompare(y.name));
   const today = new Date().toLocaleDateString('en-CA');
   const dayOpts = Array.from({ length: 15 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
-  const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
+  const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], activity: 'Erg (RowErg)', mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
+  const onErg = () => S.activity === 'Erg (RowErg)';
   const tenths = (t) => { const m = /^(\d{1,3}):([0-5]\d)(?:\.(\d))?$/.exec(String(t).trim()); return m ? (+m[1] * 60 + +m[2]) * 10 + (m[3] ? +m[3] : 0) : null; };
   const lines = () => String(S.pieces).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
-  const pieceText = () => (S.mode === 'single' ? `${S.time.trim()}, ${S.dist.replace(/[,\s]/g, '')}${S.rate.trim() ? ', ' + S.rate.trim() : ''}` : lines().join('\n'));
+  const pieceText = () => (S.mode === 'single' ? `${S.time.trim()}, ${S.dist.replace(/[,\s]/g, '')}${onErg() && S.rate.trim() ? ', ' + S.rate.trim() : ''}` : lines().join('\n'));
   /** The test this entry could be, or null: exactly one piece, 2000 m, 500 m or 100 m (any time), or exactly 20:00.0. */
   const testKind = () => {
     if (S.type === 'practice' && S.status === 'out') return null;
+    if (!onErg()) return null;   // a test is always on the RowErg
     const one = S.mode === 'single' ? [[S.time, S.dist.replace(/[,\s]/g, '')]] : [];   // intervals never ask (David, 2026-11-11)
     if (one.length !== 1) return null;
     const [t, m] = one[0];
@@ -1141,29 +1143,39 @@ async function showLogFor() {
     return { 2000: { key: '2000m', label: '2000 m', what: '2k test' }, 500: { key: '500m', label: '500 m', what: '500 m power check' }, 100: { key: '100m', label: '100 m', what: '100 m power check' } }[meters] || null;
   };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
+  /** Run pace per mile and per km from the typed time and meters, shown under the fields. */
+  const paceText = () => {
+    const t = tenths(S.time), m = +S.dist.replace(/[,\s]/g, '');
+    if (!t || !(m > 0)) return 'Pace shows here once time and distance are typed.';
+    const per = (meters) => { const sec = Math.round(t / 10 / m * meters); return Math.floor(sec / 60) + ':' + String(sec % 60).padStart(2, '0'); };
+    return `Pace ${per(1609.344)} per mile, ${per(1000)} per km.`;
+  };
+  const paceHint = () => (S.activity === 'Run' ? `<p class="muted small" id="lf-pace">${paceText()}</p>` : '');
   const draw = () => {
     const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
     if (!kind) S.test = null;
-    app.innerHTML = `<div class="head"><div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make. The athlete's own page and boards update within about 5 minutes.</p></div></div>
+    app.innerHTML = `<div class="head"><div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
       <form class="card logfor" id="logfor" novalidate>
         <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+        <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${dayOpts.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : fmtDay(d)}</option>`).join('')}</select></label>
           <label class="f">Workout<select class="in" data-f="type"><option value="practice"${S.type === 'practice' ? ' selected' : ''}>Practice</option><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>OYO</option><option value="makeup"${S.type === 'makeup' ? ' selected' : ''}>Make-up</option></select></label></div>
         ${S.type === 'practice' ? `<div class="seg" role="group" aria-label="Practice status">${[['full', 'Full'], ['modified', 'Modified'], ['out', 'Out']].map(([v, l]) => `<button type="button" data-status="${v}" aria-pressed="${S.status === v}">${l}</button>`).join('')}</div>` : ''}
         ${S.type === 'makeup' ? `<label class="f">Make-up for<select class="in" data-f="makeup">${dayOpts.slice(1).map((d) => `<option value="${d}"${d === S.makeup ? ' selected' : ''}>${fmtDay(d)}</option>`).join('')}</select></label>` : ''}
         ${out ? field('Note for coaches (optional)', 'note') : `
         <div class="seg" role="group" aria-label="Pieces">${[['single', 'Single piece'], ['intervals', 'Intervals']].map(([v, l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode === v}">${l}</button>`).join('')}</div>
-        ${S.mode === 'single' ? `<div class="lf-row">${field('Time (min:sec.tenth)', 'time', 'placeholder="20:00.0"')}${field('Distance (meters)', 'dist', 'inputmode="numeric" placeholder="4936"')}${field('Stroke rate (optional)', 'rate', 'inputmode="numeric"')}</div>`
+        ${S.mode === 'single' ? `<div class="lf-row">${field('Time (min:sec.tenth)', 'time', 'placeholder="20:00.0"')}${field('Distance (meters)', 'dist', `inputmode="numeric" placeholder="${S.activity === 'Run' ? '5000' : '4936'}"`)}${onErg() ? field('Stroke rate (optional)', 'rate', 'inputmode="numeric"') : ''}</div>${paceHint()}`
           : `<label class="f">One line per piece: time, meters, rate (optional), rest time (optional)<textarea class="in" data-f="pieces" rows="5" placeholder="7:44.8, 2000, 31, 4:00">${esc(S.pieces)}</textarea></label>`}
-        <div class="lf-row">${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}${field('Drag factor (optional)', 'drag', 'inputmode="numeric"')}</div>
+        <div class="lf-row">${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}${S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? field('Drag factor (optional)', 'drag', 'inputmode="numeric"') : ''}</div>
         ${kind ? `<div class="card hl" id="lf-test"><b>This piece is exactly ${kind.label}. Is it a test?</b><div class="seg" role="group" aria-label="Is it a test?"><button type="button" data-test="yes" aria-pressed="${S.test === 'yes'}">Yes, a test</button><button type="button" data-test="no" aria-pressed="${S.test === 'no'}">No</button></div>
           <p class="muted small">${S.test === 'yes' ? `Saves as a ${kind.what}. It counts on the boards${kind.key === '500m' || kind.key === '100m' ? ' (power checks have no stars or GMS %)' : ' and in her stars'}. A missing drag factor is flagged for coaches.` : S.test === 'no' ? 'Saves as a normal workout. It will not count on the boards.' : 'Pick one before saving.'}</p></div>`
+          : !onErg() ? `<p class="muted small">${esc(S.activity)} is not an erg piece, so there is no test question. No photo is attached for now.</p>`
           : '<p class="muted small"><b>No test question.</b> It appears only for a single piece of exactly 2000 m, 500 m, 100 m or 20:00.0. Pieces inside intervals and near misses like 20:00.3 or 1999 m never ask.</p>'}
         ${field('Note for coaches (optional)', 'note')}`}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save workout'}</button></div></form>`;
     const f = app.querySelector('#logfor');
-    f.querySelectorAll('[data-f]').forEach((el) => { el.oninput = () => { S[el.dataset.f] = el.value; S.msg = ''; S.err = ''; if (['time', 'dist', 'pieces'].includes(el.dataset.f)) refreshTest(); }; el.onchange = () => { S[el.dataset.f] = el.value; if (el.tagName !== 'SELECT' || ['athlete', 'date', 'makeup'].includes(el.dataset.f)) return; draw(); }; });
+    f.querySelectorAll('[data-f]').forEach((el) => { el.oninput = () => { S[el.dataset.f] = el.value; S.msg = ''; S.err = ''; if (['time', 'dist', 'pieces'].includes(el.dataset.f)) refreshTest(); const pc = app.querySelector('#lf-pace'); if (pc) pc.textContent = paceText(); }; el.onchange = () => { S[el.dataset.f] = el.value; if (el.tagName !== 'SELECT' || ['athlete', 'date', 'makeup'].includes(el.dataset.f)) return; draw(); }; });
     f.querySelectorAll('[data-status]').forEach((b) => { b.onclick = () => { S.status = b.dataset.status; draw(); }; });
     f.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { S.mode = b.dataset.mode; S.test = null; draw(); }; });
     f.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => { S.test = b.dataset.test; draw(); }; });
@@ -1172,7 +1184,7 @@ async function showLogFor() {
       if (!S.athlete) { S.err = 'Choose an athlete.'; draw(); return; }
       if (testKind() && !S.test) { S.err = 'Answer the test question first.'; draw(); return; }
       S.busy = true; S.err = ''; S.msg = ''; draw();
-      const form = { date: S.date, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: S.rpe, drag: S.drag, note: S.note };
+      const form = { date: S.date, activity: S.activity, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: S.rpe, drag: S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? S.drag : '', note: S.note };
       if (!(S.type === 'practice' && S.status === 'out')) { form.pieces = pieceText(); if (testKind()) form.test = S.test; }
       try {
         const res = await fetch('/api/log', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: S.athlete, requestId: S.rid, form }) });

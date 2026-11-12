@@ -1456,6 +1456,12 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(plain.entry.Activity, 'Erg (RowErg)');
   assert.strictEqual(plain.benchmark, undefined);
   assert.strictEqual(plain.intervals.length, 1);
+  // a run: typed time and meters, no test, no rate or drag
+  const jog = run({ activity: 'Run', pieces: '25:00.0, 5000', drag: '', test: '' });
+  assert.strictEqual(jog.entry.Activity, 'Run');
+  assert.strictEqual(jog.benchmark, undefined);
+  assert.strictEqual(jog.entry['Work m'], 5000);
+  assert.throws(() => ans({ activity: 'Run', pieces: '25:00.0, 5000', test: 'yes' }), /test/i, 'a run is never a test');
   // kinds: exactly one piece of 2000 m, 500 m, 100 m or 20:00.0
   const kind = (t) => g.siteTestKind_(g.parsePiecesText(t));
   assert.strictEqual(kind('7:44.8, 2000, 31'), '2000m');
