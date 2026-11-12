@@ -162,6 +162,40 @@ test('insights: missed practices not made up in the last 4 weeks', () => {
   assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
 });
 
+test('insights: a test is only missing once most of the team has done it this year', () => {
+  const none = { ...feed, benchmarks: feed.benchmarks.filter((b) => b.test !== '2000m') };
+  assert.strictEqual(insightsView(none, TODAY).testsRun.has2k, false, 'no team 2k: nobody flagged for it');
+  assert.strictEqual(insightsView(none, TODAY).testsRun.has20, insightsView(feed, TODAY).testsRun.has20);
+  const one = { ...none, benchmarks: [...none.benchmarks, { ...feed.benchmarks.find((b) => b.test === '2000m'), athleteId: activeRowers(feed)[0].id, date: TODAY }] };
+  assert.strictEqual(insightsView(one, TODAY).testsRun.has2k, false, 'one early 2k does not start the flags');
+});
+
+test('insights: Missing Logbook account starts December 1 and lists active rowers with no connection', async () => {
+  const { logbookMissingView, LOGBOOK_MISSING_FROM } = await import('../lib/views.mjs');
+  assert.strictEqual(LOGBOOK_MISSING_FROM, '2026-12-01');
+  const rowers = activeRowers(feed);
+  assert.deepStrictEqual(logbookMissingView(feed, [], '2026-11-30'), { from: '2026-12-01', active: false, missing: [] }, 'nothing before Dec 1');
+  const on = logbookMissingView(feed, [rowers[0].id, rowers[1].id], '2026-12-01');
+  assert.strictEqual(on.active, true);
+  assert.strictEqual(on.missing.length, rowers.length - 2);
+  assert.ok(!on.missing.some((r) => r.id === rowers[0].id));
+  assert.deepStrictEqual(on.missing.map((r) => r.name), [...on.missing.map((r) => r.name)].sort((a, b) => a.localeCompare(b)));
+  assert.strictEqual(logbookMissingView(feed, null, '2026-12-05').missing, null, 'unreadable list says so instead of listing everyone');
+  // Through the route: absent before Dec 1, present after, coaches only.
+  clearFeedCache();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const mem = new Map([['conn/' + rowers[0].id, '{}']]);
+  const store = { list: async (prefix) => [...mem.keys()].filter((k) => k.startsWith(prefix)), get: async (k) => mem.get(k) || null };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const get = (today) => handle(new Request('https://x/api/insights', { headers: { cookie: coach } }), env, { fetchImpl: async () => new Response(JSON.stringify(feed)), today, store }).then((r) => r.json());
+  assert.strictEqual((await get('2026-11-30')).logbook.active, false);
+  clearFeedCache();
+  const dec = await get('2026-12-01');
+  assert.strictEqual(dec.logbook.active, true);
+  assert.strictEqual(dec.logbook.missing.length, rowers.length - 1);
+  clearFeedCache();
+});
+
 test('insights (2026-11-11): attendance season and recent, OYO % of Standard, tests present', async () => {
   const v = insightsView(feed, TODAY);
   assert.strictEqual(v.overreachPct, 150);
@@ -171,6 +205,7 @@ test('insights (2026-11-11): attendance season and recent, OYO % of Standard, te
     assert.ok(r.attendance.recentOf <= 10, 'past 2 weeks = at most the last 10 practices');
     [r.attendance.season, r.attendance.recent].forEach((x) => assert.ok(x === null || (x >= 0 && x <= 100)));
     assert.strictEqual(typeof r.tests.has2k, 'boolean');
+    assert.strictEqual(typeof v.testsRun.has2k, 'boolean');
     assert.strictEqual(typeof r.oyo.standard, 'number');
     if (r.oyo.pct !== null) assert.strictEqual(r.oyo.pct, Math.round((100 * r.oyo.minutes) / r.oyo.standard));
   });
@@ -711,7 +746,8 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   let sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).json();
   assert.deepStrictEqual([sess.kind, sess.coachName], ['team', 'Pat Example']);
   // Rules for a new password.
-  assert.strictEqual(passwordProblem('x'), '', 'no minimum length');
+  assert.ok(passwordProblem('12345'), 'under 6 characters is refused');
+  assert.strictEqual(passwordProblem('123456'), '', '6 characters is enough');
   assert.strictEqual(passwordProblem('2/3/1980'), '', 'a date is allowed');
   assert.ok(passwordProblem(''), 'empty is refused');
   assert.strictEqual(passwordProblem('a long enough one'), '');
@@ -877,7 +913,7 @@ test('coach password: spaces at the ends never lock a coach out; any coach can r
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches, []);
   // A coach can reset her own too, and it is marked as hers.
-  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars' }, sam), env2, deps);
+  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars123' }, sam), env2, deps);
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches.map((c) => [c.name, c.you]), [['Sam Tester', true]]);
   // No store (local dev): an empty list, and a reset says it cannot.

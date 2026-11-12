@@ -537,14 +537,16 @@ function recentList(t) {
 }
 
 async function showAthletes() {
-  const t = await api('/api/team');
+  // Coaches see a Concept2 icon next to each athlete connected to Logbook (David, 2026-11-12). A failed lookup just hides the icons.
+  const [t, c2] = await Promise.all([api('/api/team'), isCoach() ? api('/api/concept2/status').catch(() => null) : null]);
+  const linked = new Set(c2 && Array.isArray(c2.connected) ? c2.connected.map((c) => c.id) : []);
   setNav('athletes');
   const mine = me();
   app.innerHTML = `<div class="head"><div><h1>Athletes</h1><p class="muted">${t.athletes.length} rowers</p></div>
     <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
     ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
-        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
+        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   document.getElementById('q').oninput = (ev) => {
     const q = ev.target.value.trim().toLowerCase();
@@ -1137,14 +1139,19 @@ async function showInsights() {
   const over = v.rowers.filter((r) => r.oyo.pct !== null && r.oyo.pct >= v.overreachPct).sort((x, y) => y.oyo.pct - x.oyo.pct);
   const pc = (r) => (which === 'recent' ? r.attendance.recent : r.attendance.season);
   const low = v.rowers.filter((r) => pc(r) !== null && pc(r) < 80).sort((x, y) => pc(x) - pc(y));
-  const noTest = v.rowers.filter((r) => !r.tests.has2k || !r.tests.has20);
+  const run = v.testsRun || { has2k: true, has20: true };   // only a test the team has done can be missing
+  const miss2k = (r) => run.has2k && !r.tests.has2k, miss20 = (r) => run.has20 && !r.tests.has20;
+  const noTest = v.rowers.filter((r) => miss2k(r) || miss20(r));
   const rowLink = (r, right) => `<div class="ins-row"><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span><span class="r">${right}</span></div>`;
-  const alerts = `<div class="grid">${tile('Overreaching on OYO', over.length, `${v.overreachPct}% or more of Standard`)}${tile('Attendance under 80%', low.length, which === 'recent' ? `last ${v.attendanceRecent} practices` : 'this season')}${tile("Missing a test", noTest.length, "2k or 20' this school year")}</div>
+  const lb = v.logbook && v.logbook.active ? v.logbook : null;
+  const lbTile = lb ? tile('Missing Logbook account', lb.missing ? lb.missing.length : '–', lb.missing ? 'not connected to Concept2' : 'could not check') : '';
+  const alerts = `<div class="grid">${tile('Overreaching on OYO', over.length, `${v.overreachPct}% or more of Standard`)}${tile('Attendance under 80%', low.length, which === 'recent' ? `last ${v.attendanceRecent} practices` : 'this season')}${tile("Missing a test", noTest.length, "2k or 20' this school year")}${lbTile}</div>
     <div class="cols">
       <div class="card"><h2>Overreaching on OYO</h2><p class="muted small">This week's weighted OYO minutes at ${v.overreachPct}% or more of her Standard goal.</p>${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div>
       <div class="card"><div class="ins-head"><h2>Attendance under 80%</h2><div class="seg" role="group" aria-label="Attendance period"><button type="button" data-att="season" aria-pressed="${which === 'season'}">Season</button><button type="button" data-att="recent" aria-pressed="${which === 'recent'}">Past 2 weeks</button></div></div>
         <p class="muted small">A made-up practice counts as present. ${which === 'recent' ? `Her last ${v.attendanceRecent} practices.` : 'Every practice so far this school year.'}</p>${low.length ? low.map((r) => rowLink(r, `<b class="num">${pc(r)}%</b>`)).join('') : '<p class="muted">Nobody.</p>'}</div>
-      <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or no 20' yet this school year.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[!r.tests.has2k && 'no 2k', !r.tests.has20 && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
+      <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or no 20' yet this school year. A test only counts once most of the team has done it${!run.has2k ? " (no team 2k yet, so none flagged for it)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
+      ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Concept2 Logbook yet, so her ErgData workouts do not arrive on their own.</p>${!lb.missing ? '<p class="muted">The connection list could not be read. Reload to try again.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
     </div>`;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
     <p class="muted">Coaches only. ${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
