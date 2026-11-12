@@ -381,7 +381,7 @@ function showLogin(note = '') {
   document.getElementById('tabbar').hidden = true;
   closeMenu();
   app.innerHTML = `<div class="login card">
-    <h1>Whitman Rowing</h1>
+    <h1>Whitman Girls Rowing</h1>
     <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY) the first time; you then choose your own password. If you forget it, ask a coach to reset it. Coaches: your full name, and your birthday the first time (then set your own password from the menu).</p>
     ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
@@ -694,8 +694,8 @@ async function showWorkout(id) {
       <p class="muted small">Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m. Targets are the ones that stood on the day the workout was planned.</p>`;
   }
   app.innerHTML = `${staleNote(v.meta)}
-    <div class="head"><div><h1>${esc(v.athlete.name)} · ${fmtDay(w.date)}</h1>
-      <p class="muted"><a href="#/athlete/${encodeURIComponent(v.athlete.id)}">Back to ${own ? 'my page' : esc(v.athlete.name)}</a></p></div></div>
+    <div class="head"><div><div class="eyebrow">${fmtDay(w.date)}</div><h1>${esc(v.athlete.name)}</h1></div>
+      <a class="btn ghost sm" href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
     <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
       <div class="result-line">${pills}</div>
       <div class="grid">
@@ -1398,13 +1398,13 @@ async function showBalance() {
        <td class="r">${g.avgRatioPct}% <span class="muted small">${g.pairs} pair${g.pairs === 1 ? '' : 's'}</span></td>
        <td class="r">${g.rules.paul.ratioPct}%</td><td class="r">${g.rules.tracker.ratioPct}%</td>`;
   const sum = (s) => `${s.rowers} rowers · actual ${s.ratioPct ?? '–'}% · Paul ${s.paulPct ?? '–'}% · tracker rule ${s.trackerPct ?? '–'}%`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Balance</h1>
-    <p class="muted">Coaches only. Watts ratio of a shorter, harder piece to a longer one, from each rower's last ${v.windowDays} days. Results close in time count more (half the recency score at ${v.halfLifeDays} days apart); weak means under ${v.weakBelow} recency. Not shown to athletes.</p></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only · athletes never see this page</div><h1>Balance</h1>
+    <p class="muted small">Watts ratio of a shorter, harder piece to a longer one, from each rower's last ${v.windowDays} days. Results close in time count more (half the recency score at ${v.halfLifeDays} days apart); weak means under ${v.weakBelow} recency. Not shown to athletes.</p></div></div>
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th rowspan="2">Rower</th><th class="r" colspan="4">100m vs 2k</th><th class="r" colspan="4">2k vs 20'</th></tr>
       <tr><th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th>
         <th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th></tr>
-      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
+      ${v.rowers.map((r) => `<tr><td><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a><div class="muted small">${esc(r.squad)}</div></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
     </table></div>
     <p class="muted small">Team means (best pair): 100m vs 2k: ${sum(v.sprint)}. 2k vs 20': ${sum(v.endurance)}.</p>
     <p class="muted small">Best pair: the 2k and the other piece closest in time. Average: all her pairs, weighted the same way. Paul's Law: +5 s per 500 m for each doubling of distance, applied to that pair's 2k (outside its 1k to 10k range for 100m). Tracker rule: 20' split = 2k split + 8.5 s; 100m split = 0.786 x 2k split. The 100m watts use the 100m average split, standing start included. Ratio = shorter piece watts / longer piece watts. Open a rower for her tests.</p></div>
@@ -1486,7 +1486,7 @@ function pacingCard(list) {
   return `<div class="card" id="pacing"><h2>Test pacing</h2>
     ${list.length > 1 ? `<label class="small">Test <select id="pace-pick">${opts}</select></label>` : ''}
     <div id="pace-body">${pacingBody(list[0])}</div>
-    <p class="muted small">Blue is faster than your own average, orange is slower. A look back at one test, not a plan.</p></div>`;
+    <p class="muted small">Light blue is faster than your own average, dark blue is slower. A look back at one test, not a plan.</p></div>`;
 }
 
 function wirePacing(list) {

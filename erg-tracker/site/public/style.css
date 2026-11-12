@@ -12,8 +12,8 @@
   --accent: #74b0da;      /* Whitman blue (David, 2026-10-23); white text fails contrast on it, so ink is navy */
   --accent-ink: #0b1f33;
   --link: #2b6f9e;        /* the same blue, darkened to read as text on white */
-  --series-1: #2a78d6;   /* practice */
-  --series-2: #eb6834;   /* OYO */
+  --series-1: #4a90c8;   /* practice */
+  --series-2: #1f4e79;   /* OYO */
   --seq-1: #4b9cd3; --seq-2: #3582c4; --seq-3: #2a78d6; --seq-4: #174a8b;   /* UT2 -> AN (UNC Carolina Blue #4B9CD3 as the light step, David 2026-10-25) */
   --good: #1a7f37;
   --warn: #9a6700;
@@ -29,7 +29,7 @@
     color-scheme: dark;
     --bg: #121315; --surface: #1b1c1f; --border: #2e3035; --text: #eeeeec; --text-2: #c3c4c7; --muted: #9a9ca2;
     --accent: #74b0da; --accent-ink: #0b1f33; --link: #8cc0e4;
-    --series-1: #3987e5; --series-2: #d95926;
+    --series-1: #74b0da; --series-2: #3f6d93;
     --seq-1: #24476f; --seq-2: #2f6cb3; --seq-3: #5a9be6; --seq-4: #a9cbf3;
     --good: #4ac26b; --warn: #d4a72c; --bad: #f47067; --track: #2a2c30; --panel: #1b1c1f; --hover: #26282c;
     --star-off: #6d7078; --good-ink: #07230f;
@@ -39,7 +39,7 @@
   color-scheme: dark;
   --bg: #121315; --surface: #1b1c1f; --border: #2e3035; --text: #eeeeec; --text-2: #c3c4c7; --muted: #9a9ca2;
   --accent: #74b0da; --accent-ink: #0b1f33; --link: #8cc0e4;
-  --series-1: #3987e5; --series-2: #d95926;
+  --series-1: #74b0da; --series-2: #3f6d93;
   --seq-1: #24476f; --seq-2: #2f6cb3; --seq-3: #5a9be6; --seq-4: #a9cbf3;
   --good: #4ac26b; --warn: #d4a72c; --bad: #f47067; --track: #2a2c30; --panel: #1b1c1f; --hover: #26282c;
   --star-off: #6d7078; --good-ink: #07230f;
@@ -243,7 +243,7 @@ input[type="password"], input[type="search"], .login input, select {
 
 /* bars and charts */
 .meter { position: relative; height: 12px; background: var(--track); border-radius: 6px; margin: 10px 0 22px; }
-.meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: var(--series-2); }
+.meter .fill { position: absolute; inset: 0 auto 0 0; border-radius: 6px; background: var(--accent); }
 .meter .mark { position: absolute; top: -4px; bottom: -4px; width: 2px; background: var(--text-2); }
 .meter .mark span { position: absolute; top: 18px; transform: translateX(-50%); font-size: .75rem; color: var(--text-2); white-space: nowrap; }
 .chart svg { display: block; width: 100%; height: auto; overflow: visible; }
@@ -279,8 +279,8 @@ tr.session-row { cursor: pointer; }
 td.detail { white-space: normal; color: var(--text-2); }
 .dots { display: flex; gap: 6px; flex-wrap: wrap; }
 .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: .7rem; border: 2px solid var(--border); color: var(--text-2); }
-.dot.done { background: var(--good); border-color: var(--good); color: var(--good-ink); }
-.dot.mu { background: none; border-color: var(--good); color: var(--good); }
+.dot.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.dot.mu { background: none; border-color: var(--accent); color: var(--accent); }
 .athletes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .athletes a, .pick button {
   display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 9px;
@@ -309,7 +309,7 @@ td.wrap { white-space: normal; min-width: 220px; }
 .oyo-name { display: flex; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
 .meter.slim { height: 8px; margin: 6px 0 4px; }
 .meter .fill.short { background: var(--muted); }
-.meter .fill.required { background: var(--series-2); }
+.meter .fill.required { background: var(--accent); }
 .meter .fill.elite { background: var(--good); }
 .board .sub { font-size: 0.8rem; line-height: 1.2; white-space: nowrap; }
 @media (max-width: 480px) { .board .date { display: none; } .board th, .board td { padding: 7px 5px; } .board td a { white-space: normal; } }
@@ -658,3 +658,6 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .setting input { min-height: 48px; padding: 8px 14px; border-radius: 12px; font-size: 1.05rem; }
 .settings-grid h2 { font-size: 1rem; }
 .settings-grid .card { align-content: start; }
+.result-line { margin-bottom: 14px; }
+table.insights td a.nm { white-space: nowrap; }
+.head > a.btn { text-decoration: none; white-space: nowrap; }
