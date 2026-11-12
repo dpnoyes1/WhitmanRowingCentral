@@ -1051,19 +1051,37 @@ async function showWeek(id = null, prev = false) {
       <select id="pick" aria-label="Show targets for">
       <option value="">Whole team</option>
       ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>${prev ? 'Last week' : 'This week'}</h1>
-      <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
+  const firstWith = v.days.find((d) => d.day >= v.today && d.sessions.length) || v.days.find((d) => d.sessions.length);
+  let sel = (v.days.find((d) => d.day === v.today && d.sessions.length) || firstWith || {}).day;
+  const stat = (d) => {
+    if (!d.sessions.length) return '<span class="muted small">nothing scheduled</span>';
+    if (d.day > v.today) return '<span class="muted small">upcoming</span>';
+    if (coach && !v.athlete) {
+      const rs = d.sessions.flatMap((s) => s.results || []);
+      return rs.length ? `<span class="pill">${rs.filter((x) => x.result).length} of ${rs.length} logged</span>` : '';
+    }
+    return d.sessions.some((s) => s.result) ? '<span class="pill good">Logged</span>' : '<span class="pill">Not logged</span>';
+  };
+  const drawDays = () => {
+    const d = v.days.find((x) => x.day === sel);
+    document.getElementById('wk-days').innerHTML = `<p class="note">Tap a workout to ${coach && !v.athlete ? "see every rower's target for it" : 'see its targets'}.</p>${v.days.map((x) => `<button type="button" class="wkrow${x.day === sel ? ' sel' : ''}${x.day < v.today ? ' past' : ''}" data-d="${x.day}" ${x.sessions.length ? '' : 'disabled'}>
+      <span class="wkday"><b>${fmtDate(x.day, { weekday: 'short' })}</b><small>${fmtDate(x.day, { month: 'short', day: 'numeric' })}</small></span>
+      <span class="wkwhat">${x.sessions.length ? x.sessions.map((s) => `<span class="wkname">${esc(s.workout)}${/^(varsity|novice)$/i.test(s.squad) ? ` <span class="pill">${esc(s.squad)}</span>` : ''}</span>`).join('') : '<span class="muted">Nothing scheduled</span>'}</span>
+      <span class="wkstat">${stat(x)}${x.sessions.length ? '<span class="go" aria-hidden="true">›</span>' : ''}</span></button>`).join('')}`;
+    document.getElementById('wk-detail').innerHTML = d && d.sessions.length ? `<div class="card"><div class="eyebrow">${fmtDay(d.day)}${d.day === v.today ? ' · today' : ''}</div>
+      ${d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today).replace('<details class="team-results">', '<details class="team-results" open>')).join('')}</div>` : '';
+    document.querySelectorAll('#wk-days [data-d]').forEach((b) => { b.onclick = () => { sel = b.dataset.d; drawDays(); }; });
+    wireResultsSort(app);
+  };
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</div><h1>Week</h1></div>
       ${tools}</div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
-    ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
-        <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
-        ${d.sessions.length ? d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
-      : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
-    <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
+    ${any ? '<div class="card" id="wk-days"></div><div id="wk-detail"></div>' : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
+    <p class="note">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
       Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m, which lines up with the RowErg /500m target; BikeErg never counts as a benchmark. Other machines show no split.</p>${footer(v.meta)}`;
+  if (any) drawDays();
   const pick = document.getElementById('pick');
   if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
-  wireResultsSort(app);
   wireFooter();
 }
 
@@ -1106,15 +1124,23 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const groups = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const tested = v.rowers.filter((r) => r.stars !== null);
   const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>GMS Rating</h1>
-    <p class="muted">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
-    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" role="img" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
-      <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}<span class="by-test muted small">${['2000m', '20min'].map((t) => r.byTest[t] === null ? '' : `${TEST_LABELS[t]} ${r.byTest[t]}★`).filter(Boolean).join(' · ')}</span></span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
+  const pct = (x) => (x === null ? '–' : x.toFixed(1) + '%');
+  const nextTxt = (r) => (r.stars === 5 ? 'Top band' : !r.next ? '' : r.next.test === '2000m' ? `${r.next.nextStar.secondsFaster.toFixed(1)} s faster on the 2k` : `${fmtNum(r.next.nextStar.metersMore)} m more on the 20'`);
+  const avgStars = tested.length ? tested.reduce((n, r) => n + r.stars, 0) / tested.length : null;
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1>
+    <p class="muted small">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
+    <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
+    <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
+      ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
+        <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
+        <td class="muted">${nextTxt(r)}</td></tr>`).join('')}
+    </table></div></div>
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
     <div class="card"><h2>Team Gold Medal Standard</h2>
       <p class="muted small">Average of each rower's best GMS % this school year, through ${fmtDate(cur.throughDate)}${prev ? `, next to last year through the same date` : ''}. Groups under 3 rowers are hidden.</p>
@@ -1156,8 +1182,8 @@ async function showInsights() {
       <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or no 20' yet this school year. A test only counts once most of the team has done it${!run.has2k ? " (no team 2k yet, so none flagged for it)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
       ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Concept2 Logbook yet, so her ErgData workouts do not arrive on their own.</p>${!lb.missing ? '<p class="muted">The connection list could not be read. Reload to try again.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
     </div>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
-    <p class="muted">Coaches only. ${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
+    <p class="muted small">${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
       Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
@@ -1219,7 +1245,7 @@ async function showLogFor() {
   const draw = () => {
     const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
     if (!kind) S.test = null;
-    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Log for an athlete</div><h1>Log a workout</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
       <form class="card logfor" id="logfor" novalidate>
         <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
@@ -1337,24 +1363,25 @@ async function showLineups() {
 async function showCompletion() {
   const v = await api('/api/completion');
   setNav('completion');
-  const sym = { F: '✓', M: 'M', U: 'MU', P: '!', O: '✕', W: '…' };
-  const name = { F: 'Full', M: 'Modified', U: 'Made up', P: 'Out, make-up open', O: 'Out, window closed', W: 'Week in progress' };
-  const cell = (c, title) => `<td class="c">${c ? `<span class="cg cg-${c}" title="${esc(title || name[c])}">${sym[c]}</span>` : ''}</td>`;
-  const head = (d) => `<th class="c">${fmtDate(d, { weekday: 'short' })}<br>${fmtDate(d, { month: 'short', day: 'numeric' })}</th>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1>
-    <p class="muted">Coaches only. Last ${v.dates.length} practice days, with each rower's completion % for the whole school year since ${fmtDate(v.yearStart)}.</p></div></div>
-    <div class="card"><div class="legend">${['F', 'M', 'U', 'P', 'O', 'W'].map((k) => `<span><span class="cg cg-${k}">${sym[k]}</span> ${name[k]}</span>`).join('')}</div>
-    <div class="table-wrap"><table class="insights grid">
-      <tr><th>Rower</th><th class="r">Season</th>${v.dates.map(head).join('')}${v.weekStarts.map((w, i) => `<th class="c">OYO<br>${i ? 'this wk' : 'last wk'}</th>`).join('')}</tr>
-      ${v.rows.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
-        <td class="r"><b>${r.pct === null ? '–' : r.pct + '%'}</b></td>${r.cells.map((c) => cell(c)).join('')}${r.oyo.map((o) => cell(o.code, `${o.minutes} of ${o.required} min`)).join('')}</tr>`).join('')}
-    </table></div>
-    <p class="muted small">Season %: practices logged or made up out of practices planned so far this school year. Any miss counts, with no excused split. OYO is not in the %. Hover a cell for details.</p></div>
+  const name = { F: 'Logged', M: 'Modified', U: 'Made up', P: 'Absent, make-up still open', O: 'Absent', W: 'Week in progress' };
+  const dot = (c, d) => `<span class="ad ad-${c || 'N'}" title="${esc(fmtDate(d, { month: 'short', day: 'numeric' }) + ' · ' + (c ? name[c] : 'No session'))}"></span>`;
+  const rows = [...v.rows].sort((x, y) => (y.pct ?? -1) - (x.pct ?? -1) || x.name.localeCompare(y.name));
+  const withPct = rows.filter((r) => r.pct !== null);
+  const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
+  const low = withPct.filter((r) => r.pct < 80).length;
+  const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}</div><h1>Attendance</h1></div></div>
+    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}</div>
+    <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
+      <div class="att-head"><span>Athlete (sorted by %)</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
+      ${rows.map((r) => `<div class="att-row"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a>
+        <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
+        <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
+      <p class="note">The circles show the last ${v.dates.length} practices; the percentage covers the whole season. Present means a logged workout. Modified and made-up sessions count as present. Any miss counts, with no excused split. Hover a circle for the day.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }
 
-/** Coaches only: 100m vs 2k vs 20' in watts, beside Paul's Law and the tracker's rules. */
 async function showBalance() {
   const v = await api('/api/balance');
   setNav('balance');
@@ -1390,15 +1417,19 @@ async function showOyo() {
     // One scale for every bar, so the Required and Elite marks line up down the board.
     // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
     const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
-      <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)}${(which === 'now' ? v.breakWeek : v.lastBreakWeek) ? ' · <b>break week goals</b>' : ''} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
+    const avg = rows.length ? rows.reduce((n, r) => n + r.minutes, 0) / rows.length : 0;
+    const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
+      <div class="tiles">${tile('Goal met', `${met}/${rows.length}`, which === 'now' ? 'this week' : 'last week')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
-        return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}">
-          <div class="oyo-name"><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${fmtMin(r.minutes)} / ${r.required}m${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</span></div>
+        const left = Math.max(0, r.required - r.minutes);
+        return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
+          <div class="sub">${fmtMin(r.minutes)} of ${fmtMin(r.required)}${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
-            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div></div>`;
-      }).join('')}<p class="muted small">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
+            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
+          <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
+      }).join('')}<p class="note">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };

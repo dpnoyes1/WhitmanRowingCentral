@@ -220,10 +220,10 @@ test('lineups view: raw best 2k and 20, combined GMS %, no weight or birthday', 
   assert.ok(v.rowers.every((r) => r.gmsPct === null || (r.gmsPct > 30 && r.gmsPct < 130)));
 });
 
-test('completion grid: season % first, last 10 practice days, coaches only', async () => {
+test('completion grid: season % first, last 15 practice days, coaches only', async () => {
   const v = completionView(feed, TODAY);
   assert.strictEqual(v.rows.length, 30);
-  assert.ok(v.dates.length > 0 && v.dates.length <= 10, 'at most 10 practice days');
+  assert.ok(v.dates.length > 0 && v.dates.length <= 15, 'at most 15 practice days');
   assert.deepStrictEqual([...v.dates], [...v.dates].sort());
   const r = v.rows[0];
   assert.strictEqual(r.cells.length, v.dates.length);
@@ -363,7 +363,7 @@ test('leaderboards: Alum squad shows only on the All Time boards', () => {
   assert.deepStrictEqual(activeRowers(f).map((a) => a.id), ['Y2'], 'Alum is on no team view');
 });
 
-test('stars board: stars public, GMS % never; team averages only', () => {
+test('stars board: coach-only API, GMS % allowed, never weight; team averages only', () => {
   const v = starsView(feed, TODAY);
   assert.strictEqual(v.rowers.length, 30);
   assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 5)));
@@ -375,7 +375,8 @@ test('stars board: stars public, GMS % never; team averages only', () => {
   assert.ok(v.rowers.some((r) => r.stars % 1 === 0.5), 'some half stars');
   assert.ok(new Set(v.rowers.map((r) => r.stars)).size >= 3, 'a spread of stars');
   const { teamGms, ...rest } = v;
-  assert.ok(!/gmsPct|nextStar|weight/i.test(JSON.stringify(rest)));
+  assert.ok(!/weight/i.test(JSON.stringify(rest)));
+  assert.ok(v.rowers.every((r) => r.combined === null || (r.combined > 0 && r.combined <= 130)), 'combined GMS % sane');
   assert.ok(!/A9\d\d|name/.test(JSON.stringify(teamGms)), 'team GMS has no names or IDs');
 });
 

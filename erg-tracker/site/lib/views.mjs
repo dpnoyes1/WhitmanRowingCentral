@@ -324,7 +324,7 @@ export function lineupsView(feed, today) {
 }
 
 /** Completion grid: the last 10 practice days shown (David, 2026-11-01); the % is the whole school year. */
-export const COMPLETION_DAYS = 10;
+export const COMPLETION_DAYS = 15;
 
 /**
  * Coaches' grid, one row per active rower: season completion %, then one cell
@@ -558,7 +558,17 @@ export function seasonStars(feed, id, yearStart, today) {
 /** Public stars board (stars only, never GMS %) plus team GMS averages. */
 export function starsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
-  const rowers = activeRowers(feed).map((a) => ({ ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today) })).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
+  // Coaches only (/api/stars is 403 for athletes): GMS % per test, the combined % (average of the two) and the next star.
+  const rowers = activeRowers(feed).map((a) => {
+    const best = Object.fromEntries(STAR_TESTS.map((t) => [t, bestGms(feed, a.id, t, yearStart, today)]));
+    const pcts = STAR_TESTS.map((t) => best[t] && best[t].gmsPct).filter((x) => typeof x === 'number');
+    const nextFrom = STAR_TESTS.find((t) => best[t] && best[t].nextStar);
+    return { ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today),
+      k2Pct: best['2000m'] && typeof best['2000m'].gmsPct === 'number' ? best['2000m'].gmsPct : null,
+      m20Pct: best['20min'] && typeof best['20min'].gmsPct === 'number' ? best['20min'].gmsPct : null,
+      combined: pcts.length ? round(pcts.reduce((x, y) => x + y, 0) / pcts.length, 1) : null,
+      next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
+  }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   return { today, yearStart, rowers, teamGms: feed.teamGms };
 }
 
