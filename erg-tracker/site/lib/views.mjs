@@ -394,10 +394,10 @@ const STAR_TESTS = ['2000m', '20min'];
  * year and the piece's date. All time keeps inactive and graduated athletes.
  * Raw erg scores only; no GMS on boards.
  */
-export function leaderboardsView(feed, today) {
+export function leaderboardsView(feed, today, { gms = false } = {}) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const starCache = {};
-  const opts = (from, group) => ({ from, to: today, group, today, starCache });
+  const opts = (from, group) => ({ from, to: today, group, today, starCache, gms });
   const all = '0000-00-00';
   const board = (test, from, group) => testBoard(feed, test, opts(from, group));
   return {
@@ -417,7 +417,7 @@ export function leaderboardsView(feed, today) {
  * beginning of time (All Time), or, with opts.pastYear, on a past school year's
  * board, since they were on the team then (ErgBot questions, 2026-11-07).
  */
-export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false }) {
+export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false, gms = false }) {
   const st = feed.settings.schoolYearStart;
   const yearStart = schoolYearStart(today, st);
   const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
@@ -437,7 +437,8 @@ export function testBoard(feed, test, { from, to, group = null, today, starCache
       const a = byId[b.athleteId];
       return {
         rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
-        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
+        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st),
+        ...(gms ? { gmsPct: typeof b.gmsPct === 'number' ? b.gmsPct : null } : {})
       };
     });
 }

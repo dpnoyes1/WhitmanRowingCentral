@@ -127,6 +127,7 @@ function setNav(active) {
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
+  document.getElementById('sec-coach').hidden = !isCoach();
   document.getElementById('nav-log-for').hidden = !isCoach();
   document.getElementById('nav-log-mine').hidden = isCoach() || !SESSION;
   document.getElementById('nav-settings').hidden = !isCoach();
@@ -1076,17 +1077,19 @@ async function showBoards() {
     const rows = state.group === 'all' ? t[state.window] : t[state.group][state.window];
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Leaderboards</h1>
-      <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div></div>
-      <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
-        ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div>
+    const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
+    const yr = Number(String(v.yearStart).slice(0, 4));
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
+      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div>
+      <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
+        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
+      <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
-        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th><th class="date">Date</th></tr>
-        ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
-          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
+        <tr><th class="r">#</th><th>Athlete</th><th class="r">${isMeters ? 'Distance' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th>${gmsCol ? '<th class="r gms">GMS %</th>' : ''}<th class="date">Date</th></tr>
+        ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r rk">${i + 1}</td>
+          <td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
             <div class="sub">${r.stars === null ? '' : `<span class="stars" role="img" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
-          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
+          <td class="r big-result">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td>${gmsCol ? `<td class="r gms">${typeof r.gmsPct === 'number' ? r.gmsPct.toFixed(1) + '%' : '–'}</td>` : ''}<td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
       </table></div>` : `<p class="empty">No ${esc(TEST_LABELS[state.test])} results yet${state.group === 'all' ? '' : ' for this group'}${state.window === 'season' ? ' this school year' : ''}. Try another test or group.</p>`}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {

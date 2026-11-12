@@ -16,6 +16,7 @@ import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { paceText, parseDuration } from '../public/logmine.mjs';
+import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
 import { handleHealth } from '../functions/health.mjs';
@@ -2411,6 +2412,32 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).status, 'NO');   // unknown status
   // header row inside the data when Google gives no column labels
   assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
+});
+
+test('Add workout builder: plain language fills Single, Intervals and Variable; pieces match what the Sheet saves', () => {
+  const st = (o) => ({ cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', rows: { distance: [], time: [] }, ...o });
+  const a = parseNL('2 × 30:00 with 1:30 rest, aerobic, Monday');
+  assert.deepStrictEqual([a.type, a.by, a.n, a.work, a.rest, a.cat, a.day], ['intervals', 'time', '2', '30:00', '1:30', 'Aerobic', 0]);
+  const b = parseNL('4 x 2000 m with 4:00 rest, threshold, Wednesday');
+  assert.deepStrictEqual([b.type, b.by, b.n, b.work, b.rest, b.cat, b.day], ['intervals', 'distance', '4', '2000', '4:00', 'Threshold', 2]);
+  const v = parseNL('variable 2000, 1500, 1000, 500, 250 with 8, 6, 4, 2 min rest');
+  assert.strictEqual(v.type, 'variable'); assert.deepStrictEqual(v.rows.map((r) => r.r), ['8:00', '6:00', '4:00', '2:00', '']);
+  assert.strictEqual(parseNL('6000 m steady').single, '6000');
+  assert.strictEqual(parseNL('hello').type, undefined);
+  assert.deepStrictEqual(buildPieces(st({})).pieces, [{ workType: 'Time', reps: '2', work: '30:00', rest: '1:30', startEvery: '', zone: 'Aerobic', base: '', lowPct: '', highPct: '', rate: '' }]);
+  assert.strictEqual(buildPieces(st({ cat: 'Sprint', type: 'single', by: 'distance', single: '2,000 m' })).pieces[0].zone, 'Anaerobic');
+  assert.strictEqual(buildPieces(st({ cat: 'Benchmark', type: 'single', by: 'distance', single: '2000' })).pieces[0].zone, '');
+  const vp = buildPieces(st({ type: 'variable', by: 'distance', rows: { distance: v.rows, time: [] } }));
+  assert.strictEqual(vp.pieces.length, 5); assert.strictEqual(vp.pieces[0].work, '2000'); assert.strictEqual(vp.pieces[0].rest, '8:00');
+  assert.ok(buildPieces(st({ work: '30' })).err); assert.ok(buildPieces(st({ n: '0' })).err);
+  assert.strictEqual(previewOf(st({})).text, '2 × 30:00 / 1:30'); assert.ok(/Total work 1:00:00/.test(previewOf(st({})).note));
+  assert.strictEqual(previewOf(st({ type: 'single', by: 'distance', single: '6000' })).text, '6000 m');
+});
+
+test('Boards: GMS % goes to coaches only', () => {
+  const coachRow = leaderboardsView(feed, TODAY, { gms: true }).tests.find((t) => t.test === '2000m').season[0];
+  assert.ok('gmsPct' in coachRow);
+  assert.ok(!('gmsPct' in leaderboardsView(feed, TODAY).tests.find((t) => t.test === '2000m').season[0]));
 });
 
 photoTests(test);
