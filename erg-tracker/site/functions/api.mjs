@@ -2,7 +2,8 @@ import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
+import * as C2 from '../lib/concept2.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -35,7 +36,18 @@ export async function handle(req, envFn, deps = {}) {
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
-  if (path === '/api/insights') return who.kind === 'team' ? json({ ...insightsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  if (path === '/api/insights') {
+    if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
+    // Missing Logbook account (David, 2026-11-12): from Dec 1; the connection list is read only once the card is live.
+    let connected = null;
+    if (today >= LOGBOOK_MISSING_FROM) {
+      try {
+        const store = deps.store === undefined ? await C2.defaultStore() : deps.store;
+        if (store) connected = (await C2.connectedList(store)).map((c) => c.id);
+      } catch (err) { console.error('logbook list error:', err.message); }
+    }
+    return json({ ...insightsView(data, today), logbook: logbookMissingView(data, connected, today), meta });
+  }
   // Lineups: each rower's best 2k, 20' and GMS %, coaches only (David, 2026-11-11).
   if (path === '/api/lineups') return who.kind === 'team' ? json({ ...lineupsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Completion grid: coaches only (David, 2026-11-01).

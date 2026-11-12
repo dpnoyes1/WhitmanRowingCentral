@@ -273,8 +273,27 @@ export function insightsView(feed, today) {
   // Missed practices lead; a load jump only breaks ties (David, 2026-11-03).
   const bad = (r) => Number(r.missed.flag) * 2 + Number(r.thisWeek.flag || r.lastWeek.flag);
   rows.sort((x, y) => (bad(y) - bad(x)) || (y.missed.count - x.missed.count) || x.name.localeCompare(y.name));
-  return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
+  // A test is only "missing" once the team has done it this school year (David, 2026-11-12: no team 2k yet, so nobody is
+  // flagged for it): at least half of the active rowers have a valid result.
+  const teamDid = (k) => rows.length > 0 && rows.filter((r) => r.tests[k]).length * 2 >= rows.length;
+  return { today, weekStart: monday, lastWeekStart: last, testsRun: { has2k: teamDid('has2k'), has20: teamDid('has20') }, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
     missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, overreachPct: OYO_OVERREACH_PCT, attendanceRecent: ATTENDANCE_RECENT, rowers: rows };
+}
+
+/** The Missing Logbook account card starts on this date (David, 2026-11-12). */
+export const LOGBOOK_MISSING_FROM = '2026-12-01';
+
+/**
+ * Insights card "Missing Logbook account" (David, 2026-11-12): active rowers with no Concept2 Logbook connection, shown
+ * from December 1. connectedIds is the set of athlete IDs the site holds a Logbook connection for, or null when it could
+ * not be read (then `missing` is null and the page says so rather than listing everyone).
+ */
+export function logbookMissingView(feed, connectedIds, today) {
+  const active = today >= LOGBOOK_MISSING_FROM;
+  if (!active) return { from: LOGBOOK_MISSING_FROM, active, missing: [] };
+  if (!connectedIds) return { from: LOGBOOK_MISSING_FROM, active, missing: null };
+  const have = new Set(connectedIds);
+  return { from: LOGBOOK_MISSING_FROM, active, missing: activeRowers(feed).filter((a) => !have.has(a.id)).map((a) => athleteSummary(a)).sort((x, y) => x.name.localeCompare(y.name)) };
 }
 
 /** Overreaching on OYO (David, 2026-11-11): 150% or more of the Standard goal. Replaces the old 200% idea. */
