@@ -88,12 +88,17 @@ function processSiteLog_(body) {
     }
     result.entry.Source = 'Site';
     if (result.benchmark) result.benchmark.Source = 'Site';
+    // Optional proof photo (David, 2026-11-12): a failed photo never blocks the workout.
+    var photoState = '';
+    if (body.photo) {
+      try { result.entry['Photo link'] = savePhotoCopy_(body.photo, result.entry['Entry ID']); photoState = 'saved'; } catch (err) { photoState = 'failed'; }
+    }
     writeResult_(result);
     if (result.benchmark && result.benchmark['Drag check']) {
       logChange_({ Who: by, Tab: TABS.BENCHMARKS, 'Row ID': result.benchmark['Benchmark ID'], Note: result.benchmark['Drag check'] + ' (' + result.benchmark.Test + ', ' + result.benchmark.Athlete + ')' });
     }
     SpreadsheetApp.flush();
-    return { status: 'ok', entryId: result.entry['Entry ID'], athlete: name, test: result.benchmark ? result.benchmark.Test : '', sessionType: result.entry['Session type'] };
+    return { status: 'ok', entryId: result.entry['Entry ID'], athlete: name, test: result.benchmark ? result.benchmark.Test : '', sessionType: result.entry['Session type'], photo: photoState };
   } catch (err) {
     logChange_({ Who: 'site', Tab: '(site log)', 'Row ID': String(body.requestId || ''), Note: 'SITE LOG ERROR: ' + err.message });
     return { status: 'error', error: err.message };

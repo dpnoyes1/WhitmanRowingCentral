@@ -546,7 +546,7 @@ async function showAthlete(id) {
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
-    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary) : starsLine(v.gms)}
+    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.bests) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     ${v.own || v.coach ? pacingCard(v.pacing) : ''}
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes', v.insights && v.insights.load)}
@@ -747,8 +747,15 @@ function nextStarText(g) {
 }
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
-function gmsCard(gms, coach = false, summary = null) {
-  if (!gms.length) return '<div class="card"><h2>Gold Medal Standard</h2><p class="empty">No tests with a GMS yet this season.</p></div>';
+function gmsCard(gms, coach = false, summary = null, bests = []) {
+  if (!gms.length) {
+    // A 2k or 20' this season but no GMS means no weight on file: the result stands, unadjusted (David, 2026-11-11).
+    const tested = bests.some((b) => b.season && (b.test === '2000m' || b.test === '20min'));
+    const her = coach ? 'her' : 'your', herObj = coach ? 'her' : 'you';
+    return `<div class="card"><h2>Gold Medal Standard</h2><p class="empty">${tested
+      ? `A test is recorded this season, and it is shown unadjusted below. The GMS % and stars appear once a coach adds ${her} weight.`
+      : `No 2k or 20' test this season yet. A test gives ${herObj} a GMS % and stars.`}</p></div>`;
+  }
   // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
@@ -1120,13 +1127,23 @@ async function showInsights() {
 }
 
 /** Coaches only: log a workout for an athlete. The test question appears only for ONE piece of exactly 2000 m, 500 m, 100 m or 20:00.0. */
+/** A phone photo -> a JPEG of at most 1600 px (base64, no prefix) so the upload stays small. The site re-encodes it again before keeping it. */
+async function shrinkPhoto(file) {
+  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
+  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
+  const c = document.createElement('canvas');
+  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
+  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
+  return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+}
+
 async function showLogFor() {
   const team = await api('/api/team');
   setNav('log');
   const athletes = [...team.athletes].sort((x, y) => x.name.localeCompare(y.name));
   const today = new Date().toLocaleDateString('en-CA');
   const dayOpts = Array.from({ length: 15 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
-  const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], activity: 'Erg (RowErg)', mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
+  const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], activity: 'Erg (RowErg)', photo: '', photoName: '', mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
   const onErg = () => S.activity === 'Erg (RowErg)';
   const tenths = (t) => { const m = /^(\d{1,3}):([0-5]\d)(?:\.(\d))?$/.exec(String(t).trim()); return m ? (+m[1] * 60 + +m[2]) * 10 + (m[3] ? +m[3] : 0) : null; };
   const lines = () => String(S.pieces).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
@@ -1171,7 +1188,9 @@ async function showLogFor() {
           <p class="muted small">${S.test === 'yes' ? `Saves as a ${kind.what}. It counts on the boards${kind.key === '500m' || kind.key === '100m' ? ' (power checks have no stars or GMS %)' : ' and in her stars'}. A missing drag factor is flagged for coaches.` : S.test === 'no' ? 'Saves as a normal workout. It will not count on the boards.' : 'Pick one before saving.'}</p></div>`
           : !onErg() ? `<p class="muted small">${esc(S.activity)} is not an erg piece, so there is no test question. No photo is attached for now.</p>`
           : '<p class="muted small"><b>No test question.</b> It appears only for a single piece of exactly 2000 m, 500 m, 100 m or 20:00.0. Pieces inside intervals and near misses like 20:00.3 or 1999 m never ask.</p>'}
-        ${field('Note for coaches (optional)', 'note')}`}
+        ${field('Note for coaches (optional)', 'note')}
+        <div class="f"><span>Photo of the screen or watch (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lf-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lf-photo" accept="image/*" aria-label="Photo of the screen or watch">'}
+          <span class="muted small">Kept as a small private copy, with location data removed. Proof for runs, rides and other non-erg work.</span></div>`}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save workout'}</button></div></form>`;
     const f = app.querySelector('#logfor');
@@ -1179,6 +1198,15 @@ async function showLogFor() {
     f.querySelectorAll('[data-status]').forEach((b) => { b.onclick = () => { S.status = b.dataset.status; draw(); }; });
     f.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { S.mode = b.dataset.mode; S.test = null; draw(); }; });
     f.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => { S.test = b.dataset.test; draw(); }; });
+    const pick = f.querySelector('#lf-photo');
+    if (pick) pick.onchange = async () => {
+      const file = pick.files && pick.files[0];
+      if (!file) return;
+      try { S.photo = await shrinkPhoto(file); S.photoName = file.name; S.err = ''; } catch { S.err = 'That photo could not be read. Try another one.'; }
+      draw();
+    };
+    const drop = f.querySelector('#lf-photo-x');
+    if (drop) drop.onclick = () => { S.photo = ''; S.photoName = ''; draw(); };
     f.onsubmit = async (ev) => {
       ev.preventDefault();
       if (!S.athlete) { S.err = 'Choose an athlete.'; draw(); return; }
@@ -1187,13 +1215,13 @@ async function showLogFor() {
       const form = { date: S.date, activity: S.activity, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: S.rpe, drag: S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? S.drag : '', note: S.note };
       if (!(S.type === 'practice' && S.status === 'out')) { form.pieces = pieceText(); if (testKind()) form.test = S.test; }
       try {
-        const res = await fetch('/api/log', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: S.athlete, requestId: S.rid, form }) });
+        const res = await fetch('/api/log', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: S.athlete, requestId: S.rid, form, ...(S.photo ? { photo: S.photo } : {}) }) });
         const out2 = await res.json().catch(() => ({}));
         if (res.status === 401) { showLogin('You were signed out. Please sign in again.'); return; }
         if (!res.ok) { S.err = out2.error || 'Nothing was saved.'; }
         else {
-          S.msg = `Saved${out2.athlete ? ' for ' + out2.athlete : ''}${out2.test ? ' as a test' : ''}.`;
-          Object.assign(S, { time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) });
+          S.msg = `Saved${out2.athlete ? ' for ' + out2.athlete : ''}${out2.test ? ' as a test' : ''}${out2.photo === 'failed' ? ', but the photo could not be saved' : out2.photo ? ' with the photo' : ''}.`;
+          Object.assign(S, { photo: '', photoName: '', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
       S.busy = false; draw();

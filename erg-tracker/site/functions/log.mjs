@@ -2,6 +2,7 @@
 // action (apps-script/SiteLog.gs), which runs the same parser as the Form and /log. The Sheet checks every value.
 import { session } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
+import { makeKeepCopy } from '../lib/photocopy.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -28,10 +29,21 @@ export async function handleLog(req, envFn, deps = {}) {
     if (typeof f[k] !== 'string' || f[k].length > 600) return json({ error: 'Nothing to save.' }, 400);
     form[k] = f[k];
   }
+  // Optional proof photo (David, 2026-11-12): the page sends a shrunk JPEG; the kept copy is re-encoded here (about 150 KB, no metadata).
+  let photo = '';
+  if (body.photo !== undefined && body.photo !== null && body.photo !== '') {
+    if (typeof body.photo !== 'string' || body.photo.length > 6_000_000 || !/^[A-Za-z0-9+/=]+$/.test(body.photo)) return json({ error: 'That photo could not be used.' }, 400);
+    try {
+      photo = Buffer.from((await makeKeepCopy(Buffer.from(body.photo, 'base64'), { sharp: deps.sharp })).bytes).toString('base64');
+    } catch (err) {
+      console.error('site log photo error:', err.message);
+      return json({ error: 'That photo could not be read. Try another one, or save without it.' }, 422);
+    }
+  }
   const requestId = typeof body.requestId === 'string' ? body.requestId.slice(0, 60) : '';
   let out;
   try {
-    out = await callSheet(envFn, deps.fetchImpl || fetch, { action: 'site-log', athleteId: body.athleteId, coachName: who.name || 'Coach', requestId, form });
+    out = await callSheet(envFn, deps.fetchImpl || fetch, { action: 'site-log', athleteId: body.athleteId, coachName: who.name || 'Coach', requestId, form, ...(photo ? { photo } : {}) });
   } catch (err) {
     console.error('site log error:', err.message);
     return json({ error: 'The Sheet did not answer, so nothing was saved. Try again in a minute.' }, 502);
@@ -42,7 +54,7 @@ export async function handleLog(req, envFn, deps = {}) {
     console.error('site log said:', out.error);
     return json({ error: 'The Sheet could not save that. Nothing was changed.' }, 502);
   }
-  return json({ status: 'ok', athlete: out.athlete, test: out.test, sessionType: out.sessionType });
+  return json({ status: 'ok', athlete: out.athlete, test: out.test, sessionType: out.sessionType, photo: photo ? (out.photo || 'saved') : '' });
 }
 
 export default (req) => handleLog(req, env);

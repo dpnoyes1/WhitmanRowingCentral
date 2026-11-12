@@ -2085,7 +2085,7 @@ test('log for an athlete: coaches only, form fields only, to the Sheet with the 
   assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
   let res = await handleLog(post(coach, { athleteId: 'A901', requestId: 'r1', form }), env, { fetchImpl: sheet({ status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice' }) });
   assert.strictEqual(res.status, 200);
-  assert.deepStrictEqual(await res.json(), { status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice' });
+  assert.deepStrictEqual(await res.json(), { status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice', photo: '' });
   assert.deepStrictEqual(calls[0], { action: 'site-log', athleteId: 'A901', coachName: 'Pat Example', requestId: 'r1', form: { date: '2026-11-11', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', test: 'yes' }, key: 'fake-key' });
   res = await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }) });
   assert.strictEqual(res.status, 422);
@@ -2095,6 +2095,19 @@ test('log for an athlete: coaches only, form fields only, to the Sheet with the 
   assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form: { pieces: 'x'.repeat(700) } }), env, { fetchImpl: sheet({}) })).status, 400);
   assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'duplicate' }) })).status, 200);
   assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  // proof photo: re-encoded here (small, no metadata) before it goes to the Sheet
+  const { default: sharp } = await import('sharp');
+  const jpeg = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#336699' } }).jpeg().withMetadata({ exif: { IFD0: { Copyright: 'secret place' } } }).toBuffer();
+  const before = calls.length;
+  res = await handleLog(post(coach, { athleteId: 'A901', form: { ...form, activity: 'Run' }, photo: jpeg.toString('base64') }), env, { fetchImpl: sheet({ status: 'ok', athlete: 'Fake Athlete', test: '', sessionType: 'Practice', photo: 'saved' }) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual((await res.json()).photo, 'saved');
+  const sent = calls[before].photo;
+  assert.ok(sent && sent.length < 400000, 'a small copy goes to the Sheet');
+  const meta = await sharp(Buffer.from(sent, 'base64')).metadata();
+  assert.ok(meta.width <= 1280 && !meta.exif, 'resized and no metadata kept');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: Buffer.from('not an image').toString('base64') }), env, { fetchImpl: sheet({}) })).status, 422, 'an unreadable photo is refused before the Sheet');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: 'data:image/jpeg;base64,xx' }), env, { fetchImpl: sheet({}) })).status, 400);
 });
 
 test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {
