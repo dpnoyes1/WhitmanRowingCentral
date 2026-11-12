@@ -102,7 +102,9 @@ function sessionRow(e, settings) {
   return {
     id: e.id, date: e.date, type: e.type, status: e.status, activity: e.activity, mainSet: e.mainSet, zone: e.zone,
     makeupFor: e.makeupFor || '', minutes: round(rawMinutes(e)), weighted: round(weightedMinutes(e, settings)),
-    meters: meterTotal(e) ? round(meterTotal(e)) : null, rpe: e.rpe, test: !!e.benchmarkId
+    meters: meterTotal(e) ? round(meterTotal(e)) : null, rpe: e.rpe, test: !!e.benchmarkId,
+    // Drag factor shows only on workouts imported from Logbook (David, 2026-11-12).
+    drag: e.source === 'Logbook' && e.dragFactor ? e.dragFactor : null
   };
 }
 

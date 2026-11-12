@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
+import { lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, workoutView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -73,6 +73,14 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)' }), 40);
   assert.strictEqual(S.meterTotal({ ...lift, activity: 'Erg (RowErg)', warmupM: 500, cooldownM: 200 }), 740);
   assert.strictEqual(S.bucket({ type: 'Make-up' }), 'practice');
+});
+
+test('drag factor shows only on workouts imported from Logbook', () => {
+  const e = { id: 'x', date: '2026-11-10', type: 'Practice', status: 'Full', activity: 'Erg (RowErg)', dragFactor: 115 };
+  const row = (extra) => workoutView({ athletes: [], settings: {}, entries: [{ ...e, ...extra }] }, 'x', '2026-11-12').workout;
+  assert.strictEqual(row({ source: 'Logbook' }).drag, 115);
+  assert.strictEqual(row({ source: 'Form' }).drag, null);
+  assert.strictEqual(row({ source: 'Logbook', dragFactor: null }).drag, null);
 });
 
 test('warm-up and cool-down: erg only, split must be faster than 3:00/500m, rest never counts', () => {
