@@ -50,8 +50,12 @@ export async function handle(req, envFn, deps = {}) {
   }
   // Lineups: each rower's best 2k, 20' and GMS %, coaches only (David, 2026-11-11).
   if (path === '/api/lineups') return who.kind === 'team' ? json({ ...lineupsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
-  // Completion grid: coaches only (David, 2026-11-01).
-  if (path === '/api/completion') return who.kind === 'team' ? json({ ...completionView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // Attendance: everyone on the team sees it (David, 2026-11-12); the OYO columns stay coaches only.
+  if (path === '/api/completion') {
+    const view = completionView(data, today);
+    if (who.kind === 'team') return json({ ...view, meta });
+    return json({ ...view, rows: view.rows.map(({ oyo, ...r }) => r), meta });
+  }
   // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).
   if (path === '/api/balance') return who.kind === 'team' ? json({ ...balanceView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });

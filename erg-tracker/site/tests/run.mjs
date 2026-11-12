@@ -220,7 +220,7 @@ test('lineups view: raw best 2k and 20, combined GMS %, no weight or birthday', 
   assert.ok(v.rowers.every((r) => r.gmsPct === null || (r.gmsPct > 30 && r.gmsPct < 130)));
 });
 
-test('completion grid: season % first, last 15 practice days, coaches only', async () => {
+test('completion grid: season % first, last 15 practice days', async () => {
   const v = completionView(feed, TODAY);
   assert.strictEqual(v.rows.length, 30);
   assert.ok(v.dates.length > 0 && v.dates.length <= 15, 'at most 15 practice days');
@@ -556,6 +556,11 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual((await res.json()).athlete.id, tested.id);
   // Star rankings are coaches only.
   assert.strictEqual((await handle(new Request('https://x/api/stars', { headers: { cookie: her } }), env, deps)).status, 403);
+  // Attendance is open to athletes, without the OYO columns (David, 2026-11-12).
+  const att = await (await handle(new Request('https://x/api/completion', { headers: { cookie: her } }), env, deps)).json();
+  assert.ok(att.rows.length > 1 && att.rows.every((r) => !('oyo' in r)) && !/birth|weight/i.test(JSON.stringify(att)));
+  const attCoach = await (await handle(new Request('https://x/api/completion', { headers: { cookie } }), env, deps)).json();
+  assert.ok(attCoach.rows.every((r) => r.oyo.length === 2));
   // No response ever carries a sign-in code.
   const codes = feed.logins.map((l) => l.code);
   assert.ok(codes.length > 0);

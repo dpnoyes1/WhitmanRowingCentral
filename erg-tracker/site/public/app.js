@@ -123,7 +123,7 @@ function setNav(active) {
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
-  document.getElementById('nav-completion').hidden = !isCoach();
+  document.getElementById('nav-completion').hidden = false;
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
@@ -1359,22 +1359,24 @@ async function showLineups() {
   openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
 }
 
-/** Coaches only: Name, season %, then the last practice days and OYO weeks. */
+/** Everyone on the team (David, 2026-11-12): name, season %, then the last practice days. Athletes see themselves first. */
 async function showCompletion() {
   const v = await api('/api/completion');
   setNav('completion');
   const name = { F: 'Logged', M: 'Modified', U: 'Made up', P: 'Absent, make-up still open', O: 'Absent', W: 'Week in progress' };
   const dot = (c, d) => `<span class="ad ad-${c || 'N'}" title="${esc(fmtDate(d, { month: 'short', day: 'numeric' }) + ' · ' + (c ? name[c] : 'No session'))}"></span>`;
-  const rows = [...v.rows].sort((x, y) => (y.pct ?? -1) - (x.pct ?? -1) || x.name.localeCompare(y.name));
+  const mine = !isCoach() && me() ? me().id : null;
+  const rows = [...v.rows].sort((x, y) => (x.id === mine ? -1 : 0) - (y.id === mine ? -1 : 0) || (y.pct ?? -1) - (x.pct ?? -1) || x.name.localeCompare(y.name));
+  const own = mine ? rows.find((r) => r.id === mine) : null;
   const withPct = rows.filter((r) => r.pct !== null);
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}</div><h1>Attendance</h1></div></div>
-    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}</div>
+    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
-      <div class="att-head"><span>Athlete (sorted by %)</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
-      ${rows.map((r) => `<div class="att-row"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a>
+      <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
+      ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
         <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
         <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
       <p class="note">The circles show the last ${v.dates.length} practices; the percentage covers the whole season. Present means a logged workout. Modified and made-up sessions count as present. Any miss counts, with no excused split. Hover a circle for the day.</p></div>
@@ -1690,7 +1692,7 @@ async function route() {
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'insights' && isCoach()) return await showInsights();
-    if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
+    if (page === 'completion' || page === 'attendance') return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'plan' && isCoach()) return await showPlan();
@@ -1703,7 +1705,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
