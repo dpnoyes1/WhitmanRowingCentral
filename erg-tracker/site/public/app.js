@@ -378,7 +378,7 @@ function showLogin(note = '') {
   closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Rowing</h1>
-    <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY). Coaches: your full name, and your birthday the first time (then set your own password from the menu).</p>
+    <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY) the first time; you then choose your own password. If you forget it, ask a coach to reset it. Coaches: your full name, and your birthday the first time (then set your own password from the menu).</p>
     ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
       <label for="name" class="small">Name</label>
@@ -406,7 +406,46 @@ function showLogin(note = '') {
       body = await res.json().catch(() => ({}));
     } catch { return done('Could not reach the site. Check your connection and try again.'); }
     if (res.status === 429) return done('Too many sign-ins from this network right now. Wait a minute and try again.');
+    if (body.mustChange && res.status === 200) { done(''); return chooseLoginPassword(document.getElementById('name').value, document.getElementById('pw').value); }
     if (!res.ok) return done(body.error || 'Could not sign in.');
+    store.set(OLD_ME_KEY, null);
+    setSession(null);
+    const back = returnTo; returnTo = '';
+    if (back && back !== '#/') { if (location.hash === back) route(); else location.hash = back; } else { location.hash = '#/'; route(); }
+  };
+}
+
+/** Athlete first sign-in or after a coach reset (David, 2026-11-12): choose a password of 6 or more characters before the session starts. */
+function chooseLoginPassword(name, current) {
+  const card = app.querySelector('.login');
+  card.innerHTML = `<h1>Choose your password</h1>
+    <p class="muted">Pick a password you will remember, at least 6 characters. You will use it to sign in from now on, and your birthday will no longer work.</p>
+    <form id="choosepw">
+      <label for="npw" class="small">New password</label>
+      <input id="npw" type="password" autocomplete="new-password" required minlength="6">
+      <label for="npw2" class="small">Type it again</label>
+      <input id="npw2" type="password" autocomplete="new-password" required minlength="6">
+      <button class="btn" type="submit" id="savepw"><span class="spinner" aria-hidden="true"></span><span class="label">Save and sign in</span></button>
+      <p id="choose-err" class="error small" role="alert"></p>
+    </form>`;
+  document.getElementById('npw').focus();
+  document.getElementById('choosepw').onsubmit = async (ev) => {
+    ev.preventDefault();
+    const err = document.getElementById('choose-err'), btn = document.getElementById('savepw');
+    const a = document.getElementById('npw').value, b = document.getElementById('npw2').value;
+    err.textContent = '';
+    if (a.trim().length < 6) { err.textContent = 'Your password needs at least 6 characters.'; return; }
+    if (a !== b) { err.textContent = 'The two passwords do not match.'; return; }
+    if (btn.disabled) return;
+    btn.disabled = true; btn.classList.add('busy');
+    const fail = (msg) => { btn.disabled = false; btn.classList.remove('busy'); err.textContent = msg; };
+    let res, out;
+    try {
+      res = await fetch('/api/login', { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ name, password: current, newPassword: a }) });
+      out = await res.json().catch(() => ({}));
+    } catch { return fail('Could not reach the site. Check your connection and try again.'); }
+    if (res.status === 401) return showLogin('That did not work. Please sign in again.');
+    if (!res.ok) return fail(out.error || 'Could not save your password.');
     store.set(OLD_ME_KEY, null);
     setSession(null);
     const back = returnTo; returnTo = '';
@@ -1452,7 +1491,7 @@ function sessionsTable(rows) {
 // field list; only fields that changed are sent back, and the Sheet checks every value.
 
 async function showSettings() {
-  const [v, pw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null)]);
+  const [v, pw, apw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
     app.innerHTML = `<div class="head"><div><h1>Settings</h1>
@@ -1467,9 +1506,11 @@ async function showSettings() {
         <section class="card"><h2>Access</h2>
           <p class="small">The Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
         ${coachPasswordsCard(pw)}
+        ${athletePasswordsCard(apw)}
       </div>${footer(v.meta)}`;
     wireFooter();
     wireCoachPasswords();
+    wireAthletePasswords();
     const save = document.getElementById('save');
     const inputs = [...app.querySelectorAll('input[data-key]')];
     const changed = () => inputs.filter((i) => i.value.trim() !== i.dataset.was);
@@ -1532,6 +1573,45 @@ function wireCoachPasswords() {
       }
     };
   });
+}
+
+/**
+ * Athlete passwords (David, 2026-11-12): a coach resets an athlete's password here. The site makes a random temporary
+ * one and shows it once; the athlete types it with her name and must then choose her own (6+ characters).
+ */
+function athletePasswordsCard(apw) {
+  const list = apw && apw.athletes;
+  const label = { birthday: 'birthday (no password yet)', set: 'has her own password', temporary: 'temporary password issued' };
+  const body = !list ? '<p class="error small">The list could not be loaded. Reload the page to try again.</p>'
+    : `<label class="small" for="apw-pick">Athlete</label>
+      <select id="apw-pick" class="in">${list.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(label[a.status] || a.status)}</option>`).join('')}</select>
+      <button class="btn" type="button" id="apw-reset">Reset password</button>`;
+  return `<section class="card" id="athlete-pw"><h2>Athlete passwords</h2>
+    <p class="muted small">Athletes sign in with their birthday once, then choose their own password. If one forgets, reset it here: you get a random temporary password to give her. She types it with her name and then chooses a new one.</p>
+    ${body}<p id="athlete-pw-msg" class="small" role="status"></p></section>`;
+}
+
+function wireAthletePasswords() {
+  const b = document.getElementById('apw-reset');
+  if (!b) return;
+  b.onclick = async () => {
+    const sel = document.getElementById('apw-pick'), msg = document.getElementById('athlete-pw-msg');
+    const name = sel.options[sel.selectedIndex].textContent.split(' · ')[0];
+    if (!confirm(`Reset ${name}'s password? Her current password (or birthday) will stop working.`)) return;
+    b.disabled = true; msg.className = 'small'; msg.textContent = '';
+    try {
+      const res = await fetch('/api/athlete-passwords', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: sel.value }) });
+      if (res.status === 401) { setSession(null); showLogin('You were signed out. Please sign in again.'); return; }
+      const out = await res.json().catch(() => ({}));
+      if (!res.ok) { msg.className = 'error small'; msg.textContent = out.error || 'That did not work.'; b.disabled = false; return; }
+      msg.className = 'good-text small';
+      msg.innerHTML = `${esc(out.name)}'s temporary password is <strong class="mono">${esc(out.password)}</strong>. Give it to her now: it is shown only once. She types it with her name, then chooses her own password.`;
+      sel.options[sel.selectedIndex].textContent = `${out.name} · temporary password issued`;
+      b.disabled = false;
+    } catch {
+      msg.className = 'error small'; msg.textContent = 'Could not reach the site. Nothing was changed.'; b.disabled = false;
+    }
+  };
 }
 
 // ---- router --------------------------------------------------------------

@@ -15,6 +15,7 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handlePassword } from '../functions/password.mjs';
+import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -741,6 +742,89 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   const a = feed.athletes.find((x) => x.active);
   const [y, m, d] = dummyBirthday(a.id).split('-');
   assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, broken)).status, 200);
+  clearFeedCache();
+});
+
+test('athlete password: birthday once, then she must choose 6+ characters; a coach reset gives a random temporary one', async () => {
+  const { athletePasswordProblem, generateTempPassword } = await import('../lib/coachpw.mjs');
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const athleteStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); }, keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore: null, athleteStore, shared: null, today: TODAY };
+  const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
+  const login = (body) => handleLogin(post('/api/login', body), env2, deps);
+  const tokenOf = (res) => (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))?.[1];
+  const a = feed.athletes.find((x) => x.active);
+  const day = dummyBirthday(a.id), [y, m, d] = day.split('-'), bday = `${m}/${d}/${y}`;
+  clearFeedCache();
+  // Rules: 6 characters minimum, nothing else.
+  assert.ok(athletePasswordProblem('12345'));
+  assert.ok(athletePasswordProblem('     '));
+  assert.strictEqual(athletePasswordProblem('abc123'), '');
+  assert.match(generateTempPassword(), /^[a-z2-9]{8}$/);
+  // First sign-in: the birthday is right, but no session until she chooses a password.
+  let res = await login({ name: a.name, password: bday });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.strictEqual(tokenOf(res), undefined, 'no cookie yet');
+  assert.strictEqual(mem.size, 0);
+  res = await login({ name: a.name, password: bday, newPassword: 'abc' });
+  assert.strictEqual(res.status, 400, 'too short');
+  assert.strictEqual(tokenOf(res), undefined);
+  res = await login({ name: a.name, password: bday, newPassword: bday });
+  assert.strictEqual(res.status, 400, 'must differ from the birthday she typed');
+  res = await login({ name: a.name, password: 'wrong', newPassword: 'rowing2026' });
+  assert.strictEqual(res.status, 401, 'a wrong current password cannot set one');
+  assert.strictEqual(mem.size, 0);
+  res = await login({ name: a.name, password: bday, newPassword: ' rowing2026 ' });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(A.readToken(A.sessionSecret(env2), tokenOf(res)), { kind: 'athlete', id: a.id });
+  assert.ok(!JSON.stringify([...mem.values()]).includes('rowing2026'), 'only a hash is stored');
+  // After that the birthday is refused and the password works (spaces at the ends do not matter).
+  assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
+  res = await login({ name: a.name.toUpperCase(), password: 'rowing2026' });
+  assert.strictEqual(res.status, 200);
+  assert.ok(tokenOf(res), 'signed in, no further change asked');
+  assert.strictEqual((await res.json()).mustChange, undefined);
+  assert.strictEqual((await login({ name: a.name, password: 'rowing2027' })).status, 401);
+  // Coach reset: coaches only, athletes on the roster only, password shown once.
+  const coachTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), 'team', Date.now(), 'Pat Example');
+  const athTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), a.id);
+  const reset = (id, cookie, extra = {}) => handleAthletePasswords(new Request('https://x/api/athlete-passwords', { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: JSON.stringify({ reset: id }) }), env2, deps);
+  assert.strictEqual((await reset(a.id, '')).status, 401);
+  assert.strictEqual((await reset(a.id, athTok)).status, 403, 'athletes cannot reset');
+  assert.strictEqual((await reset('A000', coachTok)).status, 400);
+  assert.strictEqual((await reset(a.id, coachTok, { origin: 'https://evil.example' })).status, 400);
+  const list = await (await handleAthletePasswords(get('/api/athlete-passwords', coachTok), env2, deps)).json();
+  assert.strictEqual(list.athletes.find((x) => x.id === a.id).status, 'set');
+  assert.ok(list.athletes.some((x) => x.status === 'birthday'));
+  assert.strictEqual((await handleAthletePasswords(get('/api/athlete-passwords', athTok), env2, deps)).status, 403);
+  const out = await (await reset(a.id, coachTok)).json();
+  assert.strictEqual(out.name, a.name);
+  assert.match(out.password, /^[a-z2-9]{8}$/);
+  assert.strictEqual((await handleAthletePasswords(get('/api/athlete-passwords', coachTok), env2, deps).then((r) => r.json())).athletes.find((x) => x.id === a.id).status, 'temporary');
+  assert.ok(!JSON.stringify([...mem.values()]).includes(out.password), 'the temporary password is not stored in the clear');
+  // Her old password and her birthday stop working; the temporary one works once, then she must choose again.
+  assert.strictEqual((await login({ name: a.name, password: 'rowing2026' })).status, 401);
+  assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
+  res = await login({ name: a.name, password: out.password });
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.strictEqual(tokenOf(res), undefined);
+  res = await login({ name: a.name, password: out.password, newPassword: 'newone99' });
+  assert.strictEqual(res.status, 200);
+  assert.ok(tokenOf(res));
+  assert.strictEqual((await login({ name: a.name, password: out.password })).status, 401, 'temporary password is used up');
+  assert.strictEqual((await login({ name: a.name, password: 'newone99' })).status, 200);
+  // Coaches still sign in as before; a store that cannot save never traps an athlete behind a password she cannot set.
+  assert.strictEqual((await login({ name: 'Pat Example', password: '2/3/1980' })).status, 200);
+  const nodeps = { ...deps, athleteStore: null };
+  const b = feed.athletes.find((x) => x.active && x.id !== a.id);
+  const [by, bm, bd] = dummyBirthday(b.id).split('-');
+  res = await handleLogin(post('/api/login', { name: b.name, password: `${bm}/${bd}/${by}` }), env2, nodeps);
+  assert.ok(tokenOf(res), 'no store: birthday signs in as before');
   clearFeedCache();
 });
 
