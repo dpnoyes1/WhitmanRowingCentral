@@ -4,6 +4,7 @@
 // in as themselves (name + birthday); coaches with their own password.
 
 import { loadPractice } from './practice.mjs';
+import { openLineups } from './lineups.mjs';
 
 const app = document.getElementById('app');
 const practiceBox = document.getElementById('practice');
@@ -120,6 +121,7 @@ function setNav(active) {
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
   document.getElementById('nav-completion').hidden = !isCoach();
+  document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
     const on = a.dataset.nav === active;
@@ -1051,7 +1053,7 @@ async function showStars() {
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Stars</h1>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>GMS Rating</h1>
     <p class="muted">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
     ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" role="img" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
       <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}<span class="by-test muted small">${['2000m', '20min'].map((t) => r.byTest[t] === null ? '' : `${TEST_LABELS[t]} ${r.byTest[t]}★`).filter(Boolean).join(' · ')}</span></span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
@@ -1077,9 +1079,24 @@ async function showInsights() {
     : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
       : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
   const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${jump(w)}</td>`;
+  let which = 'season';
+  const draw = () => {
+  const over = v.rowers.filter((r) => r.oyo.pct !== null && r.oyo.pct >= v.overreachPct).sort((x, y) => y.oyo.pct - x.oyo.pct);
+  const pc = (r) => (which === 'recent' ? r.attendance.recent : r.attendance.season);
+  const low = v.rowers.filter((r) => pc(r) !== null && pc(r) < 80).sort((x, y) => pc(x) - pc(y));
+  const noTest = v.rowers.filter((r) => !r.tests.has2k || !r.tests.has20);
+  const rowLink = (r, right) => `<div class="ins-row"><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span><span class="r">${right}</span></div>`;
+  const alerts = `<div class="grid">${tile('Overreaching on OYO', over.length, `${v.overreachPct}% or more of Standard`)}${tile('Attendance under 80%', low.length, which === 'recent' ? `last ${v.attendanceRecent} practices` : 'this season')}${tile("Missing a test", noTest.length, "2k or 20' this school year")}</div>
+    <div class="cols">
+      <div class="card"><h2>Overreaching on OYO</h2><p class="muted small">This week's weighted OYO minutes at ${v.overreachPct}% or more of her Standard goal.</p>${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div>
+      <div class="card"><div class="ins-head"><h2>Attendance under 80%</h2><div class="seg" role="group" aria-label="Attendance period"><button type="button" data-att="season" aria-pressed="${which === 'season'}">Season</button><button type="button" data-att="recent" aria-pressed="${which === 'recent'}">Past 2 weeks</button></div></div>
+        <p class="muted small">A made-up practice counts as present. ${which === 'recent' ? `Her last ${v.attendanceRecent} practices.` : 'Every practice so far this school year.'}</p>${low.length ? low.map((r) => rowLink(r, `<b class="num">${pc(r)}%</b>`)).join('') : '<p class="muted">Nobody.</p>'}</div>
+      <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or no 20' yet this school year.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[!r.tests.has2k && 'no 2k', !r.tests.has20 && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
+    </div>`;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
     <p class="muted">Coaches only. ${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
       Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
+    ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
         <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
@@ -1092,7 +1109,17 @@ async function showInsights() {
     </table></div>
     <p class="muted small">Missed: practices not logged or made up in the last ${v.missedWindowDays} days (open = still inside the make-up window, overdue = past it); ${v.missedFlagAt} or more is flagged. Steady split: her latest weeks of Aerobic erg work against the weeks before (▲ faster). Est. 2k: from a 20' newer than her last 2k. Month: planned practices logged, make-ups count. Open a rower for her charts.</p></div>
     ${footer(v.meta)}`;
+  app.querySelectorAll('[data-att]').forEach((b) => { b.onclick = () => { which = b.dataset.att; draw(); }; });
   wireFooter();
+  };
+  draw();
+}
+
+/** Coaches only: build boats from today's group. Nothing is saved. */
+async function showLineups() {
+  const v = await api('/api/lineups');
+  setNav('lineups');
+  openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
 }
 
 /** Coaches only: Name, season %, then the last practice days and OYO weeks. */
@@ -1103,7 +1130,7 @@ async function showCompletion() {
   const name = { F: 'Full', M: 'Modified', U: 'Made up', P: 'Out, make-up open', O: 'Out, window closed', W: 'Week in progress' };
   const cell = (c, title) => `<td class="c">${c ? `<span class="cg cg-${c}" title="${esc(title || name[c])}">${sym[c]}</span>` : ''}</td>`;
   const head = (d) => `<th class="c">${fmtDate(d, { weekday: 'short' })}<br>${fmtDate(d, { month: 'short', day: 'numeric' })}</th>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Completion</h1>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1>
     <p class="muted">Coaches only. Last ${v.dates.length} practice days, with each rower's completion % for the whole school year since ${fmtDate(v.yearStart)}.</p></div></div>
     <div class="card"><div class="legend">${['F', 'M', 'U', 'P', 'O', 'W'].map((k) => `<span><span class="cg cg-${k}">${sym[k]}</span> ${name[k]}</span>`).join('')}</div>
     <div class="table-wrap"><table class="insights grid">
@@ -1380,7 +1407,8 @@ async function route() {
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'insights' && isCoach()) return await showInsights();
-    if (page === 'completion' && isCoach()) return await showCompletion();
+    if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
+    if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
@@ -1388,7 +1416,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {

@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
+import { lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -154,6 +154,28 @@ test('insights: missed practices not made up in the last 4 weeks', () => {
   assert.strictEqual(missedNotMadeUp([rec('2026-10-22', false)], '2026-10-23', 7).flag, false, 'one miss is not flagged');
   const v = insightsView(feed, TODAY);
   assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
+});
+
+test('insights (2026-11-11): attendance season and recent, OYO % of Standard, tests present', async () => {
+  const v = insightsView(feed, TODAY);
+  assert.strictEqual(v.overreachPct, 150);
+  assert.strictEqual(OYO_OVERREACH_PCT, 150);
+  assert.strictEqual(v.attendanceRecent, 10);
+  v.rowers.forEach((r) => {
+    assert.ok(r.attendance.recentOf <= 10, 'past 2 weeks = at most the last 10 practices');
+    [r.attendance.season, r.attendance.recent].forEach((x) => assert.ok(x === null || (x >= 0 && x <= 100)));
+    assert.strictEqual(typeof r.tests.has2k, 'boolean');
+    assert.strictEqual(typeof r.oyo.standard, 'number');
+    if (r.oyo.pct !== null) assert.strictEqual(r.oyo.pct, Math.round((100 * r.oyo.minutes) / r.oyo.standard));
+  });
+});
+
+test('lineups view: raw best 2k and 20, combined GMS %, no weight or birthday', async () => {
+  const v = lineupsView(feed, TODAY);
+  assert.strictEqual(v.rowers.length, 30);
+  assert.ok(v.rowers.every((r) => Object.keys(r).sort().join() === 'gmsPct,grade,id,k2S,m20,name,squad'), 'only id, name, squad, grade, k2S, m20, gmsPct');
+  assert.ok(v.rowers.some((r) => r.k2S && r.m20 && r.gmsPct !== null), 'someone has both tests and a GMS %');
+  assert.ok(v.rowers.every((r) => r.gmsPct === null || (r.gmsPct > 30 && r.gmsPct < 130)));
 });
 
 test('completion grid: season % first, last 10 practice days, coaches only', async () => {

@@ -2,7 +2,7 @@ import { session } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -36,6 +36,8 @@ export async function handle(req, envFn, deps = {}) {
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
   if (path === '/api/insights') return who.kind === 'team' ? json({ ...insightsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // Lineups: each rower's best 2k, 20' and GMS %, coaches only (David, 2026-11-11).
+  if (path === '/api/lineups') return who.kind === 'team' ? json({ ...lineupsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Completion grid: coaches only (David, 2026-11-01).
   if (path === '/api/completion') return who.kind === 'team' ? json({ ...completionView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).
@@ -97,4 +99,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/photo/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/completion', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/photo/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/completion', '/api/lineups', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
