@@ -634,3 +634,4 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .logfor .card.hl { border-color: var(--accent); }
 .logfor .btn { min-height: 52px; font-weight: 600; }
 .att-row.me { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 8px; padding: 8px 10px; margin: 0 -10px 8px; }
+.hrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }

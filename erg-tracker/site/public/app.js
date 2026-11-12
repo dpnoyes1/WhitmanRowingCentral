@@ -468,17 +468,17 @@ async function showTeam() {
       <div class="head"><div><div class="eyebrow">Week of ${fmtDate(t.weekStart)} · ${g.rowers} rowers</div><h1>Team</h1></div>
         <div class="seg" role="group" aria-label="Squad">${['all', 'varsity', 'novice'].map((k) =>
           `<button data-sq="${k}" aria-pressed="${k === squad}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div></div>
+      ${teamTodayCard(wk, squad)}
       <div class="grid">
         ${tile('Practice completion', w.completionPct === null ? '–' : w.completionPct + '%', `${w.practicesDone} of ${w.practicesExpected} this week`)}
         ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Jul 1')}
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
-      ${teamTodayCard(wk, squad)}
+      <div class="two">${t.splits ? splitsCard(t.splits) : ''}
+        <div class="card"><h2>Weekly training</h2><p class="muted small">Average per rower, weighted minutes</p>
+        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div></div>
       ${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}
-      ${t.splits ? splitsCard(t.splits) : ''}
-      <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
-        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
         <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
         <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
@@ -544,15 +544,20 @@ async function showAthletes() {
   setNav('athletes');
   const mine = me();
   app.innerHTML = `<div class="head"><div><div class="eyebrow">${t.athletes.length} rowers</div><h1>Athletes</h1></div>
-    <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
-    ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
+    <div class="hrow"><div class="seg" role="group" aria-label="Squad">${['all', 'varsity', 'novice'].map((k) => `<button type="button" data-asq="${k}" aria-pressed="${k === 'all'}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
+    <div style="min-width:200px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div></div>
+    ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad="${sq.toLowerCase()}"><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
         <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
-  document.getElementById('q').oninput = (ev) => {
-    const q = ev.target.value.trim().toLowerCase();
-    app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = q && !a.dataset.name.includes(q); });
+  let asq = 'all';
+  const filter = () => {
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = !!q && !a.dataset.name.includes(q); });
+    app.querySelectorAll('[data-squad]').forEach((c) => { c.hidden = asq !== 'all' && c.dataset.squad !== asq; });
   };
+  document.getElementById('q').oninput = filter;
+  app.querySelectorAll('[data-asq]').forEach((b) => { b.onclick = () => { asq = b.dataset.asq; app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); filter(); }; });
   wireFooter();
 }
 
@@ -572,7 +577,7 @@ async function showAthlete(id) {
   const madeUp = v.madeUp && v.madeUp.length ? `<div class="card"><h2>Made up</h2>
       ${v.madeUp.map((m) => `<p>${fmtDay(m.date)} practice <span class="pill good">Made up ${fmtDate(m.makeupDate)} ✓</span></p>`).join('')}</div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
-    <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${s.completionPct === null ? '' : ` · completion ${s.completionPct}% this season`}</p></div>
+    <div class="head"><div><div class="eyebrow">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${v.coach && !v.own ? ' · coach view' : ''}</div><h1>${esc(a.name)}</h1>${s.completionPct === null ? '' : `<p class="muted">Completion ${s.completionPct}% this season</p>`}</div>
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
     ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
     ${v.own || v.coach ? '<div id="logbook-card"></div>' : ''}
