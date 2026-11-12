@@ -465,7 +465,7 @@ async function showTeam() {
     const g = t.groups[squad];
     const w = g.week;
     app.innerHTML = `${staleNote(t.meta)}
-      <div class="head"><div><h1>Team</h1><p class="muted">Week of ${fmtDate(t.weekStart)} · ${g.rowers} rowers</p></div>
+      <div class="head"><div><div class="eyebrow">Week of ${fmtDate(t.weekStart)} · ${g.rowers} rowers</div><h1>Team</h1></div>
         <div class="seg" role="group" aria-label="Squad">${['all', 'varsity', 'novice'].map((k) =>
           `<button data-sq="${k}" aria-pressed="${k === squad}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div></div>
       <div class="grid">
@@ -543,7 +543,7 @@ async function showAthletes() {
   const linked = new Set(c2 && Array.isArray(c2.connected) ? c2.connected.map((c) => c.id) : []);
   setNav('athletes');
   const mine = me();
-  app.innerHTML = `<div class="head"><div><h1>Athletes</h1><p class="muted">${t.athletes.length} rowers</p></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">${t.athletes.length} rowers</div><h1>Athletes</h1></div>
     <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
     ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
@@ -1219,7 +1219,7 @@ async function showLogFor() {
   const draw = () => {
     const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
     if (!kind) S.test = null;
-    app.innerHTML = `<div class="head"><div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
       <form class="card logfor" id="logfor" novalidate>
         <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
@@ -1287,7 +1287,7 @@ async function showWeights() {
   let editing = null, msg = '';
   const draw = () => {
     const n = (s) => v.rows.filter((r) => r.status === s).length;
-    app.innerHTML = `<div class="head"><div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
       <div class="grid">${tile('Current', n('Current'), 'entered this school year')}${tile('Due', n('Due'), `entered before ${fmtDate(v.yearStart)}`)}${tile('Missing', n('Missing'), 'tests score unadjusted')}</div>
       ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}
       <div class="card"><div class="table-wrap"><table>
@@ -1503,7 +1503,7 @@ async function showSettings() {
   const [v, pw, apw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
-    app.innerHTML = `<div class="head"><div><h1>Settings</h1>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1>
       <p class="muted">Coaches only. Changes recalculate all history: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p></div>
       <button class="btn" id="save" type="button" disabled>Save changes</button></div>
       <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
