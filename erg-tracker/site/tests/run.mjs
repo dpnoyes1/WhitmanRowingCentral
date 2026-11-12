@@ -12,6 +12,7 @@ import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
 import { handleWeights } from '../functions/weights.mjs';
+import { handleLog } from '../functions/log.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
@@ -2068,6 +2069,31 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(x.calls[1].url, 'https://slack.com/api/chat.update');
   assert.deepStrictEqual([x.calls[1].body.channel, x.calls[1].body.ts], ['D1', '1.2']);
   assert.ok(/Counted/.test(x.calls[1].body.text));
+});
+
+test('log for an athlete: coaches only, form fields only, to the Sheet with the feed key', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/log', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const form = { date: '2026-11-11', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', test: 'yes', evil: 'x' };
+  assert.strictEqual((await handleLog(new Request('https://x/api/log', { method: 'POST' }), env, {})).status, 401);
+  assert.strictEqual((await handleLog(post(athlete, { athleteId: 'A901', form }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleLog(post(coach, { athleteId: 'A901', requestId: 'r1', form }), env, { fetchImpl: sheet({ status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice' }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice' });
+  assert.deepStrictEqual(calls[0], { action: 'site-log', athleteId: 'A901', coachName: 'Pat Example', requestId: 'r1', form: { date: '2026-11-11', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', test: 'yes' }, key: 'fake-key' });
+  res = await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await res.json()).error, 'Piece 1: work time is missing');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { form }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form: { pieces: 'x'.repeat(700) } }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'duplicate' }) })).status, 200);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
 });
 
 test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {

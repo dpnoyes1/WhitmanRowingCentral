@@ -483,3 +483,11 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
   .luc { flex-wrap: wrap; }
 }
 .theme-toggle[hidden] { display: none; }
+
+/* Log for an athlete (coaches only) */
+.logfor { display: flex; flex-direction: column; gap: 12px; max-width: 760px; }
+.logfor .f { display: flex; flex-direction: column; gap: 4px; font-size: .875rem; color: var(--text-2); min-width: 0; flex: 1; }
+.logfor .in { font: inherit; font-size: 1rem; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 10px 12px; min-height: 44px; width: 100%; }
+.logfor .lf-row { display: flex; gap: 12px; flex-wrap: wrap; }
+.logfor .seg button { min-height: 44px; }
+.logfor .card.hl { border-color: var(--accent); }

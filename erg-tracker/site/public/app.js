@@ -123,6 +123,7 @@ function setNav(active) {
   document.getElementById('nav-completion').hidden = !isCoach();
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
+  document.getElementById('nav-log-for').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
     const on = a.dataset.nav === active;
@@ -1116,6 +1117,79 @@ async function showInsights() {
   draw();
 }
 
+/** Coaches only: log a workout for an athlete. The test question appears only for ONE piece of exactly 2000 m, 500 m, 100 m or 20:00.0. */
+async function showLogFor() {
+  const team = await api('/api/team');
+  setNav('log');
+  const athletes = [...team.athletes].sort((x, y) => x.name.localeCompare(y.name));
+  const today = new Date().toLocaleDateString('en-CA');
+  const dayOpts = Array.from({ length: 15 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
+  const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
+  const tenths = (t) => { const m = /^(\d{1,3}):([0-5]\d)(?:\.(\d))?$/.exec(String(t).trim()); return m ? (+m[1] * 60 + +m[2]) * 10 + (m[3] ? +m[3] : 0) : null; };
+  const lines = () => String(S.pieces).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
+  const pieceText = () => (S.mode === 'single' ? `${S.time.trim()}, ${S.dist.replace(/[,\s]/g, '')}${S.rate.trim() ? ', ' + S.rate.trim() : ''}` : lines().join('\n'));
+  /** The test this entry could be, or null: exactly one piece, 2000 m, 500 m or 100 m (any time), or exactly 20:00.0. */
+  const testKind = () => {
+    if (S.type === 'practice' && S.status === 'out') return null;
+    const one = S.mode === 'single' ? [[S.time, S.dist.replace(/[,\s]/g, '')]] : [];   // intervals never ask (David, 2026-11-11)
+    if (one.length !== 1) return null;
+    const [t, m] = one[0];
+    if (tenths(t) === 12000) return { key: '20min', label: "20:00", what: "20' test" };
+    const meters = /^\d{1,5}$/.test(String(m)) ? +m : null;
+    return { 2000: { key: '2000m', label: '2000 m', what: '2k test' }, 500: { key: '500m', label: '500 m', what: '500 m power check' }, 100: { key: '100m', label: '100 m', what: '100 m power check' } }[meters] || null;
+  };
+  const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
+  const draw = () => {
+    const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
+    if (!kind) S.test = null;
+    app.innerHTML = `<div class="head"><div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make. The athlete's own page and boards update within about 5 minutes.</p></div></div>
+      <form class="card logfor" id="logfor" novalidate>
+        <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
+        <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${dayOpts.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : fmtDay(d)}</option>`).join('')}</select></label>
+          <label class="f">Workout<select class="in" data-f="type"><option value="practice"${S.type === 'practice' ? ' selected' : ''}>Practice</option><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>OYO</option><option value="makeup"${S.type === 'makeup' ? ' selected' : ''}>Make-up</option></select></label></div>
+        ${S.type === 'practice' ? `<div class="seg" role="group" aria-label="Practice status">${[['full', 'Full'], ['modified', 'Modified'], ['out', 'Out']].map(([v, l]) => `<button type="button" data-status="${v}" aria-pressed="${S.status === v}">${l}</button>`).join('')}</div>` : ''}
+        ${S.type === 'makeup' ? `<label class="f">Make-up for<select class="in" data-f="makeup">${dayOpts.slice(1).map((d) => `<option value="${d}"${d === S.makeup ? ' selected' : ''}>${fmtDay(d)}</option>`).join('')}</select></label>` : ''}
+        ${out ? field('Note for coaches (optional)', 'note') : `
+        <div class="seg" role="group" aria-label="Pieces">${[['single', 'Single piece'], ['intervals', 'Intervals']].map(([v, l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode === v}">${l}</button>`).join('')}</div>
+        ${S.mode === 'single' ? `<div class="lf-row">${field('Time (min:sec.tenth)', 'time', 'placeholder="20:00.0"')}${field('Distance (meters)', 'dist', 'inputmode="numeric" placeholder="4936"')}${field('Stroke rate (optional)', 'rate', 'inputmode="numeric"')}</div>`
+          : `<label class="f">One line per piece: time, meters, rate (optional), rest time (optional)<textarea class="in" data-f="pieces" rows="5" placeholder="7:44.8, 2000, 31, 4:00">${esc(S.pieces)}</textarea></label>`}
+        <div class="lf-row">${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}${field('Drag factor (optional)', 'drag', 'inputmode="numeric"')}</div>
+        ${kind ? `<div class="card hl" id="lf-test"><b>This piece is exactly ${kind.label}. Is it a test?</b><div class="seg" role="group" aria-label="Is it a test?"><button type="button" data-test="yes" aria-pressed="${S.test === 'yes'}">Yes, a test</button><button type="button" data-test="no" aria-pressed="${S.test === 'no'}">No</button></div>
+          <p class="muted small">${S.test === 'yes' ? `Saves as a ${kind.what}. It counts on the boards${kind.key === '500m' || kind.key === '100m' ? ' (power checks have no stars or GMS %)' : ' and in her stars'}. A missing drag factor is flagged for coaches.` : S.test === 'no' ? 'Saves as a normal workout. It will not count on the boards.' : 'Pick one before saving.'}</p></div>`
+          : '<p class="muted small"><b>No test question.</b> It appears only for a single piece of exactly 2000 m, 500 m, 100 m or 20:00.0. Pieces inside intervals and near misses like 20:00.3 or 1999 m never ask.</p>'}
+        ${field('Note for coaches (optional)', 'note')}`}
+        ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
+        <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save workout'}</button></div></form>`;
+    const f = app.querySelector('#logfor');
+    f.querySelectorAll('[data-f]').forEach((el) => { el.oninput = () => { S[el.dataset.f] = el.value; S.msg = ''; S.err = ''; if (['time', 'dist', 'pieces'].includes(el.dataset.f)) refreshTest(); }; el.onchange = () => { S[el.dataset.f] = el.value; if (el.tagName !== 'SELECT' || ['athlete', 'date', 'makeup'].includes(el.dataset.f)) return; draw(); }; });
+    f.querySelectorAll('[data-status]').forEach((b) => { b.onclick = () => { S.status = b.dataset.status; draw(); }; });
+    f.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { S.mode = b.dataset.mode; S.test = null; draw(); }; });
+    f.querySelectorAll('[data-test]').forEach((b) => { b.onclick = () => { S.test = b.dataset.test; draw(); }; });
+    f.onsubmit = async (ev) => {
+      ev.preventDefault();
+      if (!S.athlete) { S.err = 'Choose an athlete.'; draw(); return; }
+      if (testKind() && !S.test) { S.err = 'Answer the test question first.'; draw(); return; }
+      S.busy = true; S.err = ''; S.msg = ''; draw();
+      const form = { date: S.date, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: S.rpe, drag: S.drag, note: S.note };
+      if (!(S.type === 'practice' && S.status === 'out')) { form.pieces = pieceText(); if (testKind()) form.test = S.test; }
+      try {
+        const res = await fetch('/api/log', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: S.athlete, requestId: S.rid, form }) });
+        const out2 = await res.json().catch(() => ({}));
+        if (res.status === 401) { showLogin('You were signed out. Please sign in again.'); return; }
+        if (!res.ok) { S.err = out2.error || 'Nothing was saved.'; }
+        else {
+          S.msg = `Saved${out2.athlete ? ' for ' + out2.athlete : ''}${out2.test ? ' as a test' : ''}.`;
+          Object.assign(S, { time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) });
+        }
+      } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
+      S.busy = false; draw();
+    };
+  };
+  /** Only the test card changes while typing, so the field you are in keeps focus. */
+  const refreshTest = () => { const before = !!app.querySelector('#lf-test'), after = !!testKind(); if (before !== after) { const el = document.activeElement, k = el && el.dataset && el.dataset.f, pos = el && el.selectionStart; draw(); const n = k && app.querySelector(`[data-f="${k}"]`); if (n) { n.focus(); try { n.setSelectionRange(pos, pos); } catch { /* not a text field */ } } } };
+  draw();
+}
+
 /** Coaches only: current weight per rower, entered here instead of in the hidden tab. Weight never reaches a team or athlete page. */
 async function showWeights() {
   let v = await api('/api/weights');
@@ -1450,6 +1524,7 @@ async function route() {
     if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'weights' && isCoach()) return await showWeights();
+    if (page === 'log' && isCoach()) return await showLogFor();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
@@ -1457,7 +1532,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {

@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1443,6 +1443,52 @@ test('ergbot-weights: rows for ErgBot, blank and dateless rows skipped', () => {
     { Date: new Date(2026, 9, 6), 'Athlete ID': 'A2', Athlete: 'Dummy Two', 'Weight lb': '' }
   ])));
   assert.deepStrictEqual(rows, [{ date: '2026-10-05', athlete: 'Dummy Rower', lb: 141 }]);
+});
+
+test('site log: same rows as the Form, test question only for one exact piece', () => {
+  const Q = g.Q;
+  const base = { date: '2026-01-12', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', rpe: '6', drag: '105' };
+  const ans = (f) => g.siteLogAnswers_({ ...base, ...f }, 'Jane Smith', 'Coach Pat');
+  const run = (f) => g.parseSubmission(ans(f), ctxFor());
+  // a normal workout needs only a few typed numbers
+  const plain = run({ test: 'no' });
+  assert.strictEqual(plain.entry['Entered by'], 'Coach Pat');
+  assert.strictEqual(plain.entry.Activity, 'Erg (RowErg)');
+  assert.strictEqual(plain.benchmark, undefined);
+  assert.strictEqual(plain.intervals.length, 1);
+  // kinds: exactly one piece of 2000 m, 500 m, 100 m or 20:00.0
+  const kind = (t) => g.siteTestKind_(g.parsePiecesText(t));
+  assert.strictEqual(kind('7:44.8, 2000, 31'), '2000m');
+  assert.strictEqual(kind('1:34.9, 500, 40'), '500m');
+  assert.strictEqual(kind('0:16.6, 100, 47'), '100m');
+  assert.strictEqual(kind('20:00.0, 4936, 22'), '20min');
+  assert.strictEqual(kind('20:00.3, 4938, 22'), null, 'near miss never asks');
+  assert.strictEqual(kind('7:45.0, 1999, 31'), null);
+  assert.strictEqual(kind('8:00, 2000\n8:00, 2000'), null, 'inside intervals never asks');
+  assert.strictEqual(kind('8:00, 2000\n8:00, 2000\n8:00, 2000\n8:00, 2000'), null);
+  // Yes saves linked Benchmarks + Entries rows
+  const t20 = run({ test: 'yes' });
+  assert.strictEqual(t20.benchmark.Test, '20min');
+  assert.strictEqual(t20.benchmark.Meters, 4936);
+  assert.strictEqual(t20.entry['Benchmark ID'], t20.benchmark['Benchmark ID']);
+  const t2k = run({ test: 'yes', pieces: '7:44.8, 2000, 31' });
+  assert.strictEqual(t2k.benchmark.Test, '2000m');
+  assert.strictEqual(t2k.benchmark['Time s'], 464.8);
+  const t500 = run({ test: 'yes', pieces: '1:34.9, 500, 40' });
+  assert.strictEqual(t500.benchmark.Test, '500m');
+  assert.strictEqual(t500.benchmark['Time s'], 94.9);
+  const t100 = run({ test: 'yes', pieces: '0:16.6, 100, 47' });
+  assert.strictEqual(t100.benchmark.Test, '100m');
+  // No saves a normal workout; Yes on a non-test piece or on intervals is refused
+  assert.strictEqual(run({ test: 'no', pieces: '7:44.8, 2000, 31' }).benchmark, undefined);
+  assert.throws(() => ans({ test: 'yes', pieces: '20:00.3, 4938, 22' }), /not exactly/);
+  assert.throws(() => ans({ test: 'yes', pieces: '8:00, 2000\n8:00, 2000' }), /not exactly/);
+  assert.throws(() => ans({ test: 'yes', activity: 'BikeErg' }), /RowErg/);
+  // out of practice and other types
+  assert.strictEqual(g.parseSubmission(g.siteLogAnswers_({ date: '2026-01-12', type: 'practice', status: 'out', note: 'sick', pieces: '' }, 'Jane Smith', 'Coach Pat'), ctxFor()).entry.Status, 'Out');
+  assert.strictEqual(run({ type: 'oyo', status: '' }).entry['Session type'], 'OYO');
+  assert.strictEqual(run({ type: 'makeup', makeup_for: '2026-01-10' }).entry['Session type'], 'Make-up');
+  assert.throws(() => ans({ type: 'bogus' }), /Pick/);
 });
 
 test('weights page: parse, status and rows (pure)', () => {
