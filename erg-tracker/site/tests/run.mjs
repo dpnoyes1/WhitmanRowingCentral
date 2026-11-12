@@ -711,7 +711,8 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   let sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).json();
   assert.deepStrictEqual([sess.kind, sess.coachName], ['team', 'Pat Example']);
   // Rules for a new password.
-  assert.strictEqual(passwordProblem('x'), '', 'no minimum length');
+  assert.ok(passwordProblem('12345'), 'under 6 characters is refused');
+  assert.strictEqual(passwordProblem('123456'), '', '6 characters is enough');
   assert.strictEqual(passwordProblem('2/3/1980'), '', 'a date is allowed');
   assert.ok(passwordProblem(''), 'empty is refused');
   assert.strictEqual(passwordProblem('a long enough one'), '');
@@ -877,7 +878,7 @@ test('coach password: spaces at the ends never lock a coach out; any coach can r
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches, []);
   // A coach can reset her own too, and it is marked as hers.
-  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars' }, sam), env2, deps);
+  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars123' }, sam), env2, deps);
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches.map((c) => [c.name, c.you]), [['Sam Tester', true]]);
   // No store (local dev): an empty list, and a reset says it cannot.

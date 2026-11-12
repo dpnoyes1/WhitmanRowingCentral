@@ -32,10 +32,11 @@ export function cleanPassword(p) {
   return String(p ?? '').trim();
 }
 
-/** Why a new password is not acceptable, or '' when it is. David sets no rules (2026-11-03); only empty and absurdly long are refused. */
+/** Why a new coach password is not acceptable, or '' when it is. Since 2026-11-12 coaches have the same single rule as athletes: 6 characters or more (David). */
 export function passwordProblem(next) {
   const p = cleanPassword(next);
   if (!p) return 'Type a new password.';
+  if (p.length < ATHLETE_MIN_LENGTH) return `Your password needs at least ${ATHLETE_MIN_LENGTH} characters.`;
   if (p.length > 1000) return 'That password is too long.';
   return '';
 }
@@ -43,14 +44,9 @@ export function passwordProblem(next) {
 /** Athlete passwords (David, 2026-11-12): same hashing, own Blobs store `athletepw`, one key per athlete ID. */
 export const defaultAthleteStore = () => defaultCoachStore(ATHLETE_STORE);
 
-/** Athletes need at least 6 characters and nothing else (David, 2026-11-12). Coaches keep the no-rules choice. */
+/** Athletes and coaches both need at least 6 characters and nothing else (David, 2026-11-12). */
 export const ATHLETE_MIN_LENGTH = 6;
-export function athletePasswordProblem(next) {
-  const p = cleanPassword(next);
-  if (p.length < ATHLETE_MIN_LENGTH) return `Your password needs at least ${ATHLETE_MIN_LENGTH} characters.`;
-  if (p.length > 1000) return 'That password is too long.';
-  return '';
-}
+export const athletePasswordProblem = (next) => passwordProblem(next);
 
 /** A random temporary password for a coach to hand over: 8 characters, no look-alikes (0/O, 1/l/I). */
 const TEMP_ALPHABET = 'abcdefghjkmnpqrstuvwxyz23456789';
