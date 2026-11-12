@@ -2,7 +2,7 @@
 // action (apps-script/SiteLog.gs), which runs the same parser as the Form and /log. The Sheet checks every value.
 import { session } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { makeKeepCopy } from '../lib/photocopy.mjs';
+import { prepPhoto } from '../lib/logphoto.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -29,17 +29,9 @@ export async function handleLog(req, envFn, deps = {}) {
     if (typeof f[k] !== 'string' || f[k].length > 600) return json({ error: 'Nothing to save.' }, 400);
     form[k] = f[k];
   }
-  // Optional proof photo (David, 2026-11-12): the page sends a shrunk JPEG; the kept copy is re-encoded here (about 150 KB, no metadata).
-  let photo = '';
-  if (body.photo !== undefined && body.photo !== null && body.photo !== '') {
-    if (typeof body.photo !== 'string' || body.photo.length > 6_000_000 || !/^[A-Za-z0-9+/=]+$/.test(body.photo)) return json({ error: 'That photo could not be used.' }, 400);
-    try {
-      photo = Buffer.from((await makeKeepCopy(Buffer.from(body.photo, 'base64'), { sharp: deps.sharp })).bytes).toString('base64');
-    } catch (err) {
-      console.error('site log photo error:', err.message);
-      return json({ error: 'That photo could not be read. Try another one, or save without it.' }, 422);
-    }
-  }
+  const pp = await prepPhoto(body.photo, deps);
+  if (pp.error) return json({ error: pp.error }, pp.status);
+  const photo = pp.photo;
   const requestId = typeof body.requestId === 'string' ? body.requestId.slice(0, 60) : '';
   let out;
   try {
