@@ -66,6 +66,21 @@ function siteLogAnswers_(form, athleteName, enteredBy) {
 }
 
 /**
+ * An athlete logging for herself on the site (body.self = true; David, 2026-11-12): a run, ride, swim or other
+ * non-erg workout, on her own (OYO) or at practice. Erg workouts come from Concept2 Logbook, Slack or the Form, and
+ * tests are never typed here. Returns a sentence when the form is not allowed, '' when it is. Pure.
+ */
+function siteSelfLogError_(form) {
+  var f = form || {};
+  var activity = String(f.activity || '').trim(), type = String(f.type || '').trim();
+  if (!activity || activity === 'Erg (RowErg)' || activity === 'BikeErg' || activity === 'Lifting' ||
+      !ACTIVITIES.some(function (x) { return x[0] === activity; })) return 'Choose a run, bike, swim or another activity that is not on an erg.';
+  if (type !== 'oyo' && type !== 'practice') return 'Choose On my own or At practice.';
+  if (String(f.test || '').trim() || String(f.status || '').trim() === 'out' || String(f.makeup_for || '').trim()) return 'That cannot be saved from this page.';
+  return '';
+}
+
+/**
  * doPost action 'site-log': body { athleteId, coachName, requestId, form }. Answers
  * { status: 'ok' | 'invalid' | 'duplicate' | 'error', message, entryId, athlete, test }. One write under the script lock;
  * requestId stops a double tap from saving twice.
@@ -79,8 +94,13 @@ function processSiteLog_(body) {
     if (!a) return { status: 'invalid', message: 'That athlete is not on the roster.' };
     var rid = 'site:' + String(body.requestId || '');
     if (body.requestId && alreadyProcessed_(rid)) return { status: 'duplicate' };
-    var by = 'Coach ' + (String(body.coachName || 'via site').trim().slice(0, 60) || 'via site');
     var name = String(a.Name).trim(), result;
+    var self = body.self === true;
+    if (self) {
+      var selfError = siteSelfLogError_(body.form);
+      if (selfError) return { status: 'invalid', message: selfError };
+    }
+    var by = self ? name : 'Coach ' + (String(body.coachName || 'via site').trim().slice(0, 60) || 'via site');
     try {
       result = parseSubmission(siteLogAnswers_(body.form || {}, name, by), { submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_ });
     } catch (err) {
