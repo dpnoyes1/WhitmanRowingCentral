@@ -537,14 +537,16 @@ function recentList(t) {
 }
 
 async function showAthletes() {
-  const t = await api('/api/team');
+  // Coaches see a Concept2 icon next to each athlete connected to Logbook (David, 2026-11-12). A failed lookup just hides the icons.
+  const [t, c2] = await Promise.all([api('/api/team'), isCoach() ? api('/api/concept2/status').catch(() => null) : null]);
+  const linked = new Set(c2 && Array.isArray(c2.connected) ? c2.connected.map((c) => c.id) : []);
   setNav('athletes');
   const mine = me();
   app.innerHTML = `<div class="head"><div><h1>Athletes</h1><p class="muted">${t.athletes.length} rowers</p></div>
     <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
     ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
-        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
+        <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   document.getElementById('q').oninput = (ev) => {
     const q = ev.target.value.trim().toLowerCase();

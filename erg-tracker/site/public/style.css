@@ -492,3 +492,4 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .logfor .seg button { min-height: 44px; }
 .logfor .card.hl { border-color: var(--accent); }
 .mono{font-family:ui-monospace,Menlo,Consolas,monospace;font-size:1.15em;user-select:all}
+.athletes .c2{width:18px;height:18px;vertical-align:-3px;margin-left:6px;border-radius:50%}
