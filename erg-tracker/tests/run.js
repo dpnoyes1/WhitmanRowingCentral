@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1511,6 +1511,45 @@ test('weights page: parse, status and rows (pure)', () => {
     { Date: '2026-06-02', 'Athlete ID': 'A2', 'Weight lb': 140, 'Entered by': 'Coach' }];
   const rows = JSON.parse(JSON.stringify(g.weightsPageRows_(roster, weights, '2026-07-01')));
   assert.deepStrictEqual(rows.map(r => [r.id, r.status, r.lb]), [['A3', 'Missing', null], ['A2', 'Due', 140], ['A1', 'Current', 131]], 'missing first, then due; only the newest weight; no coxswain, inactive or alum');
+});
+
+test('workout builder: ids, piece rows validated by the plan parser, schedule rows, list view (pure)', () => {
+  assert.strictEqual(g.workoutNextId_([]), 'W1');
+  assert.strictEqual(g.workoutNextId_(['W2', 'W10', 'DUMMY-W3', ' W4 ']), 'W11');
+  const ok = g.workoutBuildRows_('W7', { name: 'Tuesday 20s', pieces: [
+    { workType: 'Time', work: '20:00', reps: 3, rest: '2:00', zone: 'Aerobic', base: "20'", rate: '18-20' },
+    { workType: 'Distance', work: '500 m', reps: 8, startEvery: '3:30', lowPct: 95, highPct: 100, base: '2k' }] });
+  assert.ok(!ok.error, ok.error);
+  assert.strictEqual(ok.rows.length, 2);
+  assert.strictEqual(ok.rows[1]['Piece #'], 2);
+  assert.strictEqual(ok.rows[1].Work, '500');
+  const back = g.workoutPieces(ok.rows, 'W7');
+  assert.strictEqual(back[0].workS, 1200);
+  assert.strictEqual(back[1].startEveryS, 210);
+  [{ name: '', pieces: [{}] }, { name: 'x', pieces: [] },
+   { name: 'x', pieces: [{ workType: 'Time', work: 'abc' }] },
+   { name: 'x', pieces: [{ workType: 'Distance', work: '5' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', reps: 0 }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', zone: 'Easy' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', rest: 'soon' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', lowPct: 500 }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', activity: 'Jetski' }] }
+  ].forEach((b, i) => assert.ok(g.workoutBuildRows_('W1', b).error, 'bad workout ' + i));
+  const sch = g.scheduleBuildRows_('W7', { dates: ['2026-11-16', '2026-11-16', '2026-11-18'], squad: 'Varsity', session: 'Practice', publish: false });
+  assert.strictEqual(sch.rows.length, 2, 'duplicate dates collapse');
+  assert.strictEqual(sch.rows[0].Published, false, 'drafts unless Publish is ticked');
+  assert.strictEqual(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], publish: true }).rows[0].Published, true);
+  assert.strictEqual(g.scheduleBuildRows_('W7', {}).rows.length, 0);
+  ['2026-02-30', 'tomorrow', '11/16/2026'].forEach(d => assert.ok(g.scheduleBuildRows_('W7', { dates: [d] }).error, d));
+  assert.ok(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], squad: 'Alum' }).error);
+  assert.ok(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], session: 'Race' }).error);
+  const v = JSON.parse(JSON.stringify(g.workoutListView_(ok.rows, [
+    { Date: '2026-11-16', Squad: 'Varsity', Session: 'Practice', 'Workout ID': 'W7', Published: true },
+    { Date: '2026-11-10', Squad: 'All', Session: 'Practice', 'Workout ID': 'W7', Published: true },
+    { Date: '2026-12-30', Squad: 'All', Session: 'Practice', 'Workout ID': 'W7', Published: true }], '2026-11-12')));
+  assert.deepStrictEqual(v.upcoming.map(u => [u.day, u.published, u.name]), [['2026-11-16', true, 'Tuesday 20s']], 'only the next 28 days');
+  assert.strictEqual(v.library[0].id, 'W7');
+  assert.ok(/3 x 20:00/.test(v.library[0].summary));
 });
 
 console.log(`${passed} tests passed`);

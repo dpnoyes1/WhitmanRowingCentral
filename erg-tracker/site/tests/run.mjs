@@ -12,6 +12,7 @@ import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
 import { handleWeights } from '../functions/weights.mjs';
+import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
@@ -2122,6 +2123,37 @@ test('weights page: coaches only, goes to the Sheet with the feed key, weight ne
   assert.strictEqual((await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
   const wfeed = JSON.stringify(feed);
   assert.ok(!/weight ?lb|"lb"/i.test(wfeed), 'the feed carries no weight');
+});
+
+test('workout builder: coaches only, whitelisted fields go to the Sheet, errors come back', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/workouts', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const ok = { status: 'ok', today: '2026-11-12', library: [], upcoming: [], savedId: 'W5' };
+  assert.strictEqual((await handleWorkouts(new Request('https://x/api/workouts'), env, {})).status, 401);
+  assert.strictEqual((await handleWorkouts(new Request('https://x/api/workouts', { headers: { cookie: athlete } }), env, {})).status, 403);
+  assert.strictEqual((await handleWorkouts(post(athlete, { name: 'x', pieces: [] }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleWorkouts(new Request('https://x/api/workouts', { headers: { cookie: coach } }), env, { fetchImpl: sheet(ok) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'workout-list', key: 'fake-key' });
+  const body = { name: 'Tue 20s', dates: ['2026-11-17'], squad: 'Varsity', session: 'Practice', publish: true, evil: 'x', pieces: [{ workType: 'Time', work: '20:00', reps: 3, sneaky: 1 }] };
+  res = await handleWorkouts(post(coach, body), env, { fetchImpl: sheet(ok) });
+  assert.strictEqual((await res.json()).savedId, 'W5');
+  assert.strictEqual(calls[1].evil, undefined);
+  assert.strictEqual(calls[1].pieces[0].sneaky, undefined);
+  assert.strictEqual(calls[1].coachName, 'Pat Example');
+  assert.strictEqual(calls[1].publish, true);
+  res = await handleWorkouts(post(coach, body), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time like 20:00 is needed.' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleWorkouts(post(coach, body, { origin: 'https://evil.example' }), env, { fetchImpl: sheet(ok) })).status, 400);
+  assert.strictEqual((await handleWorkouts(post(coach, {}), env, { fetchImpl: sheet(ok) })).status, 400);
+  assert.strictEqual((await handleWorkouts(post(coach, body), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', pieces: new Array(13).fill({}) }), null);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', dates: new Array(32).fill('2026-11-17'), pieces: [] }), null);
 });
 
 test('settings page: coaches only, goes to the Sheet with the feed key, errors come back per field', async () => {

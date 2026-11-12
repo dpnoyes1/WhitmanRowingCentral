@@ -4,6 +4,7 @@
 // in as themselves (name + birthday); coaches with their own password.
 
 import { loadPractice } from './practice.mjs';
+import { openPlan } from './plan.mjs';
 import { openLineups } from './lineups.mjs';
 
 const app = document.getElementById('app');
@@ -123,6 +124,7 @@ function setNav(active) {
   document.getElementById('nav-completion').hidden = !isCoach();
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
+  document.getElementById('nav-plan').hidden = !isCoach();
   document.getElementById('nav-log-for').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
@@ -1229,6 +1231,13 @@ async function showWeights() {
   draw();
 }
 
+/** Coaches only: build a workout and schedule it. Saves to the Sheet's Workouts and Schedule tabs. */
+async function showPlan() {
+  const v = await api('/api/workouts');
+  setNav('plan');
+  openPlan(v, { app, esc, fmtDate, signedOut: () => showLogin('You were signed out. Please sign in again.') });
+}
+
 /** Coaches only: build boats from today's group. Nothing is saved. */
 async function showLineups() {
   const v = await api('/api/lineups');
@@ -1524,6 +1533,7 @@ async function route() {
     if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'weights' && isCoach()) return await showWeights();
+    if (page === 'plan' && isCoach()) return await showPlan();
     if (page === 'log' && isCoach()) return await showLogFor();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
@@ -1532,7 +1542,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
