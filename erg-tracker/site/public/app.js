@@ -123,10 +123,11 @@ function setNav(active) {
   document.getElementById('nav-stars').hidden = !isCoach();
   document.getElementById('nav-insights').hidden = !isCoach();
   document.getElementById('nav-balance').hidden = !isCoach();
-  document.getElementById('nav-completion').hidden = !isCoach();
+  document.getElementById('nav-completion').hidden = false;
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
+  document.getElementById('sec-coach').hidden = !isCoach();
   document.getElementById('nav-log-for').hidden = !isCoach();
   document.getElementById('nav-log-mine').hidden = isCoach() || !SESSION;
   document.getElementById('nav-settings').hidden = !isCoach();
@@ -380,7 +381,7 @@ function showLogin(note = '') {
   document.getElementById('tabbar').hidden = true;
   closeMenu();
   app.innerHTML = `<div class="login card">
-    <h1>Whitman Rowing</h1>
+    <h1>Whitman Girls Rowing</h1>
     <p class="muted">Athletes: your first and last name, and your birthday as the password (MM/DD/YYYY) the first time; you then choose your own password. If you forget it, ask a coach to reset it. Coaches: your full name, and your birthday the first time (then set your own password from the menu).</p>
     ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
@@ -464,20 +465,20 @@ async function showTeam() {
     const g = t.groups[squad];
     const w = g.week;
     app.innerHTML = `${staleNote(t.meta)}
-      <div class="head"><div><h1>Team</h1><p class="muted">Week of ${fmtDate(t.weekStart)} · ${g.rowers} rowers</p></div>
+      <div class="head"><div><div class="eyebrow">Week of ${fmtDate(t.weekStart)} · ${g.rowers} rowers</div><h1>Team</h1></div>
         <div class="seg" role="group" aria-label="Squad">${['all', 'varsity', 'novice'].map((k) =>
           `<button data-sq="${k}" aria-pressed="${k === squad}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div></div>
+      ${teamTodayCard(wk, squad)}
       <div class="grid">
         ${tile('Practice completion', w.completionPct === null ? '–' : w.completionPct + '%', `${w.practicesDone} of ${w.practicesExpected} this week`)}
         ${tile('Season completion', g.season.completionPct === null ? '–' : g.season.completionPct + '%', 'since Jul 1')}
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
-      ${teamTodayCard(wk, squad)}
+      <div class="two">${t.splits ? splitsCard(t.splits) : ''}
+        <div class="card"><h2>Weekly training</h2><p class="muted small">Average per rower, weighted minutes</p>
+        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div></div>
       ${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}
-      ${t.splits ? splitsCard(t.splits) : ''}
-      <div class="card"><h2>Weekly training (average per rower, weighted minutes)</h2>
-        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>
       <div class="two">
         <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
         <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
@@ -542,16 +543,21 @@ async function showAthletes() {
   const linked = new Set(c2 && Array.isArray(c2.connected) ? c2.connected.map((c) => c.id) : []);
   setNav('athletes');
   const mine = me();
-  app.innerHTML = `<div class="head"><div><h1>Athletes</h1><p class="muted">${t.athletes.length} rowers</p></div>
-    <div style="min-width:220px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div>
-    ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad><h2>${sq}</h2><div class="athletes">
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">${t.athletes.length} rowers</div><h1>Athletes</h1></div>
+    <div class="hrow"><div class="seg" role="group" aria-label="Squad">${['all', 'varsity', 'novice'].map((k) => `<button type="button" data-asq="${k}" aria-pressed="${k === 'all'}">${k === 'all' ? 'All' : k[0].toUpperCase() + k.slice(1)}</button>`).join('')}</div>
+    <div style="min-width:200px"><input type="search" id="q" placeholder="Find a name" aria-label="Find a name"></div></div></div>
+    ${['Varsity', 'Novice'].map((sq) => `<div class="card" data-squad="${sq.toLowerCase()}"><h2>${sq}</h2><div class="athletes">
       ${t.athletes.filter((a) => a.squad === sq).map((a) => `<a href="#/athlete/${esc(a.id)}" data-name="${esc(a.name.toLowerCase())}">
         <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
-  document.getElementById('q').oninput = (ev) => {
-    const q = ev.target.value.trim().toLowerCase();
-    app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = q && !a.dataset.name.includes(q); });
+  let asq = 'all';
+  const filter = () => {
+    const q = document.getElementById('q').value.trim().toLowerCase();
+    app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = !!q && !a.dataset.name.includes(q); });
+    app.querySelectorAll('[data-squad]').forEach((c) => { c.hidden = asq !== 'all' && c.dataset.squad !== asq; });
   };
+  document.getElementById('q').oninput = filter;
+  app.querySelectorAll('[data-asq]').forEach((b) => { b.onclick = () => { asq = b.dataset.asq; app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); filter(); }; });
   wireFooter();
 }
 
@@ -571,7 +577,7 @@ async function showAthlete(id) {
   const madeUp = v.madeUp && v.madeUp.length ? `<div class="card"><h2>Made up</h2>
       ${v.madeUp.map((m) => `<p>${fmtDay(m.date)} practice <span class="pill good">Made up ${fmtDate(m.makeupDate)} ✓</span></p>`).join('')}</div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
-    <div class="head"><div><h1>${esc(a.name)}</h1><p class="muted">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${s.completionPct === null ? '' : ` · completion ${s.completionPct}% this season`}</p></div>
+    <div class="head"><div><div class="eyebrow">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${v.coach && !v.own ? ' · coach view' : ''}</div><h1>${esc(a.name)}</h1>${s.completionPct === null ? '' : `<p class="muted">Completion ${s.completionPct}% this season</p>`}</div>
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
     ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
     ${v.own || v.coach ? '<div id="logbook-card"></div>' : ''}
@@ -688,8 +694,8 @@ async function showWorkout(id) {
       <p class="muted small">Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m. Targets are the ones that stood on the day the workout was planned.</p>`;
   }
   app.innerHTML = `${staleNote(v.meta)}
-    <div class="head"><div><h1>${esc(v.athlete.name)} · ${fmtDay(w.date)}</h1>
-      <p class="muted"><a href="#/athlete/${encodeURIComponent(v.athlete.id)}">Back to ${own ? 'my page' : esc(v.athlete.name)}</a></p></div></div>
+    <div class="head"><div><div class="eyebrow">${fmtDay(w.date)}</div><h1>${esc(v.athlete.name)}</h1></div>
+      <a class="btn ghost sm" href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
     <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
       <div class="result-line">${pills}</div>
       <div class="grid">
@@ -1050,19 +1056,37 @@ async function showWeek(id = null, prev = false) {
       <select id="pick" aria-label="Show targets for">
       <option value="">Whole team</option>
       ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>${prev ? 'Last week' : 'This week'}</h1>
-      <p class="muted">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</p></div>
+  const firstWith = v.days.find((d) => d.day >= v.today && d.sessions.length) || v.days.find((d) => d.sessions.length);
+  let sel = (v.days.find((d) => d.day === v.today && d.sessions.length) || firstWith || {}).day;
+  const stat = (d) => {
+    if (!d.sessions.length) return '<span class="muted small">nothing scheduled</span>';
+    if (d.day > v.today) return '<span class="muted small">upcoming</span>';
+    if (coach && !v.athlete) {
+      const rs = d.sessions.flatMap((s) => s.results || []);
+      return rs.length ? `<span class="pill">${rs.filter((x) => x.result).length} of ${rs.length} logged</span>` : '';
+    }
+    return d.sessions.some((s) => s.result) ? '<span class="pill good">Logged</span>' : '<span class="pill">Not logged</span>';
+  };
+  const drawDays = () => {
+    const d = v.days.find((x) => x.day === sel);
+    document.getElementById('wk-days').innerHTML = `<p class="note">Tap a workout to ${coach && !v.athlete ? "see every rower's target for it" : 'see its targets'}.</p>${v.days.map((x) => `<button type="button" class="wkrow${x.day === sel ? ' sel' : ''}${x.day < v.today ? ' past' : ''}" data-d="${x.day}" ${x.sessions.length ? '' : 'disabled'}>
+      <span class="wkday"><b>${fmtDate(x.day, { weekday: 'short' })}</b><small>${fmtDate(x.day, { month: 'short', day: 'numeric' })}</small></span>
+      <span class="wkwhat">${x.sessions.length ? x.sessions.map((s) => `<span class="wkname">${esc(s.workout)}${/^(varsity|novice)$/i.test(s.squad) ? ` <span class="pill">${esc(s.squad)}</span>` : ''}</span>`).join('') : '<span class="muted">Nothing scheduled</span>'}</span>
+      <span class="wkstat">${stat(x)}${x.sessions.length ? '<span class="go" aria-hidden="true">›</span>' : ''}</span></button>`).join('')}`;
+    document.getElementById('wk-detail').innerHTML = d && d.sessions.length ? `<div class="card"><div class="eyebrow">${fmtDay(d.day)}${d.day === v.today ? ' · today' : ''}</div>
+      ${d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today).replace('<details class="team-results">', '<details class="team-results" open>')).join('')}</div>` : '';
+    document.querySelectorAll('#wk-days [data-d]').forEach((b) => { b.onclick = () => { sel = b.dataset.d; drawDays(); }; });
+    wireResultsSort(app);
+  };
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">${range}${v.athlete ? ` · ${esc(v.athlete.squad)} · targets for ${esc(v.athlete.name)}` : ''}</div><h1>Week</h1></div>
       ${tools}</div>
     ${v.noTargets ? `<div class="card"><p>${NO_TARGET}</p></div>` : ''}
-    ${any ? v.days.map((d) => `<div class="card day${d.day === v.today ? ' is-today' : ''}${d.day < v.today ? ' past' : ''}">
-        <h2>${fmtDay(d.day)}${d.day === v.today ? ' <span class="pill good">Today</span>' : ''}</h2>
-        ${d.sessions.length ? d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today)).join('') : '<p class="muted small">Nothing scheduled.</p>'}</div>`).join('')
-      : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
-    <p class="muted small">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
+    ${any ? '<div class="card" id="wk-days"></div><div id="wk-detail"></div>' : '<div class="card"><p class="muted">The plan for this week hasn\'t been published yet.</p></div>'}
+    <p class="note">Targets come from your best 2k or 20' this school year. Steady pieces show a range; hard pieces show one number.
       Logged splits: ✓ in range, ↓ under target, ↑ over target. * BikeErg split per 1000m, which lines up with the RowErg /500m target; BikeErg never counts as a benchmark. Other machines show no split.</p>${footer(v.meta)}`;
+  if (any) drawDays();
   const pick = document.getElementById('pick');
   if (pick) pick.onchange = () => { location.hash = hash(pick.value, prev); };
-  wireResultsSort(app);
   wireFooter();
 }
 
@@ -1076,17 +1100,19 @@ async function showBoards() {
     const rows = state.group === 'all' ? t[state.window] : t[state.group][state.window];
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Leaderboards</h1>
-      <p class="muted">Raw erg scores. School year starts ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div></div>
-      <div class="filters">${seg('test', v.tests.map((x) => [x.test, TEST_LABELS[x.test]]))}
-        ${seg('window', [['season', 'School year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div>
+    const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
+    const yr = Number(String(v.yearStart).slice(0, 4));
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
+      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity is 10th-12th, Fr/Nov is 7th-9th.</span></p></div>
+      <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
+        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
+      <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
-        <tr><th class="r">#</th><th>Name</th><th class="r">${state.test === '20min' || state.test === '30r20' ? 'Meters' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th><th class="date">Date</th></tr>
-        ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r">${i + 1}</td>
-          <td><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
+        <tr><th class="r">#</th><th>Athlete</th><th class="r">${isMeters ? 'Distance' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th>${gmsCol ? '<th class="r gms">GMS %</th>' : ''}<th class="date">Date</th></tr>
+        ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r rk">${i + 1}</td>
+          <td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>${r.alum ? ' <span class="pill">alum</span>' : ''}
             <div class="sub">${r.stars === null ? '' : `<span class="stars" role="img" aria-label="${r.stars} stars">${starText(r.stars)}</span>`}${state.group === 'all' && r.group ? ` <span class="muted">${r.group === 'freshman' ? 'Fr/Nov' : 'Varsity'} piece</span>` : ''}</div></td>
-          <td class="r">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td><td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
+          <td class="r big-result">${fmtResult(r)}</td><td class="r">${split(r)}</td><td class="r rate">${r.avgRate || '–'}</td>${gmsCol ? `<td class="r gms">${typeof r.gmsPct === 'number' ? r.gmsPct.toFixed(1) + '%' : '–'}</td>` : ''}<td class="date">${r.dateApprox ? esc(r.schoolYear) : fmtDate(r.date)}</td></tr>`).join('')}
       </table></div>` : `<p class="empty">No ${esc(TEST_LABELS[state.test])} results yet${state.group === 'all' ? '' : ' for this group'}${state.window === 'season' ? ' this school year' : ''}. Try another test or group.</p>`}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-k]').forEach((b) => {
       b.onclick = () => {
@@ -1103,15 +1129,23 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const groups = [5, 4.5, 4, 3.5, 3, 2.5, 2, 1.5, 1].map((n) => ({ n, rows: v.rowers.filter((r) => r.stars === n) }));
+  const tested = v.rowers.filter((r) => r.stars !== null);
   const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>GMS Rating</h1>
-    <p class="muted">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). Every 2k or 20' earns ★. More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
-    ${groups.map((g) => g.rows.length ? `<div class="card"><h2><span class="stars" role="img" aria-label="${starWord(g.n)}">${starText(g.n)}</span> ${starWord(g.n)} <span class="muted small">${g.rows.length}</span></h2>
-      <div class="athletes">${g.rows.map((r) => `<a href="#/athlete/${esc(r.id)}"><span>${esc(r.name)}<span class="by-test muted small">${['2000m', '20min'].map((t) => r.byTest[t] === null ? '' : `${TEST_LABELS[t]} ${r.byTest[t]}★`).filter(Boolean).join(' · ')}</span></span><span class="pill">${esc(r.squad)}</span></a>`).join('')}</div></div>` : '').join('')}
+  const pct = (x) => (x === null ? '–' : x.toFixed(1) + '%');
+  const nextTxt = (r) => (r.stars === 5 ? 'Top band' : !r.next ? '' : r.next.test === '2000m' ? `${r.next.nextStar.secondsFaster.toFixed(1)} s faster on the 2k` : `${fmtNum(r.next.nextStar.metersMore)} m more on the 20'`);
+  const avgStars = tested.length ? tested.reduce((n, r) => n + r.stars, 0) / tested.length : null;
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1>
+    <p class="muted small">Average of each rower's 2k and 20' stars this school year (one test: that test's stars). More stars at 95%, 96%, 97% and 100% of the Gold Medal Standard (100% = 1v8 speed).</p></div></div>
+    <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
+    <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
+      ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
+        <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
+        <td class="muted">${nextTxt(r)}</td></tr>`).join('')}
+    </table></div></div>
     ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
     <div class="card"><h2>Team Gold Medal Standard</h2>
       <p class="muted small">Average of each rower's best GMS % this school year, through ${fmtDate(cur.throughDate)}${prev ? `, next to last year through the same date` : ''}. Groups under 3 rowers are hidden.</p>
@@ -1153,8 +1187,8 @@ async function showInsights() {
       <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or no 20' yet this school year. A test only counts once most of the team has done it${!run.has2k ? " (no team 2k yet, so none flagged for it)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
       ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Concept2 Logbook yet, so her ErgData workouts do not arrive on their own.</p>${!lb.missing ? '<p class="muted">The connection list could not be read. Reload to try again.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
     </div>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Insights</h1>
-    <p class="muted">Coaches only. ${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
+    <p class="muted small">${missedFlagged ? `<b>${missedFlagged} rower${missedFlagged > 1 ? 's' : ''} missing ${v.missedFlagAt} or more practices without making them up.</b>` : 'Nobody is missing practices without making them up.'}
       Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
@@ -1216,7 +1250,7 @@ async function showLogFor() {
   const draw = () => {
     const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
     if (!kind) S.test = null;
-    app.innerHTML = `<div class="head"><div><h1>Log for an athlete</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Log for an athlete</div><h1>Log a workout</h1><p class="muted">Coaches only. Saves the same workout the Form would make, for an erg piece or a run, bike, swim and so on (no photo for now). The athlete's own page and boards update within about 5 minutes.</p></div></div>
       <form class="card logfor" id="logfor" novalidate>
         <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
@@ -1284,14 +1318,14 @@ async function showWeights() {
   let editing = null, msg = '';
   const draw = () => {
     const n = (s) => v.rows.filter((r) => r.status === s).length;
-    app.innerHTML = `<div class="head"><div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
       <div class="grid">${tile('Current', n('Current'), 'entered this school year')}${tile('Due', n('Due'), `entered before ${fmtDate(v.yearStart)}`)}${tile('Missing', n('Missing'), 'tests score unadjusted')}</div>
       ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}
-      <div class="card"><div class="table-wrap"><table>
-        <tr><th>Athlete</th><th class="r">Weight (lb)</th><th>Entered by</th><th>Updated</th><th>Status</th><th></th></tr>
+      <div class="card"><div class="table-wrap"><table class="wt-table">
+        <tr><th>Athlete</th><th class="r">Weight (lb)</th><th class="hide-sm">Entered by</th><th class="hide-sm">Updated</th><th>Status</th><th></th></tr>
         ${v.rows.map((r) => `<tr><td>${esc(r.name)} <span class="muted small">${esc(r.squad)}</span></td>
           <td class="r">${editing === r.id ? `<input class="wt-in" id="wt-in" inputmode="decimal" autocomplete="off" aria-label="Weight in pounds for ${esc(r.name)}" value="${r.lb ?? ''}" placeholder="lb">` : r.lb === null ? '–' : r.lb}</td>
-          <td>${esc(r.by || '–')}</td><td>${r.day ? fmtDate(r.day, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
+          <td class="hide-sm">${esc(r.by || '–')}</td><td class="hide-sm">${r.day ? fmtDate(r.day, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
           <td><span class="pill ${r.status === 'Current' ? '' : 'warn'}">${r.status}</span></td>
           <td class="r">${editing === r.id ? `<button class="btn sm" type="button" data-wsave="${esc(r.id)}">Save</button> <button class="btn ghost sm" type="button" data-wcancel="1">Cancel</button>` : `<button class="btn ghost sm" type="button" data-wedit="${esc(r.id)}">${r.status === 'Missing' ? 'Enter' : 'Edit'}</button>`}</td></tr>`).join('')}
       </table></div></div>`;
@@ -1330,28 +1364,31 @@ async function showLineups() {
   openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
 }
 
-/** Coaches only: Name, season %, then the last practice days and OYO weeks. */
+/** Everyone on the team (David, 2026-11-12): name, season %, then the last practice days. Athletes see themselves first. */
 async function showCompletion() {
   const v = await api('/api/completion');
   setNav('completion');
-  const sym = { F: '✓', M: 'M', U: 'MU', P: '!', O: '✕', W: '…' };
-  const name = { F: 'Full', M: 'Modified', U: 'Made up', P: 'Out, make-up open', O: 'Out, window closed', W: 'Week in progress' };
-  const cell = (c, title) => `<td class="c">${c ? `<span class="cg cg-${c}" title="${esc(title || name[c])}">${sym[c]}</span>` : ''}</td>`;
-  const head = (d) => `<th class="c">${fmtDate(d, { weekday: 'short' })}<br>${fmtDate(d, { month: 'short', day: 'numeric' })}</th>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1>
-    <p class="muted">Coaches only. Last ${v.dates.length} practice days, with each rower's completion % for the whole school year since ${fmtDate(v.yearStart)}.</p></div></div>
-    <div class="card"><div class="legend">${['F', 'M', 'U', 'P', 'O', 'W'].map((k) => `<span><span class="cg cg-${k}">${sym[k]}</span> ${name[k]}</span>`).join('')}</div>
-    <div class="table-wrap"><table class="insights grid">
-      <tr><th>Rower</th><th class="r">Season</th>${v.dates.map(head).join('')}${v.weekStarts.map((w, i) => `<th class="c">OYO<br>${i ? 'this wk' : 'last wk'}</th>`).join('')}</tr>
-      ${v.rows.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
-        <td class="r"><b>${r.pct === null ? '–' : r.pct + '%'}</b></td>${r.cells.map((c) => cell(c)).join('')}${r.oyo.map((o) => cell(o.code, `${o.minutes} of ${o.required} min`)).join('')}</tr>`).join('')}
-    </table></div>
-    <p class="muted small">Season %: practices logged or made up out of practices planned so far this school year. Any miss counts, with no excused split. OYO is not in the %. Hover a cell for details.</p></div>
+  const name = { F: 'Logged', M: 'Modified', U: 'Made up', P: 'Absent, make-up still open', O: 'Absent', W: 'Week in progress' };
+  const dot = (c, d) => `<span class="ad ad-${c || 'N'}" title="${esc(fmtDate(d, { month: 'short', day: 'numeric' }) + ' · ' + (c ? name[c] : 'No session'))}"></span>`;
+  const mine = !isCoach() && me() ? me().id : null;
+  const rows = [...v.rows].sort((x, y) => (x.id === mine ? -1 : 0) - (y.id === mine ? -1 : 0) || (y.pct ?? -1) - (x.pct ?? -1) || x.name.localeCompare(y.name));
+  const own = mine ? rows.find((r) => r.id === mine) : null;
+  const withPct = rows.filter((r) => r.pct !== null);
+  const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
+  const low = withPct.filter((r) => r.pct < 80).length;
+  const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}${isCoach() ? '' : ' · everyone on the team sees this page'}</div><h1>Attendance</h1></div></div>
+    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
+    <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
+      <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
+      ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
+        <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
+        <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
+      <p class="note">The circles show the last ${v.dates.length} practices; the percentage covers the whole season. Present means a logged workout. Modified and made-up sessions count as present. Any miss counts, with no excused split. Hover a circle for the day.</p></div>
     ${footer(v.meta)}`;
   wireFooter();
 }
 
-/** Coaches only: 100m vs 2k vs 20' in watts, beside Paul's Law and the tracker's rules. */
 async function showBalance() {
   const v = await api('/api/balance');
   setNav('balance');
@@ -1361,13 +1398,13 @@ async function showBalance() {
        <td class="r">${g.avgRatioPct}% <span class="muted small">${g.pairs} pair${g.pairs === 1 ? '' : 's'}</span></td>
        <td class="r">${g.rules.paul.ratioPct}%</td><td class="r">${g.rules.tracker.ratioPct}%</td>`;
   const sum = (s) => `${s.rowers} rowers · actual ${s.ratioPct ?? '–'}% · Paul ${s.paulPct ?? '–'}% · tracker rule ${s.trackerPct ?? '–'}%`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Balance</h1>
-    <p class="muted">Coaches only. Watts ratio of a shorter, harder piece to a longer one, from each rower's last ${v.windowDays} days. Results close in time count more (half the recency score at ${v.halfLifeDays} days apart); weak means under ${v.weakBelow} recency. Not shown to athletes.</p></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only · athletes never see this page</div><h1>Balance</h1>
+    <p class="muted small">Watts ratio of a shorter, harder piece to a longer one, from each rower's last ${v.windowDays} days. Results close in time count more (half the recency score at ${v.halfLifeDays} days apart); weak means under ${v.weakBelow} recency. Not shown to athletes.</p></div></div>
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th rowspan="2">Rower</th><th class="r" colspan="4">100m vs 2k</th><th class="r" colspan="4">2k vs 20'</th></tr>
       <tr><th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th>
         <th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th></tr>
-      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
+      ${v.rowers.map((r) => `<tr><td><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a><div class="muted small">${esc(r.squad)}</div></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
     </table></div>
     <p class="muted small">Team means (best pair): 100m vs 2k: ${sum(v.sprint)}. 2k vs 20': ${sum(v.endurance)}.</p>
     <p class="muted small">Best pair: the 2k and the other piece closest in time. Average: all her pairs, weighted the same way. Paul's Law: +5 s per 500 m for each doubling of distance, applied to that pair's 2k (outside its 1k to 10k range for 100m). Tracker rule: 20' split = 2k split + 8.5 s; 100m split = 0.786 x 2k split. The 100m watts use the 100m average split, standing start included. Ratio = shorter piece watts / longer piece watts. Open a rower for her tests.</p></div>
@@ -1387,15 +1424,19 @@ async function showOyo() {
     // One scale for every bar, so the Required and Elite marks line up down the board.
     // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
     const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>OYO goals</h1>
-      <p class="muted">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart)}${(which === 'now' ? v.breakWeek : v.lastBreakWeek) ? ' · <b>break week goals</b>' : ''} · ${met} of ${rows.length} at Required · ${elite} at Elite</p></div>
+    const avg = rows.length ? rows.reduce((n, r) => n + r.minutes, 0) / rows.length : 0;
+    const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
+      <div class="tiles">${tile('Goal met', `${met}/${rows.length}`, which === 'now' ? 'this week' : 'last week')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
-        return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}">
-          <div class="oyo-name"><a href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${fmtMin(r.minutes)} / ${r.required}m${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</span></div>
+        const left = Math.max(0, r.required - r.minutes);
+        return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
+          <div class="sub">${fmtMin(r.minutes)} of ${fmtMin(r.required)}${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
-            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div></div>`;
-      }).join('')}<p class="muted small">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
+            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
+          <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
+      }).join('')}<p class="note">Marks: Required and Elite. All bars share one scale, so the marks line up across athletes. A bar stops at 150% of Elite. Weighted minutes (run 1.2, bike 0.6, …). Minutes past Elite count in totals only.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
@@ -1445,7 +1486,7 @@ function pacingCard(list) {
   return `<div class="card" id="pacing"><h2>Test pacing</h2>
     ${list.length > 1 ? `<label class="small">Test <select id="pace-pick">${opts}</select></label>` : ''}
     <div id="pace-body">${pacingBody(list[0])}</div>
-    <p class="muted small">Blue is faster than your own average, orange is slower. A look back at one test, not a plan.</p></div>`;
+    <p class="muted small">Light blue is faster than your own average, dark blue is slower. A look back at one test, not a plan.</p></div>`;
 }
 
 function wirePacing(list) {
@@ -1500,11 +1541,10 @@ async function showSettings() {
   const [v, pw, apw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
-    app.innerHTML = `<div class="head"><div><h1>Settings</h1>
-      <p class="muted">Coaches only. Changes recalculate all history: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1></div>
       <button class="btn" id="save" type="button" disabled>Save changes</button></div>
       <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
-      <div class="settings-grid">${sections.map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
+      <div class="settings-grid">${[...sections].sort((x, y) => { const r = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; }; return r(x) - r(y); }).map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
         ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
         ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
@@ -1513,7 +1553,7 @@ async function showSettings() {
           <p class="small">The Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
         ${coachPasswordsCard(pw)}
         ${athletePasswordsCard(apw)}
-      </div>${footer(v.meta)}`;
+      </div><p class="muted small">Changes recalculate all history from the raw results: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p>${footer(v.meta)}`;
     wireFooter();
     wireCoachPasswords();
     wireAthletePasswords();
@@ -1656,7 +1696,7 @@ async function route() {
     if (page === 'boards') return await showBoards();
     if (page === 'stars' && isCoach()) return await showStars();
     if (page === 'insights' && isCoach()) return await showInsights();
-    if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
+    if (page === 'completion' || page === 'attendance') return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'plan' && isCoach()) return await showPlan();
@@ -1669,7 +1709,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {

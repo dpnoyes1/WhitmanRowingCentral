@@ -32,7 +32,7 @@ export async function handle(req, envFn, deps = {}) {
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
   if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today), notLogged: notLoggedView(data, today) } : {}), meta });
-  if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
+  if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today, { gms: who.kind === 'team' }), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
@@ -50,8 +50,12 @@ export async function handle(req, envFn, deps = {}) {
   }
   // Lineups: each rower's best 2k, 20' and GMS %, coaches only (David, 2026-11-11).
   if (path === '/api/lineups') return who.kind === 'team' ? json({ ...lineupsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
-  // Completion grid: coaches only (David, 2026-11-01).
-  if (path === '/api/completion') return who.kind === 'team' ? json({ ...completionView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // Attendance: everyone on the team sees it (David, 2026-11-12); the OYO columns stay coaches only.
+  if (path === '/api/completion') {
+    const view = completionView(data, today);
+    if (who.kind === 'team') return json({ ...view, meta });
+    return json({ ...view, rows: view.rows.map(({ oyo, ...r }) => r), meta });
+  }
   // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).
   if (path === '/api/balance') return who.kind === 'team' ? json({ ...balanceView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
