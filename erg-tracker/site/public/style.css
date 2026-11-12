@@ -392,10 +392,10 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
 @media (max-width: 480px) { .pace-row { grid-template-columns: 6.2em 3em minmax(0, 1fr) 3em; gap: 6px; } .pace-row .muted { white-space: nowrap; } }
 
 /* Coach Settings page */
-.settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); align-items: start; }
+.settings-grid { display: grid; gap: 16px; grid-template-columns: repeat(auto-fit, minmax(min(360px, 100%), 1fr)); align-items: stretch; }
 .settings-grid .card { margin-bottom: 0; display: grid; gap: 10px; }
 .settings-grid h2 { margin: 0; }
-.setting { display: grid; grid-template-columns: minmax(0, 1fr) 130px; gap: 2px 12px; align-items: center; border-top: 1px solid var(--border); padding-top: 8px; }
+.setting { display: grid; grid-template-columns: minmax(0, 1fr); gap: 4px; align-items: center; padding-top: 4px; }
 .setting.wide { grid-template-columns: 1fr; }
 .setting input { font: inherit; padding: 6px 10px; min-height: 40px; border-radius: 8px; border: 1px solid var(--border); background: var(--surface); color: var(--text); width: 100%; box-sizing: border-box; }
 .setting.wide input { width: 100%; }
@@ -653,3 +653,8 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
   .gmsrank td { padding: 12px 6px; }
   .gmsrank td.big-result { font-size: 1.1rem; }
 }
+
+.setting label { color: var(--muted); font-size: .9rem; }
+.setting input { min-height: 48px; padding: 8px 14px; border-radius: 12px; font-size: 1.05rem; }
+.settings-grid h2 { font-size: 1rem; }
+.settings-grid .card { align-content: start; }

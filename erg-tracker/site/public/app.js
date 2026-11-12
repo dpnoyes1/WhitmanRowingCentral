@@ -1541,11 +1541,10 @@ async function showSettings() {
   const [v, pw, apw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
-    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1>
-      <p class="muted">Coaches only. Changes recalculate all history: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1></div>
       <button class="btn" id="save" type="button" disabled>Save changes</button></div>
       <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
-      <div class="settings-grid">${sections.map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
+      <div class="settings-grid">${[...sections].sort((x, y) => { const r = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; }; return r(x) - r(y); }).map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
         ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
         ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
@@ -1554,7 +1553,7 @@ async function showSettings() {
           <p class="small">The Slack, Concept2 and sign-in settings are not here on purpose: passwords live as Netlify environment variables, and coach sign-ins and Slack IDs stay in the Sheet's Settings tab.</p></section>
         ${coachPasswordsCard(pw)}
         ${athletePasswordsCard(apw)}
-      </div>${footer(v.meta)}`;
+      </div><p class="muted small">Changes recalculate all history from the raw results: raw minutes, times and weights are stored and these values are applied when shown. Pages pick up a change within about 5 minutes.</p>${footer(v.meta)}`;
     wireFooter();
     wireCoachPasswords();
     wireAthletePasswords();
