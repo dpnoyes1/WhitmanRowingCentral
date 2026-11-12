@@ -516,7 +516,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .cols.w { grid-template-columns: minmax(0, 1.5fr) minmax(0, 1fr); align-items: start; }
 @media (max-width: 900px) { .cols.w { grid-template-columns: minmax(0, 1fr); } }
 .fgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
-@media (max-width: 480px) { .fgrid { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 340px) { .fgrid { grid-template-columns: minmax(0, 1fr); } }
 .pstack .f { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: .875rem; min-width: 0; }
 .pstack .in { font: inherit; font-size: 1rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; min-height: 48px; width: 100%; }
 .pstack .in.bigv { font-size: 1.6rem; font-weight: 700; padding: 14px 16px; }
@@ -608,8 +608,14 @@ th { font-weight: 500; color: var(--muted); }
 @media (max-width: 720px) {
   .att-head { display: none; }
   .att-row { grid-template-columns: minmax(0, 1fr) auto; gap: 4px 10px; padding: 10px 0; border-top: 1px solid var(--border); }
-  .att-dots { grid-column: 1 / -1; flex-wrap: wrap; order: 3; }
-  .ad { width: 18px; height: 18px; }
+  .att-row > a { grid-column: 1; grid-row: 1; }
+  .att-bar { display: contents; }
+  .att-bar b { grid-column: 2; grid-row: 1; }
+  .att-bar .meter { grid-column: 1 / -1; grid-row: 2; }
+  .att-dots { grid-column: 1 / -1; grid-row: 3; gap: 4px; flex-wrap: nowrap; }
+  .ad { width: 16px; height: 16px; }
+  .ad-M { box-shadow: inset 0 0 0 3px var(--surface), inset 0 0 0 5px var(--accent); }
+  .legend .ad { width: 14px; height: 14px; }
 }
 .oyo-row { display: grid; grid-template-columns: minmax(150px, 1fr) minmax(0, 2fr) auto; gap: 16px; align-items: center; padding: 12px 4px; border-top: 1px solid var(--border); }
 .oyo-row:first-child { border-top: 0; }
@@ -635,3 +641,15 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .logfor .btn { min-height: 52px; font-weight: 600; }
 .att-row.me { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 8px; padding: 8px 10px; margin: 0 -10px 8px; }
 .hrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
+/* Phone: chips keep their full label and wrap instead of clipping; Weights drops two columns so Status and Edit stay on screen. */
+@media (max-width: 720px) {
+  .filters.chips .seg { flex-wrap: wrap; }
+  .filters.chips .seg button { flex: 0 0 auto; padding: 6px 14px; white-space: nowrap; }
+  .wt-table .hide-sm { display: none; }
+  .wt-table td, .wt-table th { padding-left: 6px; padding-right: 6px; }
+}
+@media (max-width: 720px) {
+  .gmsrank th:nth-child(n+5), .gmsrank td:nth-child(n+5), .gmsrank th:first-child, .gmsrank td:first-child { display: none; }
+  .gmsrank td { padding: 12px 6px; }
+  .gmsrank td.big-result { font-size: 1.1rem; }
+}

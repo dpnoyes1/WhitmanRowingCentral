@@ -1321,11 +1321,11 @@ async function showWeights() {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
       <div class="grid">${tile('Current', n('Current'), 'entered this school year')}${tile('Due', n('Due'), `entered before ${fmtDate(v.yearStart)}`)}${tile('Missing', n('Missing'), 'tests score unadjusted')}</div>
       ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}
-      <div class="card"><div class="table-wrap"><table>
-        <tr><th>Athlete</th><th class="r">Weight (lb)</th><th>Entered by</th><th>Updated</th><th>Status</th><th></th></tr>
+      <div class="card"><div class="table-wrap"><table class="wt-table">
+        <tr><th>Athlete</th><th class="r">Weight (lb)</th><th class="hide-sm">Entered by</th><th class="hide-sm">Updated</th><th>Status</th><th></th></tr>
         ${v.rows.map((r) => `<tr><td>${esc(r.name)} <span class="muted small">${esc(r.squad)}</span></td>
           <td class="r">${editing === r.id ? `<input class="wt-in" id="wt-in" inputmode="decimal" autocomplete="off" aria-label="Weight in pounds for ${esc(r.name)}" value="${r.lb ?? ''}" placeholder="lb">` : r.lb === null ? '–' : r.lb}</td>
-          <td>${esc(r.by || '–')}</td><td>${r.day ? fmtDate(r.day, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
+          <td class="hide-sm">${esc(r.by || '–')}</td><td class="hide-sm">${r.day ? fmtDate(r.day, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
           <td><span class="pill ${r.status === 'Current' ? '' : 'warn'}">${r.status}</span></td>
           <td class="r">${editing === r.id ? `<button class="btn sm" type="button" data-wsave="${esc(r.id)}">Save</button> <button class="btn ghost sm" type="button" data-wcancel="1">Cancel</button>` : `<button class="btn ghost sm" type="button" data-wedit="${esc(r.id)}">${r.status === 'Missing' ? 'Enter' : 'Edit'}</button>`}</td></tr>`).join('')}
       </table></div></div>`;
@@ -1377,7 +1377,7 @@ async function showCompletion() {
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}</div><h1>Attendance</h1></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}${isCoach() ? '' : ' · everyone on the team sees this page'}</div><h1>Attendance</h1></div></div>
     <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
       <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
