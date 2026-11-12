@@ -1,8 +1,8 @@
 // Offline home-screen shell (David, 2026-11-03). Caches only the app's own
 // files so the installed app opens and shows its menu without a connection.
 // Data (/api/*), sign-in and photos are never cached: they need the network.
-const CACHE = 'whitman-shell-v3';
-const SHELL = ['/', '/index.html', '/app.js', '/practice.mjs', '/lineups.mjs', '/plan.mjs', '/fonts/inter-400.woff2', '/fonts/inter-600.woff2', '/fonts/inter-700.woff2', '/theme.js', '/style.css', '/manifest.webmanifest',
+const CACHE = 'whitman-shell-v4';
+const SHELL = ['/', '/index.html', '/app.js', '/practice.mjs', '/lineups.mjs', '/plan.mjs', '/logmine.mjs', '/photo.mjs', '/fonts/inter-400.woff2', '/fonts/inter-600.woff2', '/fonts/inter-700.woff2', '/theme.js', '/style.css', '/manifest.webmanifest',
   '/logo.png', '/favicon.png', '/icons/icon-192.png', '/icons/icon-512.png', '/icons/apple-touch-icon.png'];
 
 self.addEventListener('install', (event) => {

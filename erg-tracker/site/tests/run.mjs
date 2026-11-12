@@ -14,6 +14,8 @@ import { handleSettings } from '../functions/settings.mjs';
 import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
+import { handleLogMine } from '../functions/logmine.mjs';
+import { paceText, parseDuration } from '../public/logmine.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
 import { handleHealth } from '../functions/health.mjs';
@@ -2192,6 +2194,53 @@ test('log for an athlete: coaches only, form fields only, to the Sheet with the 
   assert.ok(meta.width <= 1280 && !meta.exif, 'resized and no metadata kept');
   assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: Buffer.from('not an image').toString('base64') }), env, { fetchImpl: sheet({}) })).status, 422, 'an unreadable photo is refused before the Sheet');
   assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: 'data:image/jpeg;base64,xx' }), env, { fetchImpl: sheet({}) })).status, 400);
+});
+
+test('log my run: athletes only, always for herself, no erg or tests, recent dates, optional photo', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const now = () => Date.UTC(2026, 10, 12, 15);
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/log-mine', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const form = { date: '2026-11-11', type: 'oyo', activity: 'Run', pieces: '25:30.0, 5000', rpe: '6' };
+  const ok = sheet({ status: 'ok', photo: '' });
+  assert.strictEqual((await handleLogMine(new Request('https://x/api/log-mine', { method: 'POST' }), env, { now })).status, 401);
+  assert.strictEqual((await handleLogMine(post(coach, { form }), env, { fetchImpl: ok, now })).status, 403, 'coaches use Log for an athlete');
+  assert.strictEqual(calls.length, 0);
+  let res = await handleLogMine(post(athlete, { athleteId: 'A777', requestId: 'r1', form }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'site-log', self: true, athleteId: 'A901', requestId: 'r1', form, key: 'fake-key' }, 'the athlete ID comes from the sign-in, not the request');
+  for (const bad of [{ activity: 'Erg (RowErg)' }, { activity: 'BikeErg' }, { activity: 'Lifting' }, { type: 'makeup' }, { type: 'test' }, { date: '2026-10-01' }, { date: '2026-12-25' }, { date: 'yesterday' }]) {
+    res = await handleLogMine(post(athlete, { form: { ...form, ...bad } }), env, { fetchImpl: ok, now });
+    assert.strictEqual(res.status, 422, JSON.stringify(bad));
+  }
+  const n = calls.length;
+  res = await handleLogMine(post(athlete, { form: { ...form, test: 'yes', status: 'out', evil: 'x' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(Object.keys(calls[n].form).sort(), ['activity', 'date', 'pieces', 'rpe', 'type'], 'only whitelisted fields reach the Sheet');
+  res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }), now });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }), now })).status, 502);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'duplicate' }), now })).status, 200);
+  const { default: sharp } = await import('sharp');
+  const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
+  const m = calls.length;
+  res = await handleLogMine(post(athlete, { form, photo: jpeg.toString('base64') }), env, { fetchImpl: sheet({ status: 'ok', photo: 'saved' }), now });
+  assert.strictEqual((await res.json()).photo, 'saved');
+  assert.ok(calls[m].photo && calls[m].photo.length < 400000);
+  assert.strictEqual((await handleLogMine(post(athlete, { form, photo: Buffer.from('nope').toString('base64') }), env, { fetchImpl: ok, now })).status, 422);
+});
+
+test('log my run page helpers: pace and times typed on a phone', () => {
+  assert.strictEqual(parseDuration('25:30'), 1530);
+  assert.strictEqual(parseDuration('1:02:30'), 3750);
+  assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
+  ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
+  assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
+  assert.strictEqual(paceText(0, 5000), '');
 });
 
 test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {

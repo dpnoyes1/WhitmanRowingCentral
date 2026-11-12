@@ -1462,6 +1462,14 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(jog.benchmark, undefined);
   assert.strictEqual(jog.entry['Work m'], 5000);
   assert.throws(() => ans({ activity: 'Run', pieces: '25:00.0, 5000', test: 'yes' }), /test/i, 'a run is never a test');
+  // an athlete logging for herself: non-erg only, OYO or practice, never a test
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', pieces: '25:00.0, 5000' }), '');
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
+  ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', test: 'yes' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'practice', status: 'out' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', makeup_for: '2026-11-02' }));
   // kinds: exactly one piece of 2000 m, 500 m, 100 m or 20:00.0
   const kind = (t) => g.siteTestKind_(g.parsePiecesText(t));
   assert.strictEqual(kind('7:44.8, 2000, 31'), '2000m');

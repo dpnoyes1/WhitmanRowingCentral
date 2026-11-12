@@ -5,6 +5,8 @@
 
 import { loadPractice } from './practice.mjs';
 import { openPlan } from './plan.mjs';
+import { openLogMine } from './logmine.mjs';
+import { shrinkPhoto } from './photo.mjs';
 import { openLineups } from './lineups.mjs';
 
 const app = document.getElementById('app');
@@ -126,6 +128,7 @@ function setNav(active) {
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
   document.getElementById('nav-log-for').hidden = !isCoach();
+  document.getElementById('nav-log-mine').hidden = isCoach() || !SESSION;
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
     const on = a.dataset.nav === active;
@@ -1166,14 +1169,10 @@ async function showInsights() {
 }
 
 /** Coaches only: log a workout for an athlete. The test question appears only for ONE piece of exactly 2000 m, 500 m, 100 m or 20:00.0. */
-/** A phone photo -> a JPEG of at most 1600 px (base64, no prefix) so the upload stays small. The site re-encodes it again before keeping it. */
-async function shrinkPhoto(file) {
-  const bmp = await createImageBitmap(file, { imageOrientation: 'from-image' });
-  const k = Math.min(1, 1600 / Math.max(bmp.width, bmp.height));
-  const c = document.createElement('canvas');
-  c.width = Math.round(bmp.width * k); c.height = Math.round(bmp.height * k);
-  const g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(bmp, 0, 0, c.width, c.height);
-  return c.toDataURL('image/jpeg', 0.8).split(',')[1];
+/** Athletes only: log her own run, ride or swim from her phone. */
+async function showLogMine() {
+  setNav('logrun');
+  openLogMine({ app, esc, fmtDay, signedOut: () => showLogin('You were signed out. Please sign in again.') });
 }
 
 async function showLogFor() {
@@ -1655,6 +1654,7 @@ async function route() {
     if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'plan' && isCoach()) return await showPlan();
     if (page === 'log' && isCoach()) return await showLogFor();
+    if (page === 'logrun' && SESSION && SESSION.kind === 'athlete') return await showLogMine();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
