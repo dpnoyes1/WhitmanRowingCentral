@@ -13,7 +13,7 @@
   }
 
   const choice = saved();
-  root.dataset.theme = choice === 'light' ? 'light' : 'dark';
+  root.dataset.theme = 'dark';   // dark only (David, 2026-11-11); the old light choice is ignored
 
   function current() {
     return root.dataset.theme === 'light' ? 'light' : 'dark';
@@ -33,6 +33,8 @@
   document.addEventListener('DOMContentLoaded', () => {
     const button = document.getElementById('theme');
     if (!button) return;
+    button.hidden = true;
+    return;
     paint(button);
     button.addEventListener('click', () => {
       const next = current() === 'dark' ? 'light' : 'dark';

@@ -12,6 +12,21 @@ const SEEN_DAYS = 30;
 
 const tenths = (x) => (x === undefined || x === null || x === '' || isNaN(Number(x)) ? '' : Math.round(Number(x)) / 10);
 const num = (x) => (x === undefined || x === null || x === '' || isNaN(Number(x)) ? '' : Number(x));
+const txt = (x) => (x === undefined || x === null ? '' : String(x));
+
+// Heart rate object { average, min, max, ending, rest, recovery } -> flat fields (blank when missing).
+const hrOf = (h) => { const o = h && typeof h === 'object' ? h : {};
+  return { hrAvg: num(o.average), hrMin: num(o.min), hrMax: num(o.max), hrEnding: num(o.ending), hrRest: num(o.rest), hrRecovery: num(o.recovery) }; };
+// Targets { pace (tenths), watts, stroke_rate, heart_rate_zone, calories } -> flat fields.
+const targetsOf = (t) => { const o = t && typeof t === 'object' ? t : {};
+  return { targetPaceS: tenths(o.pace), targetWatts: num(o.watts), targetRate: num(o.stroke_rate), targetHrZone: num(o.heart_rate_zone), targetCalories: num(o.calories) }; };
+// One split or interval from the API -> everything it carries.
+const pieceOf = (iv) => ({
+  timeS: tenths(iv.time), distanceM: num(iv.distance), rate: num(iv.stroke_rate),
+  restTimeS: tenths(iv.rest_time), restDistanceM: num(iv.rest_distance),
+  calories: num(iv.calories_total), wattMinutes: num(iv.wattminutes_total), type: txt(iv.type), machine: txt(iv.machine),
+  ...hrOf(iv.heart_rate), ...targetsOf(iv.targets)
+});
 
 /**
  * One Logbook result (API shape: time in tenths of a second, distance in meters,
@@ -24,10 +39,8 @@ export function normalizeResult(r) {
   const m = String(r.date || '').match(/^(\d{4}-\d{2}-\d{2})[ T](\d{1,2}):(\d{2})/);
   if (!m || !r.id) return null;
   const workout = r.workout && typeof r.workout === 'object' ? r.workout : {};
-  const pieces = (Array.isArray(workout.intervals) ? workout.intervals : []).map((iv) => ({
-    timeS: tenths(iv.time), distanceM: num(iv.distance), rate: num(iv.stroke_rate),
-    restTimeS: tenths(iv.rest_time), restDistanceM: num(iv.rest_distance)
-  })).filter((p) => p.timeS > 0);
+  const pieces = (Array.isArray(workout.intervals) ? workout.intervals : []).map(pieceOf).filter((p) => p.timeS > 0);
+  const splits = (Array.isArray(workout.splits) ? workout.splits : []).map(pieceOf);
   const timeS = tenths(r.time);
   if (!pieces.length && !(timeS > 0)) return null;
   return {
@@ -36,7 +49,13 @@ export function normalizeResult(r) {
     name: String(r.comments || r.workout_type || '').slice(0, 80),
     workoutType: String(r.workout_type || ''),
     timeS, distanceM: num(r.distance), dragFactor: num(r.drag_factor),
-    rate: num(r.stroke_rate), intervals: pieces
+    rate: num(r.stroke_rate), intervals: pieces,
+    // Everything else Logbook sends (kept in the Sheet so nothing has to be fetched again later).
+    splits, calories: num(r.calories_total), strokeCount: num(r.stroke_count), ...hrOf(r.heart_rate),
+    restTimeTotalS: tenths(r.rest_time), restDistanceTotalM: num(r.rest_distance),
+    logbookSource: txt(r.source), verified: r.verified === undefined || r.verified === null ? '' : r.verified ? 'Yes' : 'No',
+    ranked: r.ranked === undefined || r.ranked === null ? '' : r.ranked ? 'Yes' : 'No', timezone: txt(r.timezone), dateUtc: txt(r.date_utc),
+    privacy: txt(r.privacy), comments: txt(r.comments), targets: Object.keys(workout.targets || {}).length ? workout.targets : null
   };
 }
 
@@ -47,6 +66,8 @@ async function logbookGet(fetchImpl, access, path) {
 }
 
 export const fetchResult = (fetchImpl, access, id) => logbookGet(fetchImpl, access, 'results/' + encodeURIComponent(id));
+
+export const fetchStrokes = (fetchImpl, access, id) => logbookGet(fetchImpl, access, 'results/' + encodeURIComponent(id) + '/strokes');
 
 export const listRecent = (fetchImpl, access, fromDay) =>
   logbookGet(fetchImpl, access, 'results?from=' + encodeURIComponent(fromDay) + '&number=50');
@@ -74,12 +95,22 @@ const fingerprint = (p) => JSON.stringify([p.timeS, p.distanceM, p.localDate, p.
  * Sends one result to the Sheet unless it was already sent unchanged.
  * Returns 'sent', 'same', 'skipped' (no time) or 'deleted'.
  */
-export async function syncResult(env, store, fetchImpl, athleteId, apiResult) {
+export async function syncResult(env, store, fetchImpl, athleteId, apiResult, access = null) {
   const payload = normalizeResult(apiResult);
   if (!payload) return 'skipped';
   const fp = fingerprint(payload);
   if ((await store.get(seenKey(payload.id))) === fp) return 'same';
-  const out = await sendToSheet(env, fetchImpl, athleteId, payload);
+  // New or changed: with her token, get the full result (the list gives a summary) and the stroke data, so the Sheet keeps all of it.
+  let full = apiResult, strokes = [];
+  if (access) {
+    try {
+      if (!apiResult.workout) { const d = await fetchResult(fetchImpl, access, payload.id); if (d.status === 200 && d.data) full = { ...apiResult, ...d.data }; }
+      const st = await fetchStrokes(fetchImpl, access, payload.id);
+      if (st.status === 200 && Array.isArray(st.data)) strokes = st.data;
+    } catch (err) { console.error('logbook detail fetch failed:', err.message); }
+  }
+  const body = normalizeResult(full) || payload;
+  const out = await sendToSheet(env, fetchImpl, athleteId, { ...body, raw: { result: full, strokes } });
   await store.set(seenKey(payload.id), fp);
   // A new pending session also goes to her Slack DM (David, 2026-10-28), when the Roster has her member ID.
   if (out && out.slack) await notifyLogbook(env, fetchImpl, out.slack);
@@ -114,7 +145,7 @@ export async function handleWebhook(env, store, fetchImpl, body) {
     return { status: 'deleted' };
   }
   if (got.status !== 200 || !got.data) return { status: 'fetch failed' };
-  return { status: await syncResult(env, store, fetchImpl, athleteId, got.data), event };
+  return { status: await syncResult(env, store, fetchImpl, athleteId, got.data, access), event };
 }
 
 /**
@@ -131,7 +162,7 @@ export async function syncAthlete(env, store, fetchImpl, athleteId, { now = Date
     const list = await listRecent(fetchImpl, access, from);
     if (list.status !== 200 || !Array.isArray(list.data)) { out.failed++; return out; }
     for (const r of list.data) {
-      try { out[await syncResult(env, store, fetchImpl, athleteId, r)]++; } catch (err) { out.failed++; console.error('logbook sync failed:', err.message); }
+      try { out[await syncResult(env, store, fetchImpl, athleteId, r, access)]++; } catch (err) { out.failed++; console.error('logbook sync failed:', err.message); }
     }
   } catch (err) {
     out.failed++;

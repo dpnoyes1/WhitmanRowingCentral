@@ -251,13 +251,19 @@ export function insightsView(feed, today) {
   const last = addDays(monday, -7);
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const splitWeeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));
+  const thisWeekMin = weekMinutes(feed.entries, feed.settings, monday);
   const rows = activeRowers(feed).map((a) => {
     const mine = feed.entries.filter((e) => e.athleteId === a.id);
     const [prev, cur] = loadTrend(mine, feed.settings, [last, monday]).map(loadRow);
     const record = practiceRecord(a, feed, today);
     const proj = projected2k(a.id, feed.benchmarks, yearStart);
+    const season = record.filter((r) => r.date >= yearStart), recent = record.slice(-ATTENDANCE_RECENT);
+    const oyoNow = round((thisWeekMin[a.id] || { oyo: 0 }).oyo), goals = oyoGoals(a, monday, feed.settings);
     return {
       ...athleteSummary(a), lastWeek: prev, thisWeek: cur,
+      attendance: { season: pct(season.filter((r) => r.done).length, season.length), recent: pct(recent.filter((r) => r.done).length, recent.length), recentOf: recent.length },
+      oyo: { minutes: oyoNow, standard: goals.oyoRequired, pct: goals.oyoRequired ? round((100 * oyoNow) / goals.oyoRequired) : null },
+      tests: { has2k: hasTest(feed, a.id, '2000m', yearStart, today), has20: hasTest(feed, a.id, '20min', yearStart, today) },
       splitTrend: trendRow(splitTrend(steadySplits(mine, splitWeeks))),
       projected2k: proj && round(proj.timeS, 1),
       month: { ...monthConsistency(record, today), streak: practiceStreak(record) },
@@ -268,7 +274,34 @@ export function insightsView(feed, today) {
   const bad = (r) => Number(r.missed.flag) * 2 + Number(r.thisWeek.flag || r.lastWeek.flag);
   rows.sort((x, y) => (bad(y) - bad(x)) || (y.missed.count - x.missed.count) || x.name.localeCompare(y.name));
   return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
-    missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, rowers: rows };
+    missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, overreachPct: OYO_OVERREACH_PCT, attendanceRecent: ATTENDANCE_RECENT, rowers: rows };
+}
+
+/** Overreaching on OYO (David, 2026-11-11): 150% or more of the Standard goal. Replaces the old 200% idea. */
+export const OYO_OVERREACH_PCT = 150;
+/** "Past 2 weeks" on Insights attendance = the last 10 practices (David, 2026-11-11). */
+export const ATTENDANCE_RECENT = 10;
+
+function hasTest(feed, id, test, yearStart, today) {
+  return feed.benchmarks.some((b) => b.athleteId === id && b.test === test && b.date >= yearStart && b.date <= today && b.valid !== false);
+}
+
+/**
+ * Coaches only: what the Lineups page needs per rower (David, 2026-11-11). Best 2k time, best 20' meters and
+ * the combined GMS % (average of her best 2k % and best 20' %; one test: that test). A rower with no GMS % (no test,
+ * or no weight on file so the Sheet gave none) has gmsPct null and sits in a boat but is left out of the averages.
+ * Times and meters are raw, never weight.
+ */
+export function lineupsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const rowers = activeRowers(feed).map((a) => {
+    const mine = feed.benchmarks.filter((b) => b.athleteId === a.id && b.date >= yearStart && b.date <= today && b.valid !== false);
+    const k2 = mine.filter((b) => b.test === '2000m' && b.timeS).reduce((m, b) => (m === null || b.timeS < m ? b.timeS : m), null);
+    const m20 = mine.filter((b) => b.test === '20min' && b.meters).reduce((m, b) => (m === null || b.meters > m ? b.meters : m), null);
+    const g = STAR_TESTS.map((t) => bestGms(feed, a.id, t, yearStart, today)).filter(Boolean).map((b) => b.gmsPct);
+    return { ...athleteSummary(a), k2S: k2, m20, gmsPct: g.length ? round(g.reduce((x, y) => x + y, 0) / g.length, 1) : null };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  return { today, yearStart, rowers };
 }
 
 /** Completion grid: the last 10 practice days shown (David, 2026-11-01); the % is the whole school year. */

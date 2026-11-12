@@ -16,7 +16,8 @@ var TABS = {
   WORKOUTS: 'Workouts',
   SCHEDULE: 'Schedule',
   SQUAD_HISTORY: 'Squad history',
-  RACES: 'Races'
+  RACES: 'Races',
+  LOGBOOK_RAW: 'Logbook raw'
 };
 
 var HEADERS = {};
@@ -30,10 +31,17 @@ HEADERS[TABS.ENTRIES] = [
   'Warmup s', 'Work s', 'Rest s', 'Cooldown s', 'Work m', 'Rest m',
   'Main set', 'Zone', 'RPE', 'Avg HR', 'Drag factor', 'Intervals',
   'Coach note', 'Source', 'Review status', 'Response ID', 'Benchmark ID',
-  'Warmup m', 'Cooldown m', 'Photo link'
+  'Warmup m', 'Cooldown m', 'Photo link',
+  // Everything else the Concept2 Logbook API sends (added 2026-11-11; blank for Form and Slack rows).
+  'Calories', 'Stroke count', 'HR min', 'HR max', 'HR ending', 'HR rest', 'HR recovery',
+  'Logbook type', 'Logbook source', 'Verified', 'Ranked', 'Timezone', 'Date UTC', 'Privacy',
+  'Logbook comments', 'Rest s total', 'Rest m total', 'Splits JSON', 'Targets JSON'
 ];
 HEADERS[TABS.INTERVALS] = [
-  'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m'
+  'Entry ID', 'Interval #', 'Work s', 'Work m', 'Avg rate', 'Rest s', 'Rest m',
+  // Per piece, from Logbook (added 2026-11-11).
+  'Calories', 'Watt-min', 'Avg HR', 'HR min', 'HR max', 'HR ending', 'HR rest', 'HR recovery',
+  'Target pace s', 'Target watts', 'Target rate', 'Target HR zone', 'Target calories', 'Piece type', 'Machine'
 ];
 HEADERS[TABS.BENCHMARKS] = [
   'Benchmark ID', 'Submitted at', 'Date', 'Athlete ID', 'Athlete', 'Entered by',
@@ -71,6 +79,11 @@ HEADERS[TABS.RACES] = [
 ];
 
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
+// Full Logbook result as JSON, and its stroke-by-stroke data, one row per chunk (a cell holds at most 50,000 characters).
+// Coach-only and hidden. Nothing reads it yet; it exists so no Logbook field is ever lost.
+HEADERS[TABS.LOGBOOK_RAW] = ['Result ID', 'Athlete ID', 'Received at', 'Kind', 'Part', 'JSON'];
+var LOGBOOK_RAW_CHUNK = 40000;
+
 var TEXT_COLUMNS = {};
 TEXT_COLUMNS[TABS.PRACTICES] = ['Start', 'End', 'Window start', 'Window end'];
 TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
@@ -79,6 +92,7 @@ TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
 TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
 TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
+TEXT_COLUMNS[TABS.LOGBOOK_RAW] = ['Result ID', 'JSON'];
 
 /**
  * Columns the Sheet fills itself with one array formula in the header cell.
@@ -135,11 +149,9 @@ var SETTINGS_DEFAULTS = [
   ['return_to_training_days', '5', 'Consecutive days out that trigger a ramp-back week'],
   ['autoaccept_hours', '48', 'Phase 2: unchanged auto-labels accepted after this'],
   ['load.jump_pct', '15', "Coaches see a flag when a week's weighted minutes are more than this % above the average of the 3 weeks before (fewer in her first weeks)"],
-  ['oyo.standard.required', '60', 'Weekly weighted OYO minutes Required, the same for every athlete'],
-  ['oyo.standard.elite', '120', 'Weekly weighted OYO minutes Elite, the same for every athlete'],
+  ['oyo.standard.required', '60', 'Weekly weighted OYO minutes, the Standard goal, the same for every athlete. Elite is double this; over-reaching is 150% or more'],
   ['oyo.break.dates', '', 'Breaks with no practice, e.g. 12/23/2026-01/03/2027; more than one separated by ;. A week with 4 or more break days uses the break goals'],
-  ['oyo.break.required', '', 'Weekly OYO Required in break weeks, for everyone. Blank = the normal goal'],
-  ['oyo.break.elite', '', 'Weekly OYO Elite in break weeks, for everyone. Blank = the normal goal'],
+  ['oyo.break.required', '', 'Weekly OYO Standard goal in break weeks, for everyone (Elite is double). Blank = the normal goal'],
   ['gms.standard_s', '300', '1v8 1500m standard (5:00). GMS % is always vs this'],
   ['gms.star2_pct', '95', 'GMS % for 2 stars. Every 2k or 20\' earns 1 star; each edge counts as in'],
   ['gms.star3_pct', '96', 'GMS % for 3 stars'],
