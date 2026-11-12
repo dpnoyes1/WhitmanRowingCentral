@@ -11,6 +11,7 @@ import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
+import { handleWeights } from '../functions/weights.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
@@ -2067,6 +2068,34 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(x.calls[1].url, 'https://slack.com/api/chat.update');
   assert.deepStrictEqual([x.calls[1].body.channel, x.calls[1].body.ts], ['D1', '1.2']);
   assert.ok(/Counted/.test(x.calls[1].body.text));
+});
+
+test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const rows = [{ id: 'A901', name: 'Fake Athlete', squad: 'Varsity', lb: 131, day: '2026-10-10', by: 'Pat Example', status: 'Current' }];
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/weights', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  assert.strictEqual((await handleWeights(new Request('https://x/api/weights'), env, {})).status, 401);
+  assert.strictEqual((await handleWeights(new Request('https://x/api/weights', { headers: { cookie: athlete } }), env, {})).status, 403);
+  assert.strictEqual((await handleWeights(post(athlete, { athleteId: 'A901', lb: '120' }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleWeights(new Request('https://x/api/weights', { headers: { cookie: coach } }), env, { fetchImpl: sheet({ status: 'ok', today: '2026-11-11', yearStart: '2026-07-01', rows }) });
+  assert.deepStrictEqual((await res.json()).rows, rows);
+  assert.deepStrictEqual(calls[0], { action: 'weights-get', key: 'fake-key' });
+  assert.strictEqual(res.headers.get('cache-control'), 'private, no-store');
+  res = await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }), env, { fetchImpl: sheet({ status: 'ok', today: '2026-11-11', yearStart: '2026-07-01', rows }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[1], { action: 'weights-save', athleteId: 'A901', lb: '132', coachName: 'Pat Example', key: 'fake-key' });
+  res = await handleWeights(post(coach, { athleteId: 'A901', lb: 'lots' }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Use a number of pounds, like 128 or 128.5.' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400, 'another site cannot save for a signed-in coach');
+  assert.strictEqual((await handleWeights(post(coach, {}), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  const wfeed = JSON.stringify(feed);
+  assert.ok(!/weight ?lb|"lb"/i.test(wfeed), 'the feed carries no weight');
 });
 
 test('settings page: coaches only, goes to the Sheet with the feed key, errors come back per field', async () => {

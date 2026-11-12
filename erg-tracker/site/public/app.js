@@ -122,6 +122,7 @@ function setNav(active) {
   document.getElementById('nav-balance').hidden = !isCoach();
   document.getElementById('nav-completion').hidden = !isCoach();
   document.getElementById('nav-lineups').hidden = !isCoach();
+  document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-settings').hidden = !isCoach();
   document.querySelectorAll('#side a[data-nav], #tabbar a[data-nav]').forEach((a) => {
     const on = a.dataset.nav === active;
@@ -1115,6 +1116,45 @@ async function showInsights() {
   draw();
 }
 
+/** Coaches only: current weight per rower, entered here instead of in the hidden tab. Weight never reaches a team or athlete page. */
+async function showWeights() {
+  let v = await api('/api/weights');
+  setNav('weights');
+  let editing = null, msg = '';
+  const draw = () => {
+    const n = (s) => v.rows.filter((r) => r.status === s).length;
+    app.innerHTML = `<div class="head"><div><h1>Weights</h1><p class="muted">Coaches only. Athletes never see this page. Only the current weight is shown; each entry is dated, so past tests keep the weight they were scored with. There is no history, trend or graph.</p></div></div>
+      <div class="grid">${tile('Current', n('Current'), 'entered this school year')}${tile('Due', n('Due'), `entered before ${fmtDate(v.yearStart)}`)}${tile('Missing', n('Missing'), 'tests score unadjusted')}</div>
+      ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}
+      <div class="card"><div class="table-wrap"><table>
+        <tr><th>Athlete</th><th class="r">Weight (lb)</th><th>Entered by</th><th>Updated</th><th>Status</th><th></th></tr>
+        ${v.rows.map((r) => `<tr><td>${esc(r.name)} <span class="muted small">${esc(r.squad)}</span></td>
+          <td class="r">${editing === r.id ? `<input class="wt-in" id="wt-in" inputmode="decimal" autocomplete="off" aria-label="Weight in pounds for ${esc(r.name)}" value="${r.lb ?? ''}" placeholder="lb">` : r.lb === null ? '–' : r.lb}</td>
+          <td>${esc(r.by || '–')}</td><td>${r.day ? fmtDate(r.day, { month: 'short', day: 'numeric', year: 'numeric' }) : '–'}</td>
+          <td><span class="pill ${r.status === 'Current' ? '' : 'warn'}">${r.status}</span></td>
+          <td class="r">${editing === r.id ? `<button class="btn sm" type="button" data-wsave="${esc(r.id)}">Save</button> <button class="btn ghost sm" type="button" data-wcancel="1">Cancel</button>` : `<button class="btn ghost sm" type="button" data-wedit="${esc(r.id)}">${r.status === 'Missing' ? 'Enter' : 'Edit'}</button>`}</td></tr>`).join('')}
+      </table></div></div>`;
+    const input = app.querySelector('#wt-in');
+    if (input) { input.focus(); input.select(); input.onkeydown = (e) => { if (e.key === 'Enter') app.querySelector('[data-wsave]').click(); if (e.key === 'Escape') { editing = null; draw(); } }; }
+    app.querySelectorAll('[data-wedit]').forEach((b) => { b.onclick = () => { editing = b.dataset.wedit; msg = ''; draw(); }; });
+    app.querySelectorAll('[data-wcancel]').forEach((b) => { b.onclick = () => { editing = null; draw(); }; });
+    app.querySelectorAll('[data-wsave]').forEach((b) => {
+      b.onclick = async () => {
+        b.disabled = true;
+        try {
+          const res = await fetch('/api/weights', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: b.dataset.wsave, lb: app.querySelector('#wt-in').value }) });
+          const out = await res.json().catch(() => ({}));
+          if (res.status === 401) { showLogin('You were signed out. Please sign in again.'); return; }
+          if (!res.ok) { msg = out.error || 'Nothing was saved.'; b.disabled = false; draw(); return; }
+          v = out; editing = null; msg = 'Saved.';
+        } catch { msg = 'Could not reach the site. Nothing was saved.'; }
+        draw();
+      };
+    });
+  };
+  draw();
+}
+
 /** Coaches only: build boats from today's group. Nothing is saved. */
 async function showLineups() {
   const v = await api('/api/lineups');
@@ -1409,6 +1449,7 @@ async function route() {
     if (page === 'insights' && isCoach()) return await showInsights();
     if ((page === 'completion' || page === 'attendance') && isCoach()) return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
+    if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'balance' && isCoach()) return await showBalance();
     if (page === 'settings' && isCoach()) return await showSettings();
     if (page === 'oyo') return await showOyo();
@@ -1416,7 +1457,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'completion', 'attendance', 'lineups', 'weights', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {

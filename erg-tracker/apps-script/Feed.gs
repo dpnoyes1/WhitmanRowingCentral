@@ -24,6 +24,8 @@ function doPost(e) {
   if (body.action === ERGBOT_WEIGHTS_ACTION) return feedJson_(processErgbotWeights_(body));
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
   if (body.action === PHOTO_GET_ACTION) return feedJson_(processPhotoGet_(body));
+  if (body.action === WEIGHTS_GET_ACTION) return feedJson_(processWeightsGet_());
+  if (body.action === WEIGHTS_SAVE_ACTION) return feedJson_(processWeightsSave_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());
   if (body.action === SETTINGS_SAVE_ACTION) return feedJson_(processSettingsSave_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));
@@ -202,7 +204,8 @@ function siteFeed(inputs, asOf) {
   // One OYO Required and Elite for every athlete (David, 2026-10-27). The old
   // Roster columns for OYO group / required / elite were removed 2026-11-01.
   var oyoRequired = num('oyo.standard.required', 60);
-  var oyoElite = num('oyo.standard.elite', 120);
+  // Elite is derived: Standard + 100%, so double (David, 2026-11-11). The coach types only the Standard goal.
+  var oyoElite = oyoRequired * 2;
 
   var athletes = inputs.roster.filter(function (r) {
     return String(r.Name || '').trim() !== '' && String(r['Athlete ID'] || '').trim() !== '';
@@ -336,7 +339,7 @@ function siteFeed(inputs, asOf) {
       oyoBreak: {
         ranges: feedBreakRanges_(s['oyo.break.dates']),
         required: num('oyo.break.required', null),
-        elite: num('oyo.break.elite', null)
+        elite: num('oyo.break.required', null) === null ? null : num('oyo.break.required', null) * 2
       }
     },
     athletes: athletes,

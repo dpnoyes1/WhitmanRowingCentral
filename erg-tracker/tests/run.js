@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -993,9 +993,11 @@ test('site feed: break ranges from Settings', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_(''))), []);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_('12/23/2026'))), []);
   const inputs = dummyFeedInputs();
-  inputs.settings = Object.assign({}, inputs.settings, { 'oyo.break.dates': '12/23/2026-01/03/2027', 'oyo.break.required': '30', 'oyo.break.elite': '' });
+  inputs.settings = Object.assign({}, inputs.settings, { 'oyo.break.dates': '12/23/2026-01/03/2027', 'oyo.break.required': '30' });
   const b = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12)))).settings.oyoBreak;
-  assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: null });
+  assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: 60 });   // Elite is double the break Standard goal
+  const f = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12)))).settings;
+  assert.strictEqual(f.oyoElite, f.oyoRequired * 2, 'Elite = Standard + 100%');
 });
 
 test('refreshFormQuestions_ resets the Activity choices from ACTIVITIES', () => {
@@ -1416,7 +1418,7 @@ test('settings page: only listed keys change, errors block everything, unchanged
   const view = JSON.parse(JSON.stringify(g.settingsPageView_({ 'multiplier.Run': '1.3' })));
   const keys = view.reduce((a, s) => a.concat(s.fields.map((f) => f.key)), []);
   assert.strictEqual(keys.length, new Set(keys).size);
-  assert.ok(keys.includes('multiplier.BikeErg') && keys.includes('oyo.standard.elite') && keys.includes('shift.late.days'));
+  assert.ok(keys.includes('multiplier.BikeErg') && keys.includes('oyo.standard.required') && !keys.includes('oyo.standard.elite') && keys.includes('shift.late.days'));
   assert.ok(!keys.some((k) => /^(site|slack|alerts|form|backup)\./.test(k)));
   assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Run').value, '1.3');
   assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Swim').value, '0.8', 'a missing row shows its default');
@@ -1441,6 +1443,28 @@ test('ergbot-weights: rows for ErgBot, blank and dateless rows skipped', () => {
     { Date: new Date(2026, 9, 6), 'Athlete ID': 'A2', Athlete: 'Dummy Two', 'Weight lb': '' }
   ])));
   assert.deepStrictEqual(rows, [{ date: '2026-10-05', athlete: 'Dummy Rower', lb: 141 }]);
+});
+
+test('weights page: parse, status and rows (pure)', () => {
+  assert.strictEqual(g.weightsParse_('128').lb, 128);
+  assert.strictEqual(g.weightsParse_(' 128.5 lb ').lb, 128.5);
+  ['', 'abc', '5', '400', '12.55', '-130'].forEach(v => assert.ok(g.weightsParse_(v).error, v));
+  assert.strictEqual(g.weightsStatus_('', '2026-07-01'), 'Missing');
+  assert.strictEqual(g.weightsStatus_('2026-06-02', '2026-07-01'), 'Due');
+  assert.strictEqual(g.weightsStatus_('2026-09-04', '2026-07-01'), 'Current');
+  const roster = [
+    { Name: 'A One', 'Athlete ID': 'A1', Squad: 'Varsity', Role: 'Rower', Active: 'Yes' },
+    { Name: 'B Two', 'Athlete ID': 'A2', Squad: 'Novice', Role: 'Rower', Active: 'Yes' },
+    { Name: 'C Three', 'Athlete ID': 'A3', Squad: 'Novice', Role: 'Rower', Active: 'Yes' },
+    { Name: 'D Cox', 'Athlete ID': 'A4', Squad: 'Varsity', Role: 'Coxswain', Active: 'Yes' },
+    { Name: 'E Gone', 'Athlete ID': 'A5', Squad: 'Varsity', Role: 'Rower', Active: 'No' },
+    { Name: 'F Alum', 'Athlete ID': 'A6', Squad: 'Alum', Role: 'Rower', Active: 'Yes' }];
+  const weights = [
+    { Date: '2026-09-04', 'Athlete ID': 'A1', 'Weight lb': 130, 'Entered by': 'Coach' },
+    { Date: '2026-10-10', 'Athlete ID': 'A1', 'Weight lb': 131, 'Entered by': 'Coach' },
+    { Date: '2026-06-02', 'Athlete ID': 'A2', 'Weight lb': 140, 'Entered by': 'Coach' }];
+  const rows = JSON.parse(JSON.stringify(g.weightsPageRows_(roster, weights, '2026-07-01')));
+  assert.deepStrictEqual(rows.map(r => [r.id, r.status, r.lb]), [['A3', 'Missing', null], ['A2', 'Due', 140], ['A1', 'Current', 131]], 'missing first, then due; only the newest weight; no coxswain, inactive or alum');
 });
 
 console.log(`${passed} tests passed`);
