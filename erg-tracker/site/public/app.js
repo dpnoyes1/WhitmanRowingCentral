@@ -202,8 +202,7 @@ function staleNote(meta) {
 
 function footer(meta) {
   if (!meta) return '';
-  return `<p class="foot">Updated ${new Date(meta.generatedAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-    <button class="linkish" id="signout">Sign out</button></p>`;
+  return `<p class="foot">Updated ${new Date(meta.generatedAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}</p>`;
 }
 
 // Click the name card for the menu: Log out, and for coaches Change password.
@@ -239,10 +238,7 @@ document.getElementById('pw-form').onsubmit = async (ev) => {
   finally { btn.disabled = false; }
 };
 
-function wireFooter() {
-  const b = document.getElementById('signout');
-  if (b) b.onclick = signOut;
-}
+function wireFooter() { /* the footer has no controls now; Log out is in the name menu */ }
 
 function showError(err) {
   if (err.message === 'signin') return;
@@ -1101,7 +1097,7 @@ async function showBoards() {
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
     const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
     const yr = Number(String(v.yearStart).slice(0, 4));
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Benchmarks</h1>
       <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div>
       <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
         ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
@@ -1160,11 +1156,9 @@ async function showInsights() {
   setNav('insights');
   const trend = (t) => (!t ? '<span class="muted">–</span>' : Math.abs(t.changeS) < 0.5 ? 'same'
     : `<span class="${t.changeS < 0 ? 'good-text' : ''}">${t.changeS < 0 ? '▲' : '▼'} ${Math.abs(t.changeS).toFixed(1)}s</span>`);
-  const flagged = v.rowers.filter((r) => r.thisWeek.flag || r.lastWeek.flag).length;
-  const missedFlagged = v.rowers.filter((r) => r.missed.flag).length;
   // Missed practices lead (David, 2026-11-03); load jumps stay, quieter: a ▲ with no pill.
   const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
-    : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
+    : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above their 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
       : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
   const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${jump(w)}</td>`;
   let which = 'season';
@@ -1186,9 +1180,7 @@ async function showInsights() {
       <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or 20' this school year${!run.has2k ? " (no team 2k yet)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
       ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Logbook.</p>${!lb.missing ? '<p class="muted">Could not load list. Reload.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
     </div>`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
-    <p class="muted small">${missedFlagged ? `<b>${missedFlagged} missing ${v.missedFlagAt}+ practices</b>` : 'No one flagged.'}
-      Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
@@ -1263,7 +1255,7 @@ async function showLogFor() {
           : `<label class="f">One line per piece: time, meters, rate (optional), rest time (optional)<textarea class="in" data-f="pieces" rows="5" placeholder="7:44.8, 2000, 31, 4:00">${esc(S.pieces)}</textarea></label>`}
         <div class="lf-row">${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}${S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? field('Drag factor (optional)', 'drag', 'inputmode="numeric"') : ''}</div>
         ${kind ? `<div class="card hl" id="lf-test"><b>This piece is exactly ${kind.label}. Is it a test?</b><div class="seg" role="group" aria-label="Is it a test?"><button type="button" data-test="yes" aria-pressed="${S.test === 'yes'}">Yes, a test</button><button type="button" data-test="no" aria-pressed="${S.test === 'no'}">No</button></div>
-          <p class="muted small">${S.test === 'yes' ? `${kind.what}: counts on boards${kind.key === '500m' || kind.key === '100m' ? ' (no stars or GMS %)' : ' and stars'}.` : S.test === 'no' ? 'Normal workout, not on boards.' : 'Pick one before saving.'}</p></div>`
+          <p class="muted small">${S.test === 'yes' ? `${kind.what}: counts on Benchmarks${kind.key === '500m' || kind.key === '100m' ? ' (no stars or GMS %)' : ' and stars'}.` : S.test === 'no' ? 'Normal workout, not on Benchmarks.' : 'Pick one before saving.'}</p></div>`
           : !onErg() ? ''
           : '<p class="muted small">Test question: only single 2000 m, 500 m, 100 m or 20:00.</p>'}
         ${field('Note for coaches (optional)', 'note')}
@@ -1360,7 +1352,7 @@ async function showPlan() {
 async function showLineups() {
   const v = await api('/api/lineups');
   setNav('lineups');
-  openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
+  await openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
 }
 
 /** Everyone on the team (David, 2026-11-12): name, season %, then the last practice days. Athletes see themselves first. */
@@ -1376,8 +1368,8 @@ async function showCompletion() {
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}${isCoach() ? '' : ' · everyone on the team sees this page'}</div><h1>Attendance</h1></div></div>
-    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1></div></div>
+    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', '')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, '') : `${tile('Under 80%', low, '')}${tile('Make-ups open', open, '')}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
       <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
       ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
@@ -1427,7 +1419,7 @@ async function showOyo() {
     const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
-      <div class="tiles">${tile('Goal met', `${met}/${rows.length}`, which === 'now' ? 'this week' : 'last week')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
+      <div class="tiles">${tile('Goal met', `${met}/${rows.length}`, `Required ${rows.length ? fmtMin(rows[0].required) : '–'}`)}${tile('At Elite', elite, `Elite ${rows.length ? fmtMin(rows[0].elite) : '–'}`)}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
@@ -1435,7 +1427,7 @@ async function showOyo() {
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
-      }).join('')}<p class="note">Marks: Required, Elite. Bars cap at 150% of Elite. Weighted minutes.</p></div>${footer(v.meta)}`;
+      }).join('')}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
@@ -1554,14 +1546,12 @@ function coachAdminCard(data) {
   const status = { set: 'has a password', temporary: 'temporary password issued' };
   const rows = !list.length ? '<p class="muted small">No other coaches yet.</p>'
     : `<ul class="pw-list">${list.map((c) => `<li><span>${esc(c.name)}<span class="muted small"> · ${esc(status[c.status] || c.status)}</span></span>
-      <span><button class="btn ghost" type="button" data-creset="${esc(c.key)}" data-name="${esc(c.name)}">Reset password</button>
-      <button class="btn ghost" type="button" data-cremove="${esc(c.key)}" data-name="${esc(c.name)}">Remove</button></span></li>`).join('')}</ul>`;
+      <span><button class="btn ghost sm" type="button" data-creset="${esc(c.key)}" data-name="${esc(c.name)}">Reset password</button>
+      <button class="btn ghost sm" type="button" data-cremove="${esc(c.key)}" data-name="${esc(c.name)}">Remove</button></span></li>`).join('')}</ul>`;
   return `<section class="card" id="coach-admin"><h2>Coaches</h2>
-    <p class="muted small">Only you (${esc(data.admin)}) can add or remove coaches. Removing signs them out.</p>
     ${rows}
-    <label class="small" for="coach-add-name">Add a coach</label>
-    <input id="coach-add-name" class="in" type="text" autocomplete="off" placeholder="First and last name">
-    <button class="btn" type="button" id="coach-add">Add coach</button>
+    <div class="coach-add"><input id="coach-add-name" class="in" type="text" autocomplete="off" placeholder="Add a coach: first and last name" aria-label="New coach name">
+    <button class="btn" type="button" id="coach-add">Add</button></div>
     <p id="coach-admin-msg" class="small" role="status"></p></section>`;
 }
 
@@ -1610,16 +1600,16 @@ async function showSettings() {
   const [v, pw, apw] = await Promise.all([api('/api/settings'), loadCoachCard(), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
+    // Coaches and Athlete passwords share one column beside Practice Schedule (David, 2026-11-13).
+    const stack = `<div class="settings-stack">${coachPasswordsCard(pw)}${athletePasswordsCard(apw)}</div>`;
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1></div>
       <button class="btn" id="save" type="button" disabled>Save changes</button></div>
       <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
-      <div class="settings-grid">${[...sections].sort((x, y) => { const r = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; }; return r(x) - r(y); }).map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
+      <div class="settings-grid">${[...sections].sort((x, y) => { const r = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; }; return r(x) - r(y); }).map((s) => `<section class="card"><h2>${esc(s.id === 'schedule' ? 'Practice Schedule' : s.title)}</h2>
         ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
         ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
-          ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
-        ${coachPasswordsCard(pw)}
-        ${athletePasswordsCard(apw)}
+          ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>${s.id === 'schedule' ? stack : ''}`).join('')}${sections.some((x) => x.id === 'schedule') ? '' : stack}
       </div><p class="muted small">Changes recalculate all history. Live in ~5 min.</p>${footer(v.meta)}`;
     wireFooter();
     wireCoachPasswords();
@@ -1693,17 +1683,17 @@ function wireCoachPasswords() {
 
 /**
  * Athlete passwords (David, 2026-11-12): a coach resets an athlete's password here. The site makes a random temporary
- * one and shows it once; the athlete types it with her name and must then choose her own (6+ characters).
+ * one and shows it once; the athlete types it with their name and must then choose their own (6+ characters).
  */
 function athletePasswordsCard(apw) {
   const list = apw && apw.athletes;
-  const label = { birthday: 'birthday (no password yet)', set: 'has her own password', temporary: 'temporary password issued' };
+  const label = { birthday: 'birthday (no password yet)', set: 'has own password', temporary: 'temporary password issued' };
   const body = !list ? '<p class="error small">The list could not be loaded. Reload the page to try again.</p>'
     : `<label class="small" for="apw-pick">Athlete</label>
       <select id="apw-pick" class="in">${list.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(label[a.status] || a.status)}</option>`).join('')}</select>
       <button class="btn" type="button" id="apw-reset">Reset password</button>`;
   return `<section class="card" id="athlete-pw"><h2>Athlete passwords</h2>
-    <p class="muted small">Reset gives a temporary password; she then chooses a new one.</p>
+    <p class="muted small">Reset gives a temporary password; they then choose a new one.</p>
     ${body}<p id="athlete-pw-msg" class="small" role="status"></p></section>`;
 }
 
@@ -1713,7 +1703,7 @@ function wireAthletePasswords() {
   b.onclick = async () => {
     const sel = document.getElementById('apw-pick'), msg = document.getElementById('athlete-pw-msg');
     const name = sel.options[sel.selectedIndex].textContent.split(' · ')[0];
-    if (!confirm(`Reset ${name}'s password? Her current password (or birthday) will stop working.`)) return;
+    if (!confirm(`Reset ${name}'s password? Their current password (or birthday) will stop working.`)) return;
     b.disabled = true; msg.className = 'small'; msg.textContent = '';
     try {
       const res = await fetch('/api/athlete-passwords', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: sel.value }) });
@@ -1721,7 +1711,7 @@ function wireAthletePasswords() {
       const out = await res.json().catch(() => ({}));
       if (!res.ok) { msg.className = 'error small'; msg.textContent = out.error || 'That did not work.'; b.disabled = false; return; }
       msg.className = 'good-text small';
-      msg.innerHTML = `${esc(out.name)}'s temporary password is <strong class="mono">${esc(out.password)}</strong>. Give it to her now: it is shown only once. She types it with her name, then chooses her own password.`;
+      msg.innerHTML = `${esc(out.name)}'s temporary password is <strong class="mono">${esc(out.password)}</strong>. Give it to them now: it is shown only once. They type it with their name, then choose their own password.`;
       sel.options[sel.selectedIndex].textContent = `${out.name} · temporary password issued`;
       b.disabled = false;
     } catch {

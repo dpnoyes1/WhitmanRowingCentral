@@ -8,11 +8,38 @@ const ROLE = { top: 'Top', even: 'Even', low: 'Lower' };
 const MAX_BOATS = 6;
 
 const boat = (n, role) => ({ n, role, s: Array(n).fill(null), pin: Array(n).fill(false) });
-const fresh = () => ({ out: new Set(), boats: [boat(8, 'even'), boat(8, 'even'), boat(4, 'low')], goal: 1, pick: null, open: false, built: false });
+const fresh = () => ({ out: new Set(), boats: [boat(8, 'even'), boat(8, 'even'), boat(4, 'low')], goal: 1, pick: null, sort: 'gms', built: false });
 let LU = fresh();
 let R = [];            // rowers from /api/lineups
 let ctx = null;        // { app, esc, fmtTime, fmtNum, redraw }
 const byId = (id) => R.find((r) => r.id === id);
+
+// Boat names (David, 2026-11-13): the coach can retype "1st 8+" etc. Shared by all coaches through /api/lineup-names, keyed by the
+// default name. A copy stays in this browser so a failed load or save still shows the last names.
+const NAMES_KEY = 'wrc.boatnames';
+let NAMES = {}, nameNote = '';
+try { NAMES = JSON.parse(localStorage.getItem(NAMES_KEY) || '{}') || {}; } catch { NAMES = {}; }
+const keepLocal = () => { try { localStorage.setItem(NAMES_KEY, JSON.stringify(NAMES)); } catch { /* private mode */ } };
+async function loadNames() {
+  try {
+    const res = await fetch('/api/lineup-names', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (res.ok) { NAMES = (await res.json()).names || {}; keepLocal(); nameNote = ''; }
+  } catch { /* keep the copy from this browser */ }
+}
+async function saveNames() {
+  keepLocal();
+  try {
+    const res = await fetch('/api/lineup-names', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ names: NAMES }) });
+    nameNote = res.ok ? '' : 'Boat name not saved for other devices. Try again.';
+  } catch { nameNote = 'Boat name not saved for other devices. Try again.'; }
+}
+
+/** First name only so a card fits on one line; shared first names get the last initial (David, 2026-11-13). */
+function short(a) {
+  const parts = a.name.trim().split(/\s+/), first = parts[0];
+  const clash = R.some((o) => o.id !== a.id && o.name.trim().split(/\s+/)[0].toLowerCase() === first.toLowerCase());
+  return clash && parts.length > 1 ? `${first} ${parts[parts.length - 1][0]}.` : first;
+}
 
 const GOALS = [
   ['Top 4 + even 8s', 'Best 4 in a 4+ to keep up; everyone else in evenly mixed 8s', (k) => [boat(4, 'top'), ...Array.from({ length: k }, () => boat(8, 'even'))]],
@@ -27,7 +54,8 @@ const pace = (g, n) => (g ? (STANDARD_1500_S / (g / 100)) * SPEED[n] / 3 : null)
 const seated = () => new Set(LU.boats.flatMap((b) => b.s.filter((x) => x !== null)));
 const free = (b) => b.s.filter((x) => x === null).length;
 const put = (b, id) => { b.s[b.s.indexOf(null)] = id; };
-const boatName = (bi) => { const b = LU.boats[bi], same = LU.boats.slice(0, bi + 1).filter((x) => x.n === b.n).length; return (['1st', '2nd', '3rd', '4th', '5th', '6th'][same - 1] || same + 'th') + ' ' + b.n + '+'; };
+const defaultName = (bi) => { const b = LU.boats[bi], same = LU.boats.slice(0, bi + 1).filter((x) => x.n === b.n).length; return (['1st', '2nd', '3rd', '4th', '5th', '6th'][same - 1] || same + 'th') + ' ' + b.n + '+'; };
+const boatName = (bi) => NAMES[defaultName(bi)] || defaultName(bi);
 const seatLabel = (n, k) => (k === n - 1 ? 'Stroke' : k === 0 ? 'Bow' : String(k + 1));
 
 function stats(b) {
@@ -79,6 +107,8 @@ function setGoal(g) {
 
 const remove = (id) => LU.boats.forEach((b) => b.s.forEach((x, k) => { if (x === id) { b.s[k] = null; b.pin[k] = false; } }));
 function place(id, key) {
+  if (key === 'absent') { remove(id); LU.out.add(id); return; }   // dropped in the Absent box
+  LU.out.delete(id);                                               // placing anywhere else brings an absent rower back
   if (key === 'pool') { remove(id); return; }
   const [bi, k] = key.split(',').map(Number), b = LU.boats[bi], was = b.s[k];
   let from = null; LU.boats.forEach((bb) => bb.s.forEach((x, kk) => { if (x === id) from = [bb, kk]; }));
@@ -88,12 +118,12 @@ function place(id, key) {
 
 function chip(a, where) {
   const { esc } = ctx;
-  return `<button type="button" class="luc${LU.pick === a.id ? ' on' : ''}" data-lupick="${esc(a.id)}" draggable="true" data-ludrag="${esc(a.id)}" aria-label="${esc(a.name)}, ${esc(where)}"><b>${esc(a.name)}</b><span class="num${gmsOf(a) === null ? ' w' : ''}">${tagOf(a)}</span></button>`;
+  return `<button type="button" class="luc${LU.pick === a.id ? ' on' : ''}" data-lupick="${esc(a.id)}" draggable="true" data-ludrag="${esc(a.id)}" aria-label="${esc(a.name)}, ${esc(where)}" title="${esc(a.name)}"><b>${esc(short(a))}</b><span class="num${gmsOf(a) === null ? ' w' : ''}">${tagOf(a)}</span></button>`;
 }
 
 function draw() {
   const { app, esc, fmtTime, fmtNum } = ctx;
-  const atP = R.filter((a) => !LU.out.has(a.id)), sd = seated(), spare = atP.filter((a) => !sd.has(a.id));
+  const atP = R.filter((a) => !LU.out.has(a.id)), sd = seated(), spare = atP.filter((a) => !sd.has(a.id)), absent = R.filter((a) => LU.out.has(a.id));
   const seats = LU.boats.reduce((s, b) => s + b.n, 0), st = LU.boats.map(stats);
   const evI = LU.boats.map((b, i) => (b.role === 'even' ? i : -1)).filter((i) => i >= 0);
   const gs = (evI.length > 1 ? evI : LU.boats.map((b, i) => i)).map((i) => st[i].g).filter((x) => x !== null);
@@ -103,24 +133,24 @@ function draw() {
   const tile = (l, v, sub = '') => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const boatCard = (b, bi) => {
     const s = st[bi], p = s.g ? pace(s.g, b.n) : null;
-    return `<div class="card lub"><div class="lu-head"><h2>${boatName(bi)} <span class="pill ${b.role === 'low' ? 'warn' : ''}">${ROLE[b.role]}</span></h2><span class="muted small num">${s.n}/${b.n} seats</span><button type="button" class="btn ghost sm" data-lurm="${bi}" aria-label="Remove ${boatName(bi)}">Remove</button></div>
-      <div class="lurole"><span class="muted small">Boat goal</span><div class="seg" role="group" aria-label="Goal for ${boatName(bi)}">${Object.keys(ROLE).map((r) => `<button type="button" aria-pressed="${b.role === r}" data-lurole="${bi},${r}">${ROLE[r]}</button>`).join('')}</div></div>
+    return `<div class="card lub"><div class="lu-head"><h2><input class="luname" type="text" data-luname="${bi}" value="${esc(boatName(bi))}" maxlength="24" aria-label="Boat name" spellcheck="false"> <span class="pill ${b.role === 'low' ? 'warn' : ''}">${ROLE[b.role]}</span></h2><span class="muted small num">${s.n}/${b.n} seats</span><button type="button" class="btn ghost sm" data-lurm="${bi}" aria-label="Remove ${esc(boatName(bi))}">Remove</button></div>
+      <div class="lurole"><span class="muted small">Boat goal</span><div class="seg" role="group" aria-label="Goal for ${esc(boatName(bi))}">${Object.keys(ROLE).map((r) => `<button type="button" aria-pressed="${b.role === r}" data-lurole="${bi},${r}">${ROLE[r]}</button>`).join('')}</div></div>
       <div class="lus">${b.s.map((x, k) => k).reverse().map((k) => { const x = b.s[k];
-        return `<div class="lusr${x === null ? ' empty' : ''}" data-luseat="${bi},${k}"${x === null ? ` tabindex="0" role="button" aria-label="Empty ${seatLabel(b.n, k)} seat in ${boatName(bi)}"` : ''}><span class="lun">${seatLabel(b.n, k)}</span>${x === null ? `<span class="muted">${pickA ? 'Tap to place here' : 'Empty'}</span>`
-          : `${chip(byId(x), seatLabel(b.n, k) + ' seat')}<button type="button" class="lupin${b.pin[k] ? ' on' : ''}" data-lupin="${bi},${k}" aria-label="${b.pin[k] ? 'Unpin' : 'Pin'} ${esc(byId(x).name)}" title="${b.pin[k] ? 'Pinned: Make lineups keeps her here' : 'Pin to this seat'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7"/></svg></button>`}</div>`; }).join('')}</div>
+        return `<div class="lusr${x === null ? ' empty' : ''}" data-luseat="${bi},${k}"${x === null ? ` tabindex="0" role="button" aria-label="Empty ${seatLabel(b.n, k)} seat in ${esc(boatName(bi))}"` : ''}><span class="lun">${seatLabel(b.n, k)}</span>${x === null ? `<span class="muted">${pickA ? 'Tap to place here' : 'Empty'}</span>`
+          : `${chip(byId(x), seatLabel(b.n, k) + ' seat')}<button type="button" class="lupin${b.pin[k] ? ' on' : ''}" data-lupin="${bi},${k}" aria-label="${b.pin[k] ? 'Unpin' : 'Pin'} ${esc(byId(x).name)}" title="${b.pin[k] ? 'Pinned: Make lineups keeps them here' : 'Pin to this seat'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7"/></svg></button>`}</div>`; }).join('')}</div>
       <div class="lua"><div><span class="muted small">Avg 2k</span><b class="num">${s.k2 ? fmtTime(s.k2) : '–'}</b><small class="muted num">${s.k2 ? fmtTime(s.k2 / 4) + ' /500m' : ''}${s.k2n < s.n ? `<br>${s.k2n} of ${s.n} tested` : ''}</small></div>
         <div><span class="muted small">Avg 20'</span><b class="num">${s.m20 ? fmtNum(s.m20) + ' m' : '–'}</b><small class="muted num">${s.m20 ? fmtTime((1200 * 500) / s.m20) + ' /500m' : ''}${s.m20n < s.n ? `<br>${s.m20n} of ${s.n} tested` : ''}</small></div>
         <div><span class="muted small">Avg GMS %</span><b class="num acc">${s.g ? s.g.toFixed(1) + '%' : '–'}</b><small class="muted num">${s.gn < s.n ? `${s.gn} of ${s.n} counted` : s.n ? 'all counted' : ''}</small></div></div>
       ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${fast8.name}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${fast8.name}`}</small>` : ''}</div>` : ''}</div>`;
   };
-  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Not saved. Clears when you leave.</p></div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p>${nameNote ? `<p class="error small" role="alert">${esc(nameNote)}</p>` : ''}</div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
     <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile(evI.length > 1 ? 'Gap between even boats' : 'Gap between boats', gap, 'best vs worst avg GMS %')}</div>
-    <div class="card"><div class="lu-head"><h2>At practice today</h2><button type="button" class="btn ghost sm" data-luopen="1">${LU.open ? 'Hide list' : `Change (${LU.out.size} out)`}</button></div>
-      ${LU.open ? `<div class="luat">${R.map((a) => `<label class="luck"><input type="checkbox" data-luout="${esc(a.id)}"${LU.out.has(a.id) ? '' : ' checked'}><span><b>${esc(a.name)}</b><small class="muted num">${tagOf(a)}</small></span></label>`).join('')}</div>` : `<p class="muted small">${LU.out.size ? 'Out today: ' + [...LU.out].map((i) => esc(byId(i).name)).join(', ') + '.' : 'Everyone here. Untick absentees.'}</p>`}</div>
+    <div class="card"><div class="lu-head"><h2>Absent</h2><span class="muted small num">${LU.out.size}</span></div>
+      <div class="lupool luabs" data-luseat="absent">${LU.out.size ? absent.map((a) => chip(a, 'absent')).join('') : `<span class="muted small">${pickA ? 'Tap here to mark ' + esc(short(pickA)) + ' absent.' : 'Drag a name here.'}</span>`}</div></div>
     <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: you set each boat's goal below"}</p>
       <div class="lugoal">${GOALS.map(([t], g) => `<button type="button" class="btn ${LU.goal === g ? '' : 'ghost '}sm" data-lugoal="${g}">${t}</button>`).join('')}</div></div>
-    <div class="card"><div class="lu-head"><h2>Not in a boat</h2></div><p class="muted small">${pickA ? `Tap a seat for ${esc(pickA.name)}.` : 'Drag or tap a name, then a seat.'}</p>
-      <div class="lupool" data-luseat="pool">${spare.length ? spare.sort((x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>
+    <div class="card"><div class="lu-head"><h2>Not in a boat</h2><div class="seg" role="group" aria-label="Sort"><button type="button" data-lusort="az" aria-pressed="${LU.sort === 'az'}">A–Z</button><button type="button" data-lusort="gms" aria-pressed="${LU.sort === 'gms'}">GMS %</button></div></div><p class="muted small">${pickA ? `Tap a seat for ${esc(short(pickA))}.` : 'Drag or tap a name, then a seat.'}</p>
+      <div class="lupool" data-luseat="pool">${spare.length ? spare.sort(LU.sort === 'az' ? (x, y) => x.name.localeCompare(y.name) : (x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>
     <div class="lu-actions"><button class="btn ghost sm" type="button" data-luadd="8">Add an 8+</button><button class="btn ghost sm" type="button" data-luadd="4">Add a 4+</button><button class="btn ghost sm" type="button" data-luclear="1">Clear unpinned seats</button></div>
     <div class="lugrid">${LU.boats.map(boatCard).join('')}</div>`;
 }
@@ -131,6 +161,7 @@ function wire() {
   const on = () => !!ctx && !!document.querySelector('.lugrid');
   document.addEventListener('click', (e) => {
     if (!on()) return; const q = (s) => e.target.closest(s); let hit = true;
+    if (q('[data-luname]')) return;
     if (q('[data-lupin]')) { const [bi, k] = q('[data-lupin]').dataset.lupin.split(',').map(Number); LU.boats[bi].pin[k] = !LU.boats[bi].pin[k]; }
     else if (q('[data-lupick]')) { const id = q('[data-lupick]').dataset.lupick, seat = q('[data-luseat]');
       if (LU.pick !== null && LU.pick !== id && seat) { place(LU.pick, seat.dataset.luseat); LU.pick = null; } else LU.pick = LU.pick === id ? null : id; }
@@ -141,12 +172,14 @@ function wire() {
     else if (q('[data-lurole]')) { const [bi, r] = q('[data-lurole]').dataset.lurole.split(','); LU.boats[+bi].role = r; LU.goal = -1; }
     else if (q('[data-lugoal]')) { setGoal(+q('[data-lugoal]').dataset.lugoal); LU.pick = null; }
     else if (q('[data-luclear]')) { LU.boats.forEach((b) => b.s.forEach((x, k) => { if (!b.pin[k]) b.s[k] = null; })); LU.built = false; }
-    else if (q('[data-luopen]')) LU.open = !LU.open;
+    else if (q('[data-lusort]')) LU.sort = q('[data-lusort]').dataset.lusort;
     else hit = false;
     if (hit) draw();
   });
-  document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luout]'); if (!el) return; const id = el.dataset.luout;
-    if (el.checked) LU.out.delete(id); else { LU.out.add(id); remove(id); if (LU.pick === id) LU.pick = null; } draw(); });
+  document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luname]'); if (!el) return;
+    const d = defaultName(+el.dataset.luname), v = el.value.trim();
+    if (v && v !== d) NAMES[d] = v; else delete NAMES[d];
+    saveNames().then(draw); draw(); });
   document.addEventListener('keydown', (e) => { if (!on() || (e.key !== 'Enter' && e.key !== ' ')) return; const t = e.target.closest && e.target.closest('.lusr.empty'); if (t && e.target === t) { e.preventDefault(); t.click(); } });
   document.addEventListener('dragstart', (e) => { const el = on() && e.target.closest && e.target.closest('[data-ludrag]'); if (!el) return; e.dataTransfer.setData('text/plain', el.dataset.ludrag); e.dataTransfer.effectAllowed = 'move'; });
   document.addEventListener('dragover', (e) => { if (on() && e.target.closest && e.target.closest('[data-luseat]')) e.preventDefault(); });
@@ -154,6 +187,7 @@ function wire() {
 }
 
 /** Called each time the page opens: a fresh lineup (nothing saved), everyone ticked. */
-export function openLineups(rowers, c) {
+export async function openLineups(rowers, c) {
+  await loadNames();
   R = rowers; ctx = c; LU = fresh(); wire(); draw();
 }

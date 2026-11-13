@@ -458,7 +458,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lusr.empty:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .lun { width: 44px; flex: none; text-align: center; font-size: .75rem; color: var(--muted); font-weight: 600; }
 .luc { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; text-align: left; cursor: grab; }
-.luc b { font-weight: 600; min-width: 0; }
+.luc b { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .luc span { color: var(--link); font-weight: 700; font-size: .875rem; flex: none; }
 .luc span.w { color: var(--warn); font-weight: 600; font-size: .75rem; }
 .luc.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(116, 176, 218, .35); }
@@ -473,14 +473,17 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lua b.acc { color: var(--link); }
 .lupace { display: flex; flex-direction: column; gap: 2px; background: var(--hover); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
 .lupace b { font-size: 1.05rem; }
-.luat { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 12px; }
-.luck { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; min-width: 0; }
-.luck input { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
-.luck span { min-width: 0; } .luck b { display: block; font-weight: 600; font-size: .875rem; } .luck small { font-size: .75rem; }
+.luname { font: inherit; font-size: 1rem; font-weight: 700; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px 8px; margin-left: -8px; width: 9.5em; max-width: 100%; min-width: 0; }
+.luname:hover { border-color: var(--border); }
+.luname:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.luabs { min-height: 58px; border: 1px dashed var(--border); border-radius: 12px; padding: 6px; align-items: center; }
+.luabs > .muted { padding: 0 6px; }
+.coach-add { display: flex; gap: 8px; margin-top: 8px; }
+.coach-add .in { flex: 1; min-width: 0; }
+.settings-stack { display: grid; gap: 16px; align-content: start; }
 @container (max-width: 560px) {
-  .lugrid, .lupool, .luat { grid-template-columns: minmax(0, 1fr); }
+  .lugrid, .lupool { grid-template-columns: minmax(0, 1fr); }
   .lua b { font-size: 1rem; }
-  .luc { flex-wrap: wrap; }
 }
 .theme-toggle[hidden] { display: none; }
 
