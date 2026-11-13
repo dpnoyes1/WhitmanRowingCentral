@@ -147,7 +147,7 @@ export function openPlan(v, ctx) {
     const [pt, pn] = pvHtml();
     const builder = B.mode === 'new' ? `
       <div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic, Monday' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
-        <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'Press Enter or Fill builder. Try “4 × 2000 m with 4:00 rest, threshold, Wednesday” or “variable 2000, 1500, 1000, 500, 250 with 8, 6, 4, 2 min rest”.'}</span></div>
+        <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold, Wednesday”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
       ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable']], B.type, 'data-type')}
       ${fields()}
@@ -161,7 +161,7 @@ export function openPlan(v, ctx) {
         <div class="actions"><button class="btn ghost" type="button" data-save="draft"${busy ? ' disabled' : ''}>Save draft</button><button class="btn" type="button" data-save="publish"${busy ? ' disabled' : ''}>Save and publish</button></div>
       </div><div class="pstack"><div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">Week of ${esc(weekLabel())} · tap a day to put this workout on it</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div>
         <div class="weekgrid">${weekGrid()}</div>
-        <p class="note">Drafts stay hidden from athletes until published. Every number is typed; there are no scrolling pickers. Save puts the workout on every highlighted day; with none highlighted it is saved to the library only.</p></div></div>`;
+        <p class="note">Drafts hidden until published. No days highlighted: saved to library only.</p></div></div>`;
     wire();
   };
 
