@@ -20,6 +20,7 @@ import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleCoaches } from '../functions/coaches.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
+import { handleLineupNames, cleanNames } from '../functions/lineup-names.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -44,6 +45,28 @@ const TODAY = '2026-10-23';
 let passed = 0;
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
+
+test('lineup boat names: coaches only, shared through one store, cleaned', async () => {
+  const mem = new Map();
+  const lineupStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); } };
+  const env2 = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0, coachStore: null, lineupStore, shared: null, today: TODAY };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), 'team', Date.now(), 'Pat Example');
+  const ath = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), feed.athletes.find((x) => x.active).id);
+  const req = (method, cookie, body, extra = {}) => new Request('https://x/api/lineup-names', { method, headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: body ? JSON.stringify(body) : undefined });
+  assert.strictEqual((await handleLineupNames(req('GET', ''), env2, deps)).status, 401);
+  assert.strictEqual((await handleLineupNames(req('GET', ath), env2, deps)).status, 403, 'athletes cannot read or save names');
+  assert.strictEqual((await handleLineupNames(req('POST', ath, { names: { '1st 8+': 'X' } }), env2, deps)).status, 403);
+  assert.strictEqual((await handleLineupNames(req('POST', coach, { names: {} }, { origin: 'https://evil.example' }), env2, deps)).status, 400);
+  assert.deepStrictEqual((await (await handleLineupNames(req('GET', coach), env2, deps)).json()).names, {});
+  const saved = await handleLineupNames(req('POST', coach, { names: { '1st 8+': ' Varsity 8 ', '2nd 8+': 'x'.repeat(60), '3rd 8+': 5, '': 'no' } }), env2, deps);
+  assert.strictEqual(saved.status, 200);
+  const got = (await (await handleLineupNames(req('GET', coach), env2, deps)).json()).names;
+  assert.strictEqual(got['1st 8+'], 'Varsity 8');
+  assert.strictEqual(got['2nd 8+'].length, 24);
+  assert.ok(!('3rd 8+' in got) && !('' in got));
+  assert.deepStrictEqual(cleanNames([1, 2]), {});
+});
 
 test('browser scripts parse as modules', async () => {
   const { execFileSync } = await import('node:child_process');

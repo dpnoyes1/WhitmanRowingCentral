@@ -14,11 +14,25 @@ let R = [];            // rowers from /api/lineups
 let ctx = null;        // { app, esc, fmtTime, fmtNum, redraw }
 const byId = (id) => R.find((r) => r.id === id);
 
-// Boat names (David, 2026-11-13): the coach can retype "1st 8+" etc. Kept on this device, keyed by the default name, so they come back next visit.
+// Boat names (David, 2026-11-13): the coach can retype "1st 8+" etc. Shared by all coaches through /api/lineup-names, keyed by the
+// default name. A copy stays in this browser so a failed load or save still shows the last names.
 const NAMES_KEY = 'wrc.boatnames';
-let NAMES = {};
+let NAMES = {}, nameNote = '';
 try { NAMES = JSON.parse(localStorage.getItem(NAMES_KEY) || '{}') || {}; } catch { NAMES = {}; }
-const saveNames = () => { try { localStorage.setItem(NAMES_KEY, JSON.stringify(NAMES)); } catch { /* private mode */ } };
+const keepLocal = () => { try { localStorage.setItem(NAMES_KEY, JSON.stringify(NAMES)); } catch { /* private mode */ } };
+async function loadNames() {
+  try {
+    const res = await fetch('/api/lineup-names', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (res.ok) { NAMES = (await res.json()).names || {}; keepLocal(); nameNote = ''; }
+  } catch { /* keep the copy from this browser */ }
+}
+async function saveNames() {
+  keepLocal();
+  try {
+    const res = await fetch('/api/lineup-names', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ names: NAMES }) });
+    nameNote = res.ok ? '' : 'Boat name not saved for other devices. Try again.';
+  } catch { nameNote = 'Boat name not saved for other devices. Try again.'; }
+}
 
 /** First name only so a card fits on one line; shared first names get the last initial (David, 2026-11-13). */
 function short(a) {
@@ -129,7 +143,7 @@ function draw() {
         <div><span class="muted small">Avg GMS %</span><b class="num acc">${s.g ? s.g.toFixed(1) + '%' : '–'}</b><small class="muted num">${s.gn < s.n ? `${s.gn} of ${s.n} counted` : s.n ? 'all counted' : ''}</small></div></div>
       ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${fast8.name}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${fast8.name}`}</small>` : ''}</div>` : ''}</div>`;
   };
-  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are kept on this device.</p></div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p>${nameNote ? `<p class="error small" role="alert">${esc(nameNote)}</p>` : ''}</div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
     <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile(evI.length > 1 ? 'Gap between even boats' : 'Gap between boats', gap, 'best vs worst avg GMS %')}</div>
     <div class="card"><div class="lu-head"><h2>Absent</h2><span class="muted small num">${LU.out.size}</span></div>
       <div class="lupool luabs" data-luseat="absent">${LU.out.size ? absent.map((a) => chip(a, 'absent')).join('') : `<span class="muted small">${pickA ? 'Tap here to mark ' + esc(short(pickA)) + ' absent.' : 'Drag a name here.'}</span>`}</div></div>
@@ -165,7 +179,7 @@ function wire() {
   document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luname]'); if (!el) return;
     const d = defaultName(+el.dataset.luname), v = el.value.trim();
     if (v && v !== d) NAMES[d] = v; else delete NAMES[d];
-    saveNames(); draw(); });
+    saveNames().then(draw); draw(); });
   document.addEventListener('keydown', (e) => { if (!on() || (e.key !== 'Enter' && e.key !== ' ')) return; const t = e.target.closest && e.target.closest('.lusr.empty'); if (t && e.target === t) { e.preventDefault(); t.click(); } });
   document.addEventListener('dragstart', (e) => { const el = on() && e.target.closest && e.target.closest('[data-ludrag]'); if (!el) return; e.dataTransfer.setData('text/plain', el.dataset.ludrag); e.dataTransfer.effectAllowed = 'move'; });
   document.addEventListener('dragover', (e) => { if (on() && e.target.closest && e.target.closest('[data-luseat]')) e.preventDefault(); });
@@ -173,6 +187,7 @@ function wire() {
 }
 
 /** Called each time the page opens: a fresh lineup (nothing saved), everyone ticked. */
-export function openLineups(rowers, c) {
+export async function openLineups(rowers, c) {
+  await loadNames();
   R = rowers; ctx = c; LU = fresh(); wire(); draw();
 }

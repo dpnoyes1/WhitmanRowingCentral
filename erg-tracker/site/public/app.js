@@ -1352,7 +1352,7 @@ async function showPlan() {
 async function showLineups() {
   const v = await api('/api/lineups');
   setNav('lineups');
-  openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
+  await openLineups(v.rowers, { app, esc, fmtTime, fmtNum });
 }
 
 /** Everyone on the team (David, 2026-11-12): name, season %, then the last practice days. Athletes see themselves first. */
@@ -1368,7 +1368,7 @@ async function showCompletion() {
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}${isCoach() ? '' : ' · everyone on the team sees this page'}</div><h1>Attendance</h1></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1></div></div>
     <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', '')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, '') : `${tile('Under 80%', low, '')}${tile('Make-ups open', open, '')}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
       <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
