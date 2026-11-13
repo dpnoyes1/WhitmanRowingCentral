@@ -1,7 +1,7 @@
 // An athlete logs her own run, ride, swim and so on (David, 2026-11-12). POST only, athletes only, always for herself:
 // the athlete ID comes from her sign-in, never from the request. Erg workouts and tests are not allowed here (they come from
 // Concept2 Logbook, Slack or the Form). Goes to the Sheet's `site-log` action with self = true, which checks the form again.
-import { session } from '../lib/auth.mjs';
+import { liveSession, athleteStillActive } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { prepPhoto } from '../lib/logphoto.mjs';
 
@@ -14,9 +14,14 @@ const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
 const MAX_DAYS_BACK = 14;
 
 export async function handleLogMine(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'athlete') return json({ error: 'This page is for athletes.' }, 403);
+  // A cookie lasts a year; an athlete set inactive on the Roster is signed out here too (David, 2026-11-13).
+  try { if (!(await athleteStillActive(envFn, who, deps))) return json({ error: 'signin' }, 401); } catch (err) {
+    console.error('feed error:', err.message);
+    return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502);
+  }
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);
   const origin = req.headers.get('origin');
   if (!/^application\/json/i.test(req.headers.get('content-type') || '') || (origin && origin !== new URL(req.url).origin)) {

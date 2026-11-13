@@ -1,4 +1,4 @@
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
@@ -10,7 +10,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handle(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
   let feed;

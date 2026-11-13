@@ -4,6 +4,8 @@
 // site.coaches) and can then set a personal password (lib/coachpw.mjs). There is
 // no shared password (David, 2026-11-03). Rotating FEED_KEY signs everyone out.
 import { createHmac, timingSafeEqual } from 'node:crypto';
+import { defaultCoachStore, hasCoachPassword } from './coachpw.mjs';
+import { getFeed } from './feed.mjs';
 
 export const COOKIE = 'wrc_session';
 export const SESSION_DAYS = 365;   // stay signed in all season (David, 2026-10-23)
@@ -130,4 +132,43 @@ export function session(env, req) {
 
 export function signedIn(env, req) {
   return session(env, req) !== null;
+}
+
+// ---- admin and live sessions (David, 2026-11-13) -------------------------------
+// Only the admin adds or removes coaches. The admin is named in the Netlify setting ADMIN_COACH (a name, not a secret),
+// so a copy of the site for another team names its own. With it set, a coach is whoever has a record in the coach store
+// (made by the admin from Settings > Coaches); the admin signs in with the Sheet's site.coaches birthday until they set a password.
+// With it unset, everything works as before.
+
+/** The admin's name as matched at sign-in, or '' when no admin is set. */
+export function adminKey(env) {
+  const n = env('ADMIN_COACH');
+  return n ? nameKey(n) : '';
+}
+
+/**
+ * session(), plus a check on every request that a coach is still a coach. A removed coach's cookie stops working at once.
+ * Returns the session ({ admin: true } for the admin) or null. If the coach store cannot be read, the coach is refused.
+ */
+export async function liveSession(env, req, deps = {}) {
+  const who = session(env, req);
+  if (!who || who.kind !== 'team') return who;
+  const admin = adminKey(env);
+  if (!admin) return who;
+  const key = nameKey(who.name);
+  if (key === admin) return { ...who, admin: true };
+  try {
+    const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
+    return (await hasCoachPassword(store, key)) ? who : null;
+  } catch (err) {
+    console.error('coach check error:', err.message);
+    return null;
+  }
+}
+
+/** False when a signed-in athlete is no longer active on the Roster (cookies last a year). Anyone else is true. A feed error is thrown. */
+export async function athleteStillActive(env, who, deps = {}) {
+  if (!who || who.kind !== 'athlete') return true;
+  const { data } = await getFeed(env, { fetchImpl: deps.feedFetch, shared: deps.feedShared });
+  return data.athletes.some((x) => x.id === who.id && x.active);
 }
