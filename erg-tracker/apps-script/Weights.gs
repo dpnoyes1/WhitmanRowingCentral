@@ -3,7 +3,8 @@
  * feed (rule 3); this page reads the Weights tab live through the feed key, like the Settings
  * page, and a coach types a current weight here instead of in the hidden tab. Only the current
  * weight shows. Every entry is a new dated row, so past tests keep the weight they were scored
- * with (a result uses the most recent weight on or before its test date). No history, trend or graph.
+ * with (a result uses the most recent weight on or before its test date, or the earliest one after it
+ * when there is none before). No history, trend or graph.
  * Status: Missing = none on file (tests score unadjusted); Due = last entered before this school
  * year began; Current = entered this school year. The pure parts are tested in Node.
  */

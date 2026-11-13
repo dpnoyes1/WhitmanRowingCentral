@@ -20,7 +20,7 @@ function teamGmsInputs_() {
 /**
  * Regenerates the coach tab: one row per school year, to date, plus the full
  * past year for reference. Shows every average, including small groups the
- * team site hides, and lists rowers whose tests have no weight on file.
+ * team site hides, and lists rowers who tested but have no weight on file at all.
  */
 function teamGmsReport() {
   var inp = teamGmsInputs_();

@@ -35,7 +35,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 - Photo flow changes (David, 2026-11-07): no RPE question (Save/Cancel card; old RPE buttons still save without RPE); "Saving..." replaces the card while the Sheet works and a "Got your photo" DM comes first. A coach may type a first name; shared first names ask which (buttons), a near miss gets "Did you mean X?" (`resolveName`; the Sheet's exact check still runs). If the total row reads cleanly but the split/meter rows do not add up (`splits_sum`, `meters_sum` are flags now, not holds), the entry saves from the total row, the Coach note says "Check this one", and the athlete is told a coach will check.
 - Photo date (David, 2026-11-07): the entry takes the date printed on the screen, not the day sent. A screen date more than 14 days from today (or in the future, or unreadable; a battery change can reset it back years) makes the bot ask before saving: buttons "Use <screen date>" / "Use today", or the athlete types a date (`dateAsk`, `datewait:<user>` in `slackphoto.mjs`). Also fixed 2026-11-07: a 20:00.0 total was replaced by the pace-implied 19:59.0 when the title was misread as "View Detail"; the working-time swap now needs a gap bigger than the pace check allows.
 - Intervals: 1 to 10 per entry, linked by Entry ID.
-- Weights: history; each result uses the most recent weight on or before its test date.
+- Weights: history; each result uses the most recent weight on or before its test date; if none, the earliest weight after it (David, 2026-11-13). Unscored only when the athlete has no weight at all.
 - Change log: every manual edit to data tabs (who, cell, old, new) plus submit errors.
 
 ## Volume and weighting
@@ -85,7 +85,7 @@ An athlete's season stars on the site are the average of her best 2k and best 20
 ## Team GMS view
 
 Team-wide, Varsity, Novice and rank band (1-8, 9-16, 17+) averages of GMS % (decided 2026-10-22). Logic in `apps-script/TeamGms.gs`; coach tab via menu "Team GMS report".
-- Only 2k and 20' count. Each rower counts once with her best GMS % in the window; tests without a weight on or before them are left out of averages.
+- Only 2k and 20' count. Each rower counts once with her best GMS % in the window; rowers with no weight at all are left out of averages.
 - Rank bands are team-wide by raw erg (best 2k-equivalent time, no weight), not boat placement.
 - Years compare school year to date (same number of days after Jul 1), not by test week. Past full years shown on the coach tab for reference.
 - Alum (David, 2026-10-27): an explicit Roster Squad value (Varsity / Novice / Alum), set by hand, replacing the old blank-squad habit. Alum results show only on the All Time boards (All, Fr/Nov and Varsity filters, by grade when the piece was done; David, 2026-10-27). Alumni are excluded from weekly plans, coach cards, split averages, team GMS and the season, Fr/Nov and Varsity boards. `isAlum` in `site/lib/views.mjs`, `isAlumSquad_` in `apps-script/Plan.gs`. Needs Set up Sheet and Form to add Alum to the Roster dropdown.
