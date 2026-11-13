@@ -45,6 +45,19 @@ let passed = 0;
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
 
+test('browser scripts parse as modules', async () => {
+  const { execFileSync } = await import('node:child_process');
+  const os = await import('node:os');
+  const pub = path.join(path.dirname(fileURLToPath(import.meta.url)), '../public');
+  for (const f of fs.readdirSync(pub).filter((n) => /\.(js|mjs)$/.test(n))) {
+    const tmp = path.join(os.tmpdir(), `syntax-${process.pid}-${f}.mjs`);
+    fs.copyFileSync(path.join(pub, f), tmp);
+    try { execFileSync(process.execPath, ['--check', tmp], { stdio: 'pipe' }); }
+    catch (e) { assert.fail(`${f} has a syntax error: ${String(e.stderr).split('\n').slice(0, 6).join(' ')}`); }
+    finally { fs.unlinkSync(tmp); }
+  }
+});
+
 test('dates', () => {
   assert.strictEqual(S.weekStart('2026-10-23'), '2026-10-19');
   assert.strictEqual(S.weekStart('2026-10-19'), '2026-10-19');
