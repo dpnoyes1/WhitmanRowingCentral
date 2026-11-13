@@ -1547,8 +1547,6 @@ async function showSettings() {
         ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
           ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
-        <section class="card"><h2>Access</h2>
-          <p class="small">Slack, Concept2 and sign-in settings: Netlify env vars and the Sheet.</p></section>
         ${coachPasswordsCard(pw)}
         ${athletePasswordsCard(apw)}
       </div><p class="muted small">Changes recalculate all history. Live in ~5 min.</p>${footer(v.meta)}`;
