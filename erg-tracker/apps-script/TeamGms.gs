@@ -69,18 +69,18 @@ function teamGmsIsDate_(d) {
 
 /**
  * Weight used to score a result for one athlete, or null when she has no weight at all.
- * The most recent weight on or before `date`; if there is none, the earliest weight after
- * it, the one closest in time (David, 2026-11-13).
+ * The most recent weight on or before `date`; if there is none, her latest weight overall
+ * (David, 2026-11-13: so older tests from before weights were kept still get a GMS %).
  */
 function weightOn_(weights, athleteId, date) {
-  var before = null, after = null;
+  var before = null, after = null;   // after = latest weight dated after `date`
   weights.forEach(function (w) {
     if (w['Athlete ID'] !== athleteId || !teamGmsIsDate_(w.Date)) return;
     var lb = Number(w['Weight lb']);
     if (!lb) return;
     if (w.Date <= date) {
       if (!before || w.Date >= before.date) before = { date: w.Date, lb: lb };
-    } else if (!after || w.Date < after.date) {
+    } else if (!after || w.Date >= after.date) {
       after = { date: w.Date, lb: lb };
     }
   });

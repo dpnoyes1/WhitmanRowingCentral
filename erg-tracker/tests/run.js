@@ -251,10 +251,10 @@ test('team GMS: best 2k/20\' per rower, team-wide raw rank bands, year to date',
   assert.strictEqual(last.groups.varsity.n, 1, 'no history falls back to Roster');
   near(last.fullYear.team.avg, (pct(420) + pct(440)) / 2, 1e-9, 'last full year');
 
-  // No weight on or before the test: the earliest weight after it scores it (David, 2026-11-13).
+  // No weight on or before the test: her latest weight overall scores it (David, 2026-11-13).
   const early = g.teamGmsByYear({ benchmarks: [{ Date: new Date(2026, 7, 5), 'Athlete ID': 'T001', Test: '2000m', 'Time s': 420 }],
-    weights: [{ Date: new Date(2026, 8, 20), 'Athlete ID': 'T001', 'Weight lb': 150 },
-      { Date: new Date(2026, 7, 10), 'Athlete ID': 'T001', 'Weight lb': 270 }], roster, squadHistory: [], settings, asOf });
+    weights: [{ Date: new Date(2026, 9, 20), 'Athlete ID': 'T001', 'Weight lb': 270 },
+      { Date: new Date(2026, 7, 10), 'Athlete ID': 'T001', 'Weight lb': 150 }], roster, squadHistory: [], settings, asOf });
   near(early[0].athletes[0].bestGms, pct(420), 1e-9, 'later weight used');
   near(early[0].groups.team.avg, pct(420), 1e-9, 'later weight counts in averages');
 
