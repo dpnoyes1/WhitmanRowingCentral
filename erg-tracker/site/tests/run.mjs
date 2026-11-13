@@ -18,6 +18,7 @@ import { handleLogMine } from '../functions/logmine.mjs';
 import { paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
 import { handlePassword } from '../functions/password.mjs';
+import { handleCoaches } from '../functions/coaches.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
@@ -1794,6 +1795,12 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
 });
 
 // ---- Concept2 Logbook connect (fake keys, fake Logbook, in-memory store) ----
+/** Memory copy of the feed holding only these athletes (all active), for handlers that check an athlete is still on the Roster. */
+async function seedActive(ids = ['A901', 'A902', 'A903', 'A777']) {
+  clearFeedCache();
+  await getFeed(() => 'x', { fetchImpl: async () => new Response(JSON.stringify({ athletes: ids.map((id) => ({ id, name: id, active: true })) })), shared: null });
+}
+
 const c2env = (k) => ({
   FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
   CONCEPT2_CLIENT_SECRET: 'fake-secret', CONCEPT2_TOKEN_KEY: 'ab'.repeat(32)
@@ -1828,6 +1835,7 @@ test('concept2: tokens are sealed and the state is signed, tied to her and short
 });
 
 test('concept2: connect redirects an athlete to Logbook with read-only scope', async () => {
+  await seedActive();
   const store = memStore();
   let res = await handleConcept2(new Request('https://x/api/concept2/connect'), c2env, { store });
   assert.strictEqual(res.status, 401);
@@ -1847,6 +1855,7 @@ test('concept2: connect redirects an athlete to Logbook with read-only scope', a
 });
 
 test('concept2: callback stores sealed tokens, status, refresh and disconnect', async () => {
+  await seedActive();
   const store = memStore(), log = [];
   const cb = (qs, who = 'A901') => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?' + qs, { headers: { cookie: c2cookie(who) } }), c2env, { store, fetch: fakeLogbook(log) });
   const state = C2.makeState(c2env, 'A901');
@@ -2065,6 +2074,7 @@ test('feed: visitors who arrive while the Sheet is being asked share that one ca
 });
 
 test('logbook confirm: pending list is read fresh from the Sheet after a sync, confirm goes to the Sheet', async () => {
+  await seedActive();
   const w = syncWorld();
   const pendingRows = [];
   const base = w.fetchImpl;
@@ -2240,6 +2250,7 @@ test('log for an athlete: coaches only, form fields only, to the Sheet with the 
 });
 
 test('log my run: athletes only, always for herself, no erg or tests, recent dates, optional photo', async () => {
+  await seedActive();
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
   const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
@@ -2444,6 +2455,108 @@ test('Boards: GMS % goes to coaches only', () => {
   const coachRow = leaderboardsView(feed, TODAY, { gms: true }).tests.find((t) => t.test === '2000m').season[0];
   assert.ok('gmsPct' in coachRow);
   assert.ok(!('gmsPct' in leaderboardsView(feed, TODAY).tests.find((t) => t.test === '2000m').season[0]));
+});
+
+test('coaches: only the admin adds, resets or removes coaches; a removed coach is signed out at once', async () => {
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec', ADMIN_COACH: 'Sam Tester' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const coachStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); },
+    keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
+  const withCoaches = { ...feed, logins: [...feed.logins,
+    { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') },
+    { coach: true, code: A.loginCode(env2, 'coach:sam tester', '1975-12-31') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoaches)), failDelayMs: 0, coachStore, shared: null, today: TODAY };
+  const post = (path, body, cookie, extra = {}) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: JSON.stringify(body) });
+  const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
+  const login = (name, password, extra = {}) => handleLogin(post('/api/login', { name, password, ...extra }), env2, deps);
+  const cookieFrom = (res) => A.COOKIE + '=' + (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  const coaches = (body, cookie, extra) => handleCoaches(post('/api/coaches', body, cookie, extra), env2, deps);
+  const status = async (cookie) => (await handle(get('/api/session', cookie), env2, deps)).status;
+  clearFeedCache();
+
+  // The admin keeps the Sheet birthday as the way in; another coach's birthday no longer works.
+  assert.strictEqual((await login('Pat Example', '2/3/1980')).status, 401, 'a Sheet-listed coach who is not the admin has no birthday sign-in');
+  const sam = cookieFrom(await login('Sam Tester', '12/31/1975'));
+  assert.strictEqual(await status(sam), 200);
+
+  // Only the admin manages coaches.
+  assert.strictEqual((await handleCoaches(get('/api/coaches'), env2, deps)).status, 401);
+  const athleteCookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), feed.athletes[0].id);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', athleteCookie), env2, deps)).status, 403);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', sam), env2, deps)).status, 200);
+  assert.deepStrictEqual((await (await handleCoaches(get('/api/coaches', sam), env2, deps)).json()).coaches, []);
+
+  // Add: a temporary password, shown once, that must be replaced at first sign-in.
+  let res = await coaches({ add: 'pat  EXAMPLE' }, sam);
+  assert.strictEqual(res.status, 200);
+  const added = await res.json();
+  assert.strictEqual(added.name, 'Pat Example');
+  assert.ok(/^[a-z2-9]{8}$/.test(added.password));
+  assert.strictEqual((await coaches({ add: 'Pat Example' }, sam)).status, 409, 'already on the list');
+  assert.strictEqual((await coaches({ add: 'Cher' }, sam)).status, 400, 'first and last name');
+  assert.strictEqual((await coaches({ add: 'sam tester' }, sam)).status, 400, 'the admin is already a coach');
+  assert.strictEqual((await coaches({ add: feed.athletes[0].name }, sam)).status, 409, 'not an athlete\'s name');
+  assert.strictEqual((await coaches({ add: 'Lee Other' }, sam, { origin: 'https://evil.example' })).status, 400, 'other sites cannot add coaches');
+  res = await login('Pat Example', added.password);
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.ok(!res.headers.get('set-cookie'), 'no session until she chooses a password');
+  assert.strictEqual((await login('Pat Example', added.password, { newPassword: '12345' })).status, 400, 'six characters');
+  res = await login('Pat Example', added.password, { newPassword: 'rowing2026' });
+  assert.strictEqual(res.status, 200);
+  const pat = cookieFrom(res);
+  assert.strictEqual(await status(pat), 200);
+  assert.strictEqual((await login('Pat Example', added.password)).status, 401, 'the temporary password is gone');
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 200);
+  // Pat is a coach, not the admin.
+  assert.strictEqual((await handleCoaches(get('/api/coaches', pat), env2, deps)).status, 403);
+  assert.strictEqual((await coaches({ add: 'Lee Other' }, pat)).status, 403);
+  assert.strictEqual((await coaches({ remove: 'sam tester' }, pat)).status, 403);
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'sam tester' }, pat), env2, deps)).status, 404, 'the old reset is gone');
+  const listed = await (await handleCoaches(get('/api/coaches', sam), env2, deps)).json();
+  assert.deepStrictEqual(listed.coaches.map((c) => [c.name, c.status]), [['Pat Example', 'set']]);
+
+  // Reset: new temporary password, the old one stops working, her open session stays until the admin removes her.
+  res = await coaches({ reset: 'pat example' }, sam);
+  const again = await res.json();
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 401);
+  assert.deepStrictEqual(await (await login('Pat Example', again.password)).json(), { mustChange: true });
+  assert.strictEqual((await coaches({ reset: 'nobody here' }, sam)).status, 404);
+
+  // Remove: signed out on the next request, and cannot sign back in.
+  assert.strictEqual((await coaches({ remove: 'sam tester' }, sam)).status, 400, 'the admin cannot be removed');
+  assert.strictEqual((await coaches({ remove: 'pat example' }, sam)).status, 200);
+  assert.strictEqual(await status(pat), 401, 'a removed coach is signed out');
+  for (const f of [(c) => handleSettings(get('/api/settings', c), env2, deps), (c) => handlePassword(post('/api/password', { current: 'x', next: 'abcdefg' }, c), env2, deps)]) {
+    assert.strictEqual((await f(pat)).status, 401);
+  }
+  assert.strictEqual((await login('Pat Example', again.password)).status, 401);
+  assert.strictEqual((await coaches({ remove: 'pat example' }, sam)).status, 404);
+  assert.strictEqual(await status(sam), 200, 'the admin stays signed in');
+
+  // With no admin set, nothing changes: the Sheet list still signs coaches in and the new endpoint is off.
+  const old = (k) => (k === 'ADMIN_COACH' ? '' : vals[k]);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', sam), old, deps)).status, 404);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), old, deps)).status, 200);
+});
+
+test('inactive athletes are signed out of Log a run and the Concept2 connection too', async () => {
+  const env = (k) => (k === 'FEED_URL' ? 'https://script.example/exec' : c2env(k));
+  const feedFetch = async () => new Response(JSON.stringify({ athletes: [{ id: 'A901', name: 'Active One', active: true }, { id: 'A902', name: 'Gone Two', active: false }] }));
+  clearFeedCache();
+  const deps = { feedFetch, feedShared: null, fetchImpl: async () => new Response('{}'), store: null };
+  const cookie = (id) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), id);
+  const mine = (id) => new Request('https://x/api/log-mine', { method: 'POST', headers: { cookie: cookie(id), 'content-type': 'application/json' }, body: JSON.stringify({ form: {} }) });
+  assert.strictEqual((await handleLogMine(mine('A902'), env, deps)).status, 401, 'inactive');
+  assert.strictEqual((await handleLogMine(mine('NOPE'), env, deps)).status, 401, 'dropped from the Roster');
+  assert.notStrictEqual((await handleLogMine(mine('A901'), env, deps)).status, 401, 'an active athlete gets through to the form checks');
+  const c2 = (id, path = '/api/concept2/status') => handleConcept2(new Request('https://x' + path, { headers: { cookie: cookie(id) } }), env, { ...deps, store: { get: async () => null, set: async () => {}, keys: async () => [], remove: async () => {} } });
+  assert.strictEqual((await c2('A902')).status, 401);
+  assert.strictEqual((await c2('A901')).status, 200);
+  const cb = (id) => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?code=c&state=s', { headers: { cookie: cookie(id) } }), env, deps);
+  assert.ok((await cb('A902')).headers.get('location').includes('logbook=error'));
+  clearFeedCache();
 });
 
 photoTests(test);

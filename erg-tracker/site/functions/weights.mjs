@@ -1,7 +1,7 @@
 // Coach Weights page (David, 2026-11-11). Reads and writes the Sheet's Weights tab through the feed key
 // (apps-script/Weights.gs). Coaches only, never from the cached feed (weight is never in the feed) and
 // never cached by the browser. Athletes get a 403, so weight cannot reach a team or athlete view.
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -9,7 +9,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handleWeights(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   const fetchImpl = deps.fetchImpl || fetch;
