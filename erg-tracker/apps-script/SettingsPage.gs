@@ -51,7 +51,7 @@ function settingsPageSections_() {
         { key: 'return_to_training_days', label: 'Return to training after (days out)', type: 'int', min: 1, max: 30 },
         { key: 'rate_cap_30r20', label: '30r20 stroke rate cap', type: 'decimal', min: 10, max: 40, help: 'A 30r20 is valid when the average rate is at or under this' }
       ] },
-    { id: 'schedule', title: 'Winter practice schedule (girls)',
+    { id: 'schedule', title: 'Practice Schedule',
       note: 'Times of day, like 3:30 pm. Days like Mon,Wed,Fri-even (Fri-even is Fridays on an even date). Pressing "Generate practice schedule" in the Sheet menu still builds the Practices tab from these.',
       fields: [
         { key: 'shift.early.days', label: 'Early shift days', type: 'days' },
