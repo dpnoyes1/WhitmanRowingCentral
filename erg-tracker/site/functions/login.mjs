@@ -1,4 +1,4 @@
-import { sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey, displayName } from '../lib/auth.mjs';
+import { sessionSecret, makeToken, sessionCookie, clearCookie, athleteFor, parseBirthday, nameKey, displayName, adminKey } from '../lib/auth.mjs';
 import { defaultCoachStore, checkCoachPassword, defaultAthleteStore, checkPasswordRecord, setCoachPassword, athletePasswordProblem, cleanPassword } from '../lib/coachpw.mjs';
 import { getFeed } from '../lib/feed.mjs';
 
@@ -28,7 +28,7 @@ export async function handleLogin(req, envFn, deps = {}) {
   if (!secret) return json({ error: 'The site is not set up yet (missing FEED_KEY).' }, 500);
   let athlete = null;
   let coachName = '';
-  let mustChange = false, athleteStore = null;
+  let mustChange = false, athleteStore = null, changeStore = null, changeKey = '';
   if (body.name) {
     try {
       const feed = (await getFeed(envFn, deps)).data;
@@ -37,12 +37,23 @@ export async function handleLogin(req, envFn, deps = {}) {
       if (!feed.athletes.some((a) => nameKey(a.name) === key)) {
         // A coach with a personal password signs in with that, and her birthday no longer works.
         const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
-        const own = await checkCoachPassword(store, key, body.password);
-        if (own === true) { athlete = 'team'; coachName = displayName(body.name); }
-        else if (own === false) athlete = null;
-        if (own === null) {
-          athlete = athleteFor(envFn, feed, body.name, body.password);
-          if (athlete === 'team') coachName = displayName(body.name);
+        if (adminKey(envFn)) {
+          // Only the admin adds coaches (David, 2026-11-13): a coach is someone with a record here, made by the admin with a
+          // temporary password. Only the admin can still use a birthday (the way back in), and only until they set a password.
+          const rec = await checkPasswordRecord(store, key, body.password);
+          if (rec && rec.ok) { athlete = 'team'; coachName = displayName(body.name); mustChange = rec.temp; changeStore = store; changeKey = key; }
+          else if (rec === null && key === adminKey(envFn)) {
+            athlete = athleteFor(envFn, feed, body.name, body.password);
+            if (athlete === 'team') coachName = displayName(body.name);
+          }
+        } else {
+          const own = await checkCoachPassword(store, key, body.password);
+          if (own === true) { athlete = 'team'; coachName = displayName(body.name); }
+          else if (own === false) athlete = null;
+          if (own === null) {
+            athlete = athleteFor(envFn, feed, body.name, body.password);
+            if (athlete === 'team') coachName = displayName(body.name);
+          }
         }
       } else {
         athleteStore = deps.athleteStore === undefined ? await defaultAthleteStore() : deps.athleteStore;
@@ -52,9 +63,11 @@ export async function handleLogin(req, envFn, deps = {}) {
           // No password of her own yet: her birthday works once, then she must choose one (only where it can be saved).
           athlete = athleteFor(envFn, feed, body.name, body.password);
           mustChange = !!athlete && !!athleteStore;
+          changeStore = athleteStore; changeKey = mine ? mine.id : '';
         } else if (own.ok) {
           athlete = mine;
           mustChange = own.temp;
+          changeStore = athleteStore; changeKey = mine.id;
         }
       }
       // Counts only (no names, dates or codes), to tell a missing Settings row from a typo.
@@ -81,7 +94,7 @@ export async function handleLogin(req, envFn, deps = {}) {
     const problem = athletePasswordProblem(next);
     if (problem) return json({ mustChange: true, error: problem }, 400);
     if (next === cleanPassword(body.password)) return json({ mustChange: true, error: 'Choose a new password, not the one you just typed.' }, 400);
-    try { await setCoachPassword(athleteStore, athlete.id, next); } catch (err) {
+    try { await setCoachPassword(changeStore, changeKey, next); } catch (err) {
       console.error('athlete password save error:', err.message);
       return json({ mustChange: true, error: 'The new password could not be saved. Try again.' }, 502);
     }

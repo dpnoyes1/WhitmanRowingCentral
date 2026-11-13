@@ -29,7 +29,7 @@ export function openLogMine(ctx) {
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
   const draw = () => {
-    app.innerHTML = `<div class="head"><div><h1>Log a run</h1><p class="muted">Log a run, ride, swim or other workout that is not on an erg. It saves for you only and counts toward your training. Erg workouts come in from Concept2, Slack or the Form.</p></div></div>
+    app.innerHTML = `<div class="head"><div><h1>Log a run</h1><p class="muted">Non-erg workouts. Erg comes via Concept2, Slack or the Form.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
@@ -37,7 +37,7 @@ export function openLogMine(ctx) {
         <div class="lf-row">${field('Distance', 'dist', 'inputmode="decimal" placeholder="3.1"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
-        <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace shows here once distance and time are typed.')}</p>
+        <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}
         ${field('Note for coaches (optional)', 'note')}
         <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
@@ -46,7 +46,7 @@ export function openLogMine(ctx) {
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save'}</button></div></form>`;
     const f = app.querySelector('#logmine');
     f.querySelectorAll('[data-f]').forEach((el) => {
-      el.oninput = () => { S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace shows here once distance and time are typed.'; };
+      el.oninput = () => { S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
       if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; };
     });
     const pick = f.querySelector('#lm-photo');

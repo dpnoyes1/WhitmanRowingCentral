@@ -326,7 +326,7 @@ export function lineupsView(feed, today) {
 }
 
 /** Completion grid: the last 10 practice days shown (David, 2026-11-01); the % is the whole school year. */
-export const COMPLETION_DAYS = 10;
+export const COMPLETION_DAYS = 15;
 
 /**
  * Coaches' grid, one row per active rower: season completion %, then one cell
@@ -396,10 +396,10 @@ const STAR_TESTS = ['2000m', '20min'];
  * year and the piece's date. All time keeps inactive and graduated athletes.
  * Raw erg scores only; no GMS on boards.
  */
-export function leaderboardsView(feed, today) {
+export function leaderboardsView(feed, today, { gms = false } = {}) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const starCache = {};
-  const opts = (from, group) => ({ from, to: today, group, today, starCache });
+  const opts = (from, group) => ({ from, to: today, group, today, starCache, gms });
   const all = '0000-00-00';
   const board = (test, from, group) => testBoard(feed, test, opts(from, group));
   return {
@@ -419,7 +419,7 @@ export function leaderboardsView(feed, today) {
  * beginning of time (All Time), or, with opts.pastYear, on a past school year's
  * board, since they were on the team then (ErgBot questions, 2026-11-07).
  */
-export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false }) {
+export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false, gms = false }) {
   const st = feed.settings.schoolYearStart;
   const yearStart = schoolYearStart(today, st);
   const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
@@ -439,7 +439,8 @@ export function testBoard(feed, test, { from, to, group = null, today, starCache
       const a = byId[b.athleteId];
       return {
         rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
-        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
+        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st),
+        ...(gms ? { gmsPct: typeof b.gmsPct === 'number' ? b.gmsPct : null } : {})
       };
     });
 }
@@ -559,7 +560,17 @@ export function seasonStars(feed, id, yearStart, today) {
 /** Public stars board (stars only, never GMS %) plus team GMS averages. */
 export function starsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
-  const rowers = activeRowers(feed).map((a) => ({ ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today) })).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
+  // Coaches only (/api/stars is 403 for athletes): GMS % per test, the combined % (average of the two) and the next star.
+  const rowers = activeRowers(feed).map((a) => {
+    const best = Object.fromEntries(STAR_TESTS.map((t) => [t, bestGms(feed, a.id, t, yearStart, today)]));
+    const pcts = STAR_TESTS.map((t) => best[t] && best[t].gmsPct).filter((x) => typeof x === 'number');
+    const nextFrom = STAR_TESTS.find((t) => best[t] && best[t].nextStar);
+    return { ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today),
+      k2Pct: best['2000m'] && typeof best['2000m'].gmsPct === 'number' ? best['2000m'].gmsPct : null,
+      m20Pct: best['20min'] && typeof best['20min'].gmsPct === 'number' ? best['20min'].gmsPct : null,
+      combined: pcts.length ? round(pcts.reduce((x, y) => x + y, 0) / pcts.length, 1) : null,
+      next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
+  }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   return { today, yearStart, rowers, teamGms: feed.teamGms };
 }
 
