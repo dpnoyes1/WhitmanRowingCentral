@@ -1,6 +1,6 @@
 // Coach workout builder (Plan page). Reads the upcoming sessions and workout library from the Sheet and saves a new
 // workout and/or schedules one, through the feed key (apps-script/WorkoutBuilder.gs). Coaches only, never cached.
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -41,7 +41,7 @@ export function cleanWorkoutBody(body) {
 }
 
 export async function handleWorkouts(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   const fetchImpl = deps.fetchImpl || fetch;

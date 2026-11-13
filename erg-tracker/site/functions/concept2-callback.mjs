@@ -1,7 +1,7 @@
 // Concept2 sends the athlete back here (registered redirect URI, so this keeps
 // Netlify's default function path). The signed state and her site sign-in must
 // name the same athlete, so nobody can attach an account to someone else.
-import { session } from '../lib/auth.mjs';
+import { liveSession, athleteStillActive } from '../lib/auth.mjs';
 import * as C2 from '../lib/concept2.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -9,8 +9,9 @@ const back = (result) => new Response(null, { status: 302, headers: { location: 
 
 export async function handleCallback(req, envFn, deps = {}) {
   const url = new URL(req.url);
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who || who.kind !== 'athlete' || !C2.configured(envFn)) return back('error');
+  try { if (!(await athleteStillActive(envFn, who, deps))) return back('error'); } catch { return back('error'); }
   if (url.searchParams.get('error')) return back('denied');   // she tapped Deny
   if (C2.readState(envFn, url.searchParams.get('state')) !== who.id) return back('error');
   const code = url.searchParams.get('code');

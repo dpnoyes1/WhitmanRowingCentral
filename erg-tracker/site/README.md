@@ -30,6 +30,7 @@ The feed never sends weight, birthday dates, coach notes, Slack IDs or Roster no
 | Name | What |
 |---|---|
 | `FEED_KEY` | The key from **Erg Tracker > Site feed key** in the Sheet. Mark it as secret. |
+| `ADMIN_COACH` | The admin's full name (not a secret), e.g. `David Noyes`. Only the admin adds, resets or removes coaches, from Settings > Coaches. Leave it unset to keep the older Sheet-based coach list. |
 | `FEED_URL` | The Apps Script web app URL (ends in `/exec`). |
 | `COACH_PASSWORD` | For the coach view later. Not used yet. |
 | `CONCEPT2_CLIENT_ID` | Concept2 Logbook app client ID (read-only app, scope `user:read,results:read`). |

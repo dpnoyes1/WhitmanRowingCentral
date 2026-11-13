@@ -2,7 +2,7 @@
 // password of her own; POST { reset: athleteId } makes a random temporary password, returns it ONCE for the coach to
 // hand over, and marks it so the athlete must choose her own at her next sign-in. Hashes live in Netlify Blobs
 // store `athletepw`; nothing about passwords goes to the Sheet or the feed.
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { defaultAthleteStore, setCoachPassword, generateTempPassword, coachesWithPassword } from '../lib/coachpw.mjs';
 
@@ -11,7 +11,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 
 export async function handleAthletePasswords(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   const store = deps.athleteStore === undefined ? await defaultAthleteStore() : deps.athleteStore;

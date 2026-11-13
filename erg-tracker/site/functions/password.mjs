@@ -3,7 +3,7 @@
 // password if she has one, otherwise her birthday. The new one is kept as a salted hash in Netlify Blobs.
 // Reset (David, 2026-11-03: any coach can reset any coach): GET /api/coach-passwords lists the coaches
 // with a personal password; POST /api/coach-passwords { reset: key } clears one, so that coach's birthday works again.
-import { session, athleteFor, nameKey, displayName } from '../lib/auth.mjs';
+import { liveSession, adminKey, athleteFor, nameKey, displayName } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { defaultCoachStore, checkCoachPassword, setCoachPassword, passwordProblem, cleanPassword, coachesWithPassword, resetCoachPassword } from '../lib/coachpw.mjs';
 
@@ -12,10 +12,12 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'no-store' } });
 
 export async function handlePassword(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   const reset = new URL(req.url).pathname.replace(/\/+$/, '') === '/api/coach-passwords';
+  // With an admin set, coach resets move to the admin's Coaches card (functions/coaches.mjs).
+  if (reset && adminKey(envFn)) return json({ error: 'Not found' }, 404);
   const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
   if (reset && req.method === 'GET') {
     if (!store) return json({ coaches: [] });

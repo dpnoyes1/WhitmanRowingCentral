@@ -1,6 +1,6 @@
 // Coach "Log for an athlete" (David, 2026-11-11). POST only, coaches only. Goes to the Sheet's `site-log`
 // action (apps-script/SiteLog.gs), which runs the same parser as the Form and /log. The Sheet checks every value.
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { prepPhoto } from '../lib/logphoto.mjs';
 
@@ -11,7 +11,7 @@ const json = (body, status = 200) =>
 const FIELDS = ['date', 'type', 'status', 'makeup_for', 'activity', 'pieces', 'warmup', 'cooldown', 'rpe', 'drag', 'main_set', 'zone', 'note', 'test', 'test_where'];
 
 export async function handleLog(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   if (req.method !== 'POST') return json({ error: 'Not found' }, 404);

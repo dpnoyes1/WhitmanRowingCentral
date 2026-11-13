@@ -1537,8 +1537,78 @@ function sessionsTable(rows) {
 // Replaces editing the Settings tab in the Sheet (David, 2026-11-01). The Sheet sends the
 // field list; only fields that changed are sent back, and the Sheet checks every value.
 
+/**
+ * Coaches (David, 2026-11-13): with an admin set, only the admin sees the Coaches card (add, reset, remove); other coaches
+ * see nothing. With no admin set the older coach-password card shows instead.
+ */
+async function loadCoachCard() {
+  try {
+    const res = await fetch('/api/coaches', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+    if (res.status === 200) return { admin: await res.json() };
+    if (res.status === 403) return { hidden: true };
+  } catch { /* fall through to the older card */ }
+  return api('/api/coach-passwords').catch(() => null);
+}
+
+function coachAdminCard(data) {
+  const list = data.coaches;
+  const status = { set: 'has a password', temporary: 'temporary password issued' };
+  const rows = !list.length ? '<p class="muted small">No other coaches yet.</p>'
+    : `<ul class="pw-list">${list.map((c) => `<li><span>${esc(c.name)}<span class="muted small"> · ${esc(status[c.status] || c.status)}</span></span>
+      <span><button class="btn ghost" type="button" data-creset="${esc(c.key)}" data-name="${esc(c.name)}">Reset password</button>
+      <button class="btn ghost" type="button" data-cremove="${esc(c.key)}" data-name="${esc(c.name)}">Remove</button></span></li>`).join('')}</ul>`;
+  return `<section class="card" id="coach-admin"><h2>Coaches</h2>
+    <p class="muted small">Only you (${esc(data.admin)}) can add or remove coaches. Removing signs them out.</p>
+    ${rows}
+    <label class="small" for="coach-add-name">Add a coach</label>
+    <input id="coach-add-name" class="in" type="text" autocomplete="off" placeholder="First and last name">
+    <button class="btn" type="button" id="coach-add">Add coach</button>
+    <p id="coach-admin-msg" class="small" role="status"></p></section>`;
+}
+
+function wireCoachAdmin() {
+  const card = () => document.getElementById('coach-admin');
+  const say = (cls, html) => { const m = document.getElementById('coach-admin-msg'); if (m) { m.className = cls; m.innerHTML = html; } };
+  const post = async (body) => {
+    const res = await fetch('/api/coaches', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+    if (res.status === 401) { setSession(null); showLogin('You were signed out. Please sign in again.'); return null; }
+    const out = await res.json().catch(() => ({}));
+    return { ok: res.ok, out };
+  };
+  // Redraws the card from the server's list, keeping the message the admin needs to read (a temporary password is shown once).
+  const refresh = async (cls, html) => {
+    try {
+      const res = await fetch('/api/coaches', { credentials: 'same-origin', headers: { accept: 'application/json' } });
+      if (res.ok) card().outerHTML = coachAdminCard(await res.json());
+    } catch { /* keep the old list */ }
+    wireCoachAdmin(); say(cls, html);
+  };
+  const temp = (out, lead) => `${esc(out.name)}${lead} <strong class="mono">${esc(out.password)}</strong>. Give it to them now: it is shown only once. They type it with their name, then choose their own password.`;
+  const act = async (btn, body, confirmText, done) => {
+    if (confirmText && !confirm(confirmText)) return;
+    btn.disabled = true; say('small', '');
+    try {
+      const r = await post(body);
+      if (!r) return;
+      if (!r.ok) { say('error small', esc(r.out.error || 'That did not work.')); btn.disabled = false; return; }
+      await refresh('good-text small', done(r.out));
+    } catch { say('error small', 'Could not reach the site. Nothing was changed.'); btn.disabled = false; }
+  };
+  document.getElementById('coach-add').onclick = (ev) => {
+    const name = document.getElementById('coach-add-name').value.trim();
+    if (!name) return say('error small', 'Type the coach\'s first and last name.');
+    act(ev.currentTarget, { add: name }, '', (out) => temp(out, ' is added. Their temporary password is'));
+  };
+  card().querySelectorAll('[data-creset]').forEach((b) => {
+    b.onclick = () => act(b, { reset: b.dataset.creset }, `Reset ${b.dataset.name}'s password? Their current password will stop working.`, (out) => temp(out, '\'s new temporary password is'));
+  });
+  card().querySelectorAll('[data-cremove]').forEach((b) => {
+    b.onclick = () => act(b, { remove: b.dataset.cremove }, `Remove ${b.dataset.name} as a coach? They are signed out on their next click.`, (out) => `${esc(out.name)} is removed and signed out.`);
+  });
+}
+
 async function showSettings() {
-  const [v, pw, apw] = await Promise.all([api('/api/settings'), api('/api/coach-passwords').catch(() => null), api('/api/athlete-passwords').catch(() => null)]);
+  const [v, pw, apw] = await Promise.all([api('/api/settings'), loadCoachCard(), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1></div>
@@ -1591,6 +1661,8 @@ async function showSettings() {
  * A reset clears it, so that coach signs in with their birthday again and can set a new one from the menu.
  */
 function coachPasswordsCard(pw) {
+  if (pw && pw.hidden) return '';   // an admin is set and this coach is not it: only the admin manages coaches
+  if (pw && pw.admin) return coachAdminCard(pw.admin);
   const list = pw && pw.coaches;
   const rows = !list ? '<p class="error small">The list could not be loaded. Reload the page to try again.</p>'
     : !list.length ? '<p class="muted small">No coach has set a personal password yet.</p>'
@@ -1602,6 +1674,7 @@ function coachPasswordsCard(pw) {
 }
 
 function wireCoachPasswords() {
+  if (document.getElementById('coach-admin')) return wireCoachAdmin();
   app.querySelectorAll('[data-reset]').forEach((b) => {
     b.onclick = async () => {
       const msg = document.getElementById('coach-pw-msg');
