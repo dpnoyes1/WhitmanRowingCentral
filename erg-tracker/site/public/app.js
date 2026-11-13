@@ -531,7 +531,7 @@ function recentList(t) {
   // Activity sits under the name so the table fits a phone (David, 2026-10-28).
   return `<div class="table-wrap"><table>${t.recent.map((r) => `<tr>
     <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
-    <div class="muted small">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}</div></td>
+    <div class="muted small">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}${r.drag ? ' · drag ' + r.drag : ''}</div></td>
     <td class="r">${fmtMin(r.minutes)}</td></tr>`).join('')}</table></div>`;
 }
 
@@ -648,7 +648,7 @@ function workoutList(rows, yearStart) {
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Workout</th><th class="r">Min</th><th class="r">Meters</th></tr>
     ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}
-        <div class="muted small">${[r.activity, r.zone, r.rpe != null && `RPE ${r.rpe}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
+        <div class="muted small">${[r.activity, r.zone, r.rpe != null && `RPE ${r.rpe}`, r.drag && `drag ${r.drag}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
       <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td></tr>`).join('')}
   </table></div>`;
 }
@@ -700,6 +700,7 @@ async function showWorkout(id) {
         ${tile('Minutes', fmtMin(w.minutes), `${fmtMin(w.weighted)} weighted`)}
         ${tile('Meters', w.meters ? fmtNum(w.meters) : '–', w.zone ? `Zone ${w.zone}` : 'No zone')}
         ${tile('RPE', w.rpe ?? '–', '')}
+        ${w.drag ? tile('Drag factor', w.drag, 'from Logbook') : ''}
       </div>
       ${body}</div>
     ${w.photo ? `<div class="card"><h2>Erg screen</h2>
@@ -1521,7 +1522,7 @@ function sessionsTable(rows) {
       const extra = [
         r.mainSet && `Main set: ${esc(r.mainSet)}`, r.zone && `Zone: ${esc(r.zone)}`,
         r.status !== 'Out' && `Weighted: ${fmtMin(r.weighted)}`, r.meters && `Meters: ${fmtNum(r.meters)}`,
-        r.rpe != null && `RPE ${r.rpe}`
+        r.rpe != null && `RPE ${r.rpe}`, r.drag && `Drag ${r.drag}`
       ].filter(Boolean).join(' · ');
       return `<tr class="session-row"><td>${fmtDate(r.date)}</td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
