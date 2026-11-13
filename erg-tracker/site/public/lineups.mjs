@@ -118,13 +118,11 @@ function draw() {
     <div class="card"><div class="lu-head"><h2>At practice today</h2><button type="button" class="btn ghost sm" data-luopen="1">${LU.open ? 'Hide list' : `Change (${LU.out.size} out)`}</button></div>
       ${LU.open ? `<div class="luat">${R.map((a) => `<label class="luck"><input type="checkbox" data-luout="${esc(a.id)}"${LU.out.has(a.id) ? '' : ' checked'}><span><b>${esc(a.name)}</b><small class="muted num">${tagOf(a)}</small></span></label>`).join('')}</div>` : `<p class="muted small">${LU.out.size ? 'Out today: ' + [...LU.out].map((i) => esc(byId(i).name)).join(', ') + '.' : 'Everyone here. Untick absentees.'}</p>`}</div>
     <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: you set each boat's goal below"}</p>
-      <div class="lugoal">${GOALS.map(([t], g) => `<button type="button" class="btn ${LU.goal === g ? '' : 'ghost '}sm" data-lugoal="${g}">${t}</button>`).join('')}</div>
-      <p class="muted small">Top: fastest. Lower: slowest. Even: share the middle. Max ${MAX_BOATS} boats.</p></div>
+      <div class="lugoal">${GOALS.map(([t], g) => `<button type="button" class="btn ${LU.goal === g ? '' : 'ghost '}sm" data-lugoal="${g}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="lu-head"><h2>Not in a boat</h2></div><p class="muted small">${pickA ? `Tap a seat for ${esc(pickA.name)}.` : 'Drag or tap a name, then a seat.'}</p>
       <div class="lupool" data-luseat="pool">${spare.length ? spare.sort((x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>
     <div class="lu-actions"><button class="btn ghost sm" type="button" data-luadd="8">Add an 8+</button><button class="btn ghost sm" type="button" data-luadd="4">Add a 4+</button><button class="btn ghost sm" type="button" data-luclear="1">Clear unpinned seats</button></div>
-    <div class="lugrid">${LU.boats.map(boatCard).join('')}</div>
-    <p class="muted small">Best 2k + 20' this school year. No test or weight: left out of average, never Top. Coxswains excluded. Pace: flat-water estimate; 4+ is 13% slower than 8+.</p>`;
+    <div class="lugrid">${LU.boats.map(boatCard).join('')}</div>`;
 }
 
 let wired = false;

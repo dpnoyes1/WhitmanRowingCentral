@@ -382,7 +382,6 @@ function showLogin(note = '') {
   closeMenu();
   app.innerHTML = `<div class="login card">
     <h1>Whitman Girls Rowing</h1>
-    <p class="muted">Name + password. First time: birthday (MM/DD/YYYY), then choose a password. Forgot it? Ask a coach.</p>
     ${note ? `<p class="notice" role="status">${esc(note)}</p>` : ''}
     <form id="login">
       <label for="name" class="small">Name</label>
@@ -423,7 +422,6 @@ function showLogin(note = '') {
 function chooseLoginPassword(name, current) {
   const card = app.querySelector('.login');
   card.innerHTML = `<h1>Choose your password</h1>
-    <p class="muted">New password, 6+ characters.</p>
     <form id="choosepw">
       <label for="npw" class="small">New password</label>
       <input id="npw" type="password" autocomplete="new-password" required minlength="6">
