@@ -67,16 +67,24 @@ function teamGmsIsDate_(d) {
   return Object.prototype.toString.call(d) === '[object Date]' && !isNaN(d.getTime());
 }
 
-/** Most recent weight on or before `date` for one athlete, or null. */
+/**
+ * Weight used to score a result for one athlete, or null when she has no weight at all.
+ * The most recent weight on or before `date`; if there is none, her latest weight overall
+ * (David, 2026-11-13: so older tests from before weights were kept still get a GMS %).
+ */
 function weightOn_(weights, athleteId, date) {
-  var best = null;
+  var before = null, after = null;   // after = latest weight dated after `date`
   weights.forEach(function (w) {
-    if (w['Athlete ID'] !== athleteId || !teamGmsIsDate_(w.Date) || w.Date > date) return;
+    if (w['Athlete ID'] !== athleteId || !teamGmsIsDate_(w.Date)) return;
     var lb = Number(w['Weight lb']);
     if (!lb) return;
-    if (!best || w.Date >= best.date) best = { date: w.Date, lb: lb };
+    if (w.Date <= date) {
+      if (!before || w.Date >= before.date) before = { date: w.Date, lb: lb };
+    } else if (!after || w.Date >= after.date) {
+      after = { date: w.Date, lb: lb };
+    }
   });
-  return best ? best.lb : null;
+  return before ? before.lb : after ? after.lb : null;
 }
 
 /** Benchmark row -> its result value for gmsEquivalent2k, or null. */
@@ -94,9 +102,8 @@ function teamGmsMean_(list) {
  * Per-athlete bests for one window. Rowers only (coxswains and IDs not on
  * the Roster are skipped); rejected results are ignored.
  * Returns [{ athleteId, name, squad, best2k, bestGms, rank, byTest }] sorted
- * by rank. bestGms is null when no result in the window has a weight on or
- * before it. byTest['2000m'|'20min'] = { raw, gms }: best raw result (seconds
- * or meters) and best GMS % on that test alone.
+ * by rank. bestGms is null when the athlete has no weight on file at all.
+ * byTest['2000m'|'20min'] = { raw, gms }: best raw result (seconds or meters) and best GMS % on that test alone.
  */
 function teamGmsAthletes(opts, start, end) {
   var o = gmsOptionsFromSettings(opts.settings);
