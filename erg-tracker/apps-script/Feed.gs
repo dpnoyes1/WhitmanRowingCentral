@@ -3,7 +3,7 @@
  * functions call it, with a POST body {"key": "..."}. The key lives in Script
  * Properties (menu: Site feed key), never in the repo or a Sheet cell.
  *
- * Weight and birthdays never leave the Sheet. GMS %, stars and next-star gaps
+ * Weight and birthdays never leave the Sheet in the feed (ErgBot fetches weights for a coach's question by its own action, ergbot-weights). GMS %, stars and next-star gaps
  * are worked out here and only those go out. Coach notes, Slack IDs, Roster
  * notes and heart rate are left out too. siteFeed() is pure so it is tested
  * in Node; the site applies multipliers and OYO goals when it reads.
@@ -21,8 +21,14 @@ function doPost(e) {
   if (body.action === PLAN_FLAG_ACTION) return feedJson_(applyPlanFlagAction_(body));
   if (body.action === SLACK_LOG_ACTION) return feedJson_(processSlackLog_(body));
   if (body.action === SLACK_ACCESS_ACTION) return feedJson_(processSlackAccess_(body));
+  if (body.action === ERGBOT_WEIGHTS_ACTION) return feedJson_(processErgbotWeights_(body));
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
   if (body.action === PHOTO_GET_ACTION) return feedJson_(processPhotoGet_(body));
+  if (body.action === SITE_LOG_ACTION) return feedJson_(processSiteLog_(body));
+  if (body.action === WORKOUT_LIST_ACTION) return feedJson_(processWorkoutList_());
+  if (body.action === WORKOUT_SAVE_ACTION) return feedJson_(processWorkoutSave_(body));
+  if (body.action === WEIGHTS_GET_ACTION) return feedJson_(processWeightsGet_());
+  if (body.action === WEIGHTS_SAVE_ACTION) return feedJson_(processWeightsSave_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());
   if (body.action === SETTINGS_SAVE_ACTION) return feedJson_(processSettingsSave_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));
@@ -201,7 +207,8 @@ function siteFeed(inputs, asOf) {
   // One OYO Required and Elite for every athlete (David, 2026-10-27). The old
   // Roster columns for OYO group / required / elite were removed 2026-11-01.
   var oyoRequired = num('oyo.standard.required', 60);
-  var oyoElite = num('oyo.standard.elite', 120);
+  // Elite is derived: Standard + 100%, so double (David, 2026-11-11). The coach types only the Standard goal.
+  var oyoElite = oyoRequired * 2;
 
   var athletes = inputs.roster.filter(function (r) {
     return String(r.Name || '').trim() !== '' && String(r['Athlete ID'] || '').trim() !== '';
@@ -335,7 +342,7 @@ function siteFeed(inputs, asOf) {
       oyoBreak: {
         ranges: feedBreakRanges_(s['oyo.break.dates']),
         required: num('oyo.break.required', null),
-        elite: num('oyo.break.elite', null)
+        elite: num('oyo.break.required', null) === null ? null : num('oyo.break.required', null) * 2
       }
     },
     athletes: athletes,

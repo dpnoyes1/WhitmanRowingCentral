@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -119,7 +119,7 @@ test('parse practice with intervals', () => {
   assert.strictEqual(r.intervals[2]['Rest s'], '');
   const headers = g.HEADERS[g.TABS.ENTRIES];
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
-  assert.strictEqual(headers.slice(-3).join(), 'Warmup m,Cooldown m,Photo link');
+  assert.strictEqual(headers.slice(headers.indexOf('Warmup m'), headers.indexOf('Warmup m') + 3).join(), 'Warmup m,Cooldown m,Photo link');
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
 });
 
@@ -993,9 +993,11 @@ test('site feed: break ranges from Settings', () => {
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_(''))), []);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.feedBreakRanges_('12/23/2026'))), []);
   const inputs = dummyFeedInputs();
-  inputs.settings = Object.assign({}, inputs.settings, { 'oyo.break.dates': '12/23/2026-01/03/2027', 'oyo.break.required': '30', 'oyo.break.elite': '' });
+  inputs.settings = Object.assign({}, inputs.settings, { 'oyo.break.dates': '12/23/2026-01/03/2027', 'oyo.break.required': '30' });
   const b = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12)))).settings.oyoBreak;
-  assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: null });
+  assert.deepStrictEqual(b, { ranges: [{ from: '2026-12-23', to: '2027-01-03' }], required: 30, elite: 60 });   // Elite is double the break Standard goal
+  const f = JSON.parse(JSON.stringify(g.siteFeed(inputs, new Date(2026, 9, 23, 12)))).settings;
+  assert.strictEqual(f.oyoElite, f.oyoRequired * 2, 'Elite = Standard + 100%');
 });
 
 test('refreshFormQuestions_ resets the Activity choices from ACTIVITIES', () => {
@@ -1076,6 +1078,34 @@ test('logbook: interval result becomes a pending entry with pieces', () => {
   Object.keys(r.entry).forEach(k => assert.ok(headers.includes(k), 'entry column ' + k));
   Object.keys(r.intervals[0]).forEach(k => assert.ok(g.HEADERS[g.TABS.INTERVALS].includes(k), 'interval column ' + k));
   assert.ok(!JSON.stringify(r).match(/weight/i));
+});
+
+test('logbook: every Logbook field lands in a column; the raw copy is split into chunks', () => {
+  const r = g.logbookRows(lbResult({
+    calories: 412, strokeCount: 1900, hrAvg: 150, hrMin: 90, hrMax: 181, hrEnding: 160, hrRest: 70, hrRecovery: 120, logbookSource: 'ErgData',
+    verified: 'No', ranked: 'Yes', timezone: 'US/Eastern', dateUtc: '2026-10-28 15:23:00', privacy: 'partners', comments: 'hi',
+    restTimeTotalS: 120, restDistanceTotalM: 40, targets: { pace: 1020 }, splits: [{ timeS: 30 }],
+    intervals: [{ timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48, calories: 9, wattMinutes: 70, hrAvg: 140, hrMax: 160, targetPaceS: 101, targetWatts: 200, type: 'time', machine: 'rower' }]
+  }), lbCtx());
+  const e = r.entry, iv = r.intervals[0];
+  assert.deepStrictEqual([e['Avg HR'], e['HR min'], e['HR max'], e['HR ending'], e['HR rest'], e['HR recovery'], e['Calories'], e['Stroke count']], [150, 90, 181, 160, 70, 120, 412, 1900]);
+  assert.deepStrictEqual([e['Logbook source'], e['Verified'], e['Ranked'], e['Timezone'], e['Date UTC'], e['Privacy'], e['Rest s total'], e['Rest m total']], ['ErgData', 'No', 'Yes', 'US/Eastern', '2026-10-28 15:23:00', 'partners', 120, 40]);
+  assert.strictEqual(e['Targets JSON'], '{"pace":1020}');
+  assert.strictEqual(e['Splits JSON'], '[{"timeS":30}]');
+  assert.deepStrictEqual([iv['Calories'], iv['Watt-min'], iv['Avg HR'], iv['HR max'], iv['Target pace s'], iv['Target watts'], iv['Piece type'], iv['Machine']], [9, 70, 140, 160, 101, 200, 'time', 'rower']);
+  // a totals-only result puts its calories and heart rate on its one piece
+  const tot = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, calories: 12, hrAvg: 130 }), lbCtx());
+  assert.deepStrictEqual([tot.intervals[0]['Calories'], tot.intervals[0]['Avg HR']], [12, 130]);
+  // raw copy: result JSON plus strokes, long text split at the chunk size, and nothing without a raw copy
+  assert.strictEqual(g.logbookRawRows(1, 'A001', null, 'now').length, 0);
+  const now = new Date();
+  const small = g.logbookRawRows(122191976, 'A001', { result: { id: 122191976 }, strokes: [{ t: 1 }] }, now);
+  assert.strictEqual(JSON.stringify(small.map((x) => [x.Kind, x.Part, x['Result ID']])), '[["Result",1,"122191976"],["Strokes",1,"122191976"]]');
+  const big = g.logbookRawRows(1, 'A001', { result: {}, strokes: Array.from({ length: 5000 }, () => ({ t: 100, d: 1000, p: 1000, spm: 30, hr: 140 })) }, now);
+  const parts = big.filter((x) => x.Kind === 'Strokes');
+  assert.ok(parts.length >= 2 && parts.every((x) => x.JSON.length <= g.LOGBOOK_RAW_CHUNK));
+  assert.strictEqual(JSON.parse(parts.map((x) => x.JSON).join('')).length, 5000);
+  Object.keys(big[0]).forEach((k) => assert.ok(g.HEADERS[g.TABS.LOGBOOK_RAW].includes(k), 'raw column ' + k));
 });
 
 test('logbook: totals only, just row, possible make-up, benchmark shape, unsupported machine', () => {
@@ -1315,7 +1345,7 @@ test('photos: Drive link, same-workout match, Logbook wins, feed says only that 
   assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');
   assert.strictEqual(g.photoFileId_(''), '');
   assert.strictEqual(g.photoFileId_('hello'), '');
-  assert.ok(g.HEADERS['Entries'].slice(-1)[0] === 'Photo link', 'the new column is last');
+  assert.ok(g.HEADERS['Entries'].indexOf('Photo link') === g.HEADERS['Entries'].indexOf('Cooldown m') + 1, 'Photo link keeps its place');
   const mine = { athleteId: 'A001', date: '2026-10-28', workS: 480, workM: 2000 };
   const twin = (over) => g.photoSameWorkout_(mine, { ...mine, ...over });
   assert.ok(twin({}) && twin({ workS: 482.3, workM: 2008 }), 'close totals match');
@@ -1388,7 +1418,7 @@ test('settings page: only listed keys change, errors block everything, unchanged
   const view = JSON.parse(JSON.stringify(g.settingsPageView_({ 'multiplier.Run': '1.3' })));
   const keys = view.reduce((a, s) => a.concat(s.fields.map((f) => f.key)), []);
   assert.strictEqual(keys.length, new Set(keys).size);
-  assert.ok(keys.includes('multiplier.BikeErg') && keys.includes('oyo.standard.elite') && keys.includes('shift.late.days'));
+  assert.ok(keys.includes('multiplier.BikeErg') && keys.includes('oyo.standard.required') && !keys.includes('oyo.standard.elite') && keys.includes('shift.late.days'));
   assert.ok(!keys.some((k) => /^(site|slack|alerts|form|backup)\./.test(k)));
   assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Run').value, '1.3');
   assert.strictEqual(view[0].fields.find((f) => f.key === 'multiplier.Swim').value, '0.8', 'a missing row shows its default');
@@ -1404,6 +1434,136 @@ test('setup: retired Settings rows are found, last first, and no live setting is
   // a retired key must never be one the code still defaults or the Settings page edits
   const live = g.SETTINGS_DEFAULTS.map((d) => d[0]);
   g.RETIRED_SETTING_KEYS.forEach((k) => assert.ok(!live.includes(k) && !g.settingsPageField_(k), k + ' is still used'));
+});
+
+test('ergbot-weights: rows for ErgBot, blank and dateless rows skipped', () => {
+  const rows = JSON.parse(JSON.stringify(g.ergbotWeightRows_([
+    { Date: new Date(2026, 9, 5), 'Athlete ID': 'A1', Athlete: 'Dummy Rower', 'Weight lb': 141 },
+    { Date: '', 'Athlete ID': 'A1', Athlete: 'Dummy Rower', 'Weight lb': 140 },
+    { Date: new Date(2026, 9, 6), 'Athlete ID': 'A2', Athlete: 'Dummy Two', 'Weight lb': '' }
+  ])));
+  assert.deepStrictEqual(rows, [{ date: '2026-10-05', athlete: 'Dummy Rower', lb: 141 }]);
+});
+
+test('site log: same rows as the Form, test question only for one exact piece', () => {
+  const Q = g.Q;
+  const base = { date: '2026-01-12', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', rpe: '6', drag: '105' };
+  const ans = (f) => g.siteLogAnswers_({ ...base, ...f }, 'Jane Smith', 'Coach Pat');
+  const run = (f) => g.parseSubmission(ans(f), ctxFor());
+  // a normal workout needs only a few typed numbers
+  const plain = run({ test: 'no' });
+  assert.strictEqual(plain.entry['Entered by'], 'Coach Pat');
+  assert.strictEqual(plain.entry.Activity, 'Erg (RowErg)');
+  assert.strictEqual(plain.benchmark, undefined);
+  assert.strictEqual(plain.intervals.length, 1);
+  // a run: typed time and meters, no test, no rate or drag
+  const jog = run({ activity: 'Run', pieces: '25:00.0, 5000', drag: '', test: '' });
+  assert.strictEqual(jog.entry.Activity, 'Run');
+  assert.strictEqual(jog.benchmark, undefined);
+  assert.strictEqual(jog.entry['Work m'], 5000);
+  assert.throws(() => ans({ activity: 'Run', pieces: '25:00.0, 5000', test: 'yes' }), /test/i, 'a run is never a test');
+  // an athlete logging for herself: non-erg only, OYO or practice, never a test
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', pieces: '25:00.0, 5000' }), '');
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
+  ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', test: 'yes' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'practice', status: 'out' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', makeup_for: '2026-11-02' }));
+  // kinds: exactly one piece of 2000 m, 500 m, 100 m or 20:00.0
+  const kind = (t) => g.siteTestKind_(g.parsePiecesText(t));
+  assert.strictEqual(kind('7:44.8, 2000, 31'), '2000m');
+  assert.strictEqual(kind('1:34.9, 500, 40'), '500m');
+  assert.strictEqual(kind('0:16.6, 100, 47'), '100m');
+  assert.strictEqual(kind('20:00.0, 4936, 22'), '20min');
+  assert.strictEqual(kind('20:00.3, 4938, 22'), null, 'near miss never asks');
+  assert.strictEqual(kind('7:45.0, 1999, 31'), null);
+  assert.strictEqual(kind('8:00, 2000\n8:00, 2000'), null, 'inside intervals never asks');
+  assert.strictEqual(kind('8:00, 2000\n8:00, 2000\n8:00, 2000\n8:00, 2000'), null);
+  // Yes saves linked Benchmarks + Entries rows
+  const t20 = run({ test: 'yes' });
+  assert.strictEqual(t20.benchmark.Test, '20min');
+  assert.strictEqual(t20.benchmark.Meters, 4936);
+  assert.strictEqual(t20.entry['Benchmark ID'], t20.benchmark['Benchmark ID']);
+  const t2k = run({ test: 'yes', pieces: '7:44.8, 2000, 31' });
+  assert.strictEqual(t2k.benchmark.Test, '2000m');
+  assert.strictEqual(t2k.benchmark['Time s'], 464.8);
+  const t500 = run({ test: 'yes', pieces: '1:34.9, 500, 40' });
+  assert.strictEqual(t500.benchmark.Test, '500m');
+  assert.strictEqual(t500.benchmark['Time s'], 94.9);
+  const t100 = run({ test: 'yes', pieces: '0:16.6, 100, 47' });
+  assert.strictEqual(t100.benchmark.Test, '100m');
+  // No saves a normal workout; Yes on a non-test piece or on intervals is refused
+  assert.strictEqual(run({ test: 'no', pieces: '7:44.8, 2000, 31' }).benchmark, undefined);
+  assert.throws(() => ans({ test: 'yes', pieces: '20:00.3, 4938, 22' }), /not exactly/);
+  assert.throws(() => ans({ test: 'yes', pieces: '8:00, 2000\n8:00, 2000' }), /not exactly/);
+  assert.throws(() => ans({ test: 'yes', activity: 'BikeErg' }), /RowErg/);
+  // out of practice and other types
+  assert.strictEqual(g.parseSubmission(g.siteLogAnswers_({ date: '2026-01-12', type: 'practice', status: 'out', note: 'sick', pieces: '' }, 'Jane Smith', 'Coach Pat'), ctxFor()).entry.Status, 'Out');
+  assert.strictEqual(run({ type: 'oyo', status: '' }).entry['Session type'], 'OYO');
+  assert.strictEqual(run({ type: 'makeup', makeup_for: '2026-01-10' }).entry['Session type'], 'Make-up');
+  assert.throws(() => ans({ type: 'bogus' }), /Pick/);
+});
+
+test('weights page: parse, status and rows (pure)', () => {
+  assert.strictEqual(g.weightsParse_('128').lb, 128);
+  assert.strictEqual(g.weightsParse_(' 128.5 lb ').lb, 128.5);
+  ['', 'abc', '5', '400', '12.55', '-130'].forEach(v => assert.ok(g.weightsParse_(v).error, v));
+  assert.strictEqual(g.weightsStatus_('', '2026-07-01'), 'Missing');
+  assert.strictEqual(g.weightsStatus_('2026-06-02', '2026-07-01'), 'Due');
+  assert.strictEqual(g.weightsStatus_('2026-09-04', '2026-07-01'), 'Current');
+  const roster = [
+    { Name: 'A One', 'Athlete ID': 'A1', Squad: 'Varsity', Role: 'Rower', Active: 'Yes' },
+    { Name: 'B Two', 'Athlete ID': 'A2', Squad: 'Novice', Role: 'Rower', Active: 'Yes' },
+    { Name: 'C Three', 'Athlete ID': 'A3', Squad: 'Novice', Role: 'Rower', Active: 'Yes' },
+    { Name: 'D Cox', 'Athlete ID': 'A4', Squad: 'Varsity', Role: 'Coxswain', Active: 'Yes' },
+    { Name: 'E Gone', 'Athlete ID': 'A5', Squad: 'Varsity', Role: 'Rower', Active: 'No' },
+    { Name: 'F Alum', 'Athlete ID': 'A6', Squad: 'Alum', Role: 'Rower', Active: 'Yes' }];
+  const weights = [
+    { Date: '2026-09-04', 'Athlete ID': 'A1', 'Weight lb': 130, 'Entered by': 'Coach' },
+    { Date: '2026-10-10', 'Athlete ID': 'A1', 'Weight lb': 131, 'Entered by': 'Coach' },
+    { Date: '2026-06-02', 'Athlete ID': 'A2', 'Weight lb': 140, 'Entered by': 'Coach' }];
+  const rows = JSON.parse(JSON.stringify(g.weightsPageRows_(roster, weights, '2026-07-01')));
+  assert.deepStrictEqual(rows.map(r => [r.id, r.status, r.lb]), [['A3', 'Missing', null], ['A2', 'Due', 140], ['A1', 'Current', 131]], 'missing first, then due; only the newest weight; no coxswain, inactive or alum');
+});
+
+test('workout builder: ids, piece rows validated by the plan parser, schedule rows, list view (pure)', () => {
+  assert.strictEqual(g.workoutNextId_([]), 'W1');
+  assert.strictEqual(g.workoutNextId_(['W2', 'W10', 'DUMMY-W3', ' W4 ']), 'W11');
+  const ok = g.workoutBuildRows_('W7', { name: 'Tuesday 20s', pieces: [
+    { workType: 'Time', work: '20:00', reps: 3, rest: '2:00', zone: 'Aerobic', base: "20'", rate: '18-20' },
+    { workType: 'Distance', work: '500 m', reps: 8, startEvery: '3:30', lowPct: 95, highPct: 100, base: '2k' }] });
+  assert.ok(!ok.error, ok.error);
+  assert.strictEqual(ok.rows.length, 2);
+  assert.strictEqual(ok.rows[1]['Piece #'], 2);
+  assert.strictEqual(ok.rows[1].Work, '500');
+  const back = g.workoutPieces(ok.rows, 'W7');
+  assert.strictEqual(back[0].workS, 1200);
+  assert.strictEqual(back[1].startEveryS, 210);
+  [{ name: '', pieces: [{}] }, { name: 'x', pieces: [] },
+   { name: 'x', pieces: [{ workType: 'Time', work: 'abc' }] },
+   { name: 'x', pieces: [{ workType: 'Distance', work: '5' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', reps: 0 }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', zone: 'Easy' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', rest: 'soon' }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', lowPct: 500 }] },
+   { name: 'x', pieces: [{ workType: 'Time', work: '20:00', activity: 'Jetski' }] }
+  ].forEach((b, i) => assert.ok(g.workoutBuildRows_('W1', b).error, 'bad workout ' + i));
+  const sch = g.scheduleBuildRows_('W7', { dates: ['2026-11-16', '2026-11-16', '2026-11-18'], squad: 'Varsity', session: 'Practice', publish: false });
+  assert.strictEqual(sch.rows.length, 2, 'duplicate dates collapse');
+  assert.strictEqual(sch.rows[0].Published, false, 'drafts unless Publish is ticked');
+  assert.strictEqual(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], publish: true }).rows[0].Published, true);
+  assert.strictEqual(g.scheduleBuildRows_('W7', {}).rows.length, 0);
+  ['2026-02-30', 'tomorrow', '11/16/2026'].forEach(d => assert.ok(g.scheduleBuildRows_('W7', { dates: [d] }).error, d));
+  assert.ok(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], squad: 'Alum' }).error);
+  assert.ok(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'], session: 'Race' }).error);
+  const v = JSON.parse(JSON.stringify(g.workoutListView_(ok.rows, [
+    { Date: '2026-11-16', Squad: 'Varsity', Session: 'Practice', 'Workout ID': 'W7', Published: true },
+    { Date: '2026-11-10', Squad: 'All', Session: 'Practice', 'Workout ID': 'W7', Published: true },
+    { Date: '2026-12-30', Squad: 'All', Session: 'Practice', 'Workout ID': 'W7', Published: true }], '2026-11-12')));
+  assert.deepStrictEqual(v.upcoming.map(u => [u.day, u.published, u.name]), [['2026-11-16', true, 'Tuesday 20s']], 'only the next 28 days');
+  assert.strictEqual(v.library[0].id, 'W7');
+  assert.ok(/3 x 20:00/.test(v.library[0].summary));
 });
 
 console.log(`${passed} tests passed`);

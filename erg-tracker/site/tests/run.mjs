@@ -5,13 +5,21 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
+import { lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
 import login, { handleLogin } from '../functions/login.mjs';
 import { handleSettings } from '../functions/settings.mjs';
+import { handleWeights } from '../functions/weights.mjs';
+import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
+import { handleLog } from '../functions/log.mjs';
+import { handleLogMine } from '../functions/logmine.mjs';
+import { paceText, parseDuration } from '../public/logmine.mjs';
+import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
 import { handlePassword } from '../functions/password.mjs';
+import { handleCoaches } from '../functions/coaches.mjs';
+import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
@@ -25,6 +33,7 @@ import { handleCallback } from '../functions/concept2-callback.mjs';
 import * as LS from '../lib/logbook-sync.mjs';
 import { handleWebhookRequest } from '../functions/concept2-webhook.mjs';
 import photoTests from './photo.mjs';
+import askTests from './ask.mjs';
 import * as PR from '../public/practice.mjs';
 
 const require = createRequire(import.meta.url);
@@ -155,10 +164,67 @@ test('insights: missed practices not made up in the last 4 weeks', () => {
   assert.ok(v.rowers.every((r) => typeof r.missed.count === 'number'), 'every rower has a missed count');
 });
 
-test('completion grid: season % first, last 10 practice days, coaches only', async () => {
+test('insights: a test is only missing once most of the team has done it this year', () => {
+  const none = { ...feed, benchmarks: feed.benchmarks.filter((b) => b.test !== '2000m') };
+  assert.strictEqual(insightsView(none, TODAY).testsRun.has2k, false, 'no team 2k: nobody flagged for it');
+  assert.strictEqual(insightsView(none, TODAY).testsRun.has20, insightsView(feed, TODAY).testsRun.has20);
+  const one = { ...none, benchmarks: [...none.benchmarks, { ...feed.benchmarks.find((b) => b.test === '2000m'), athleteId: activeRowers(feed)[0].id, date: TODAY }] };
+  assert.strictEqual(insightsView(one, TODAY).testsRun.has2k, false, 'one early 2k does not start the flags');
+});
+
+test('insights: Missing Logbook account starts December 1 and lists active rowers with no connection', async () => {
+  const { logbookMissingView, LOGBOOK_MISSING_FROM } = await import('../lib/views.mjs');
+  assert.strictEqual(LOGBOOK_MISSING_FROM, '2026-12-01');
+  const rowers = activeRowers(feed);
+  assert.deepStrictEqual(logbookMissingView(feed, [], '2026-11-30'), { from: '2026-12-01', active: false, missing: [] }, 'nothing before Dec 1');
+  const on = logbookMissingView(feed, [rowers[0].id, rowers[1].id], '2026-12-01');
+  assert.strictEqual(on.active, true);
+  assert.strictEqual(on.missing.length, rowers.length - 2);
+  assert.ok(!on.missing.some((r) => r.id === rowers[0].id));
+  assert.deepStrictEqual(on.missing.map((r) => r.name), [...on.missing.map((r) => r.name)].sort((a, b) => a.localeCompare(b)));
+  assert.strictEqual(logbookMissingView(feed, null, '2026-12-05').missing, null, 'unreadable list says so instead of listing everyone');
+  // Through the route: absent before Dec 1, present after, coaches only.
+  clearFeedCache();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const mem = new Map([['conn/' + rowers[0].id, '{}']]);
+  const store = { list: async (prefix) => [...mem.keys()].filter((k) => k.startsWith(prefix)), get: async (k) => mem.get(k) || null };
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const get = (today) => handle(new Request('https://x/api/insights', { headers: { cookie: coach } }), env, { fetchImpl: async () => new Response(JSON.stringify(feed)), today, store }).then((r) => r.json());
+  assert.strictEqual((await get('2026-11-30')).logbook.active, false);
+  clearFeedCache();
+  const dec = await get('2026-12-01');
+  assert.strictEqual(dec.logbook.active, true);
+  assert.strictEqual(dec.logbook.missing.length, rowers.length - 1);
+  clearFeedCache();
+});
+
+test('insights (2026-11-11): attendance season and recent, OYO % of Standard, tests present', async () => {
+  const v = insightsView(feed, TODAY);
+  assert.strictEqual(v.overreachPct, 150);
+  assert.strictEqual(OYO_OVERREACH_PCT, 150);
+  assert.strictEqual(v.attendanceRecent, 10);
+  v.rowers.forEach((r) => {
+    assert.ok(r.attendance.recentOf <= 10, 'past 2 weeks = at most the last 10 practices');
+    [r.attendance.season, r.attendance.recent].forEach((x) => assert.ok(x === null || (x >= 0 && x <= 100)));
+    assert.strictEqual(typeof r.tests.has2k, 'boolean');
+    assert.strictEqual(typeof v.testsRun.has2k, 'boolean');
+    assert.strictEqual(typeof r.oyo.standard, 'number');
+    if (r.oyo.pct !== null) assert.strictEqual(r.oyo.pct, Math.round((100 * r.oyo.minutes) / r.oyo.standard));
+  });
+});
+
+test('lineups view: raw best 2k and 20, combined GMS %, no weight or birthday', async () => {
+  const v = lineupsView(feed, TODAY);
+  assert.strictEqual(v.rowers.length, 30);
+  assert.ok(v.rowers.every((r) => Object.keys(r).sort().join() === 'gmsPct,grade,id,k2S,m20,name,squad'), 'only id, name, squad, grade, k2S, m20, gmsPct');
+  assert.ok(v.rowers.some((r) => r.k2S && r.m20 && r.gmsPct !== null), 'someone has both tests and a GMS %');
+  assert.ok(v.rowers.every((r) => r.gmsPct === null || (r.gmsPct > 30 && r.gmsPct < 130)));
+});
+
+test('completion grid: season % first, last 15 practice days', async () => {
   const v = completionView(feed, TODAY);
   assert.strictEqual(v.rows.length, 30);
-  assert.ok(v.dates.length > 0 && v.dates.length <= 10, 'at most 10 practice days');
+  assert.ok(v.dates.length > 0 && v.dates.length <= 15, 'at most 15 practice days');
   assert.deepStrictEqual([...v.dates], [...v.dates].sort());
   const r = v.rows[0];
   assert.strictEqual(r.cells.length, v.dates.length);
@@ -298,7 +364,7 @@ test('leaderboards: Alum squad shows only on the All Time boards', () => {
   assert.deepStrictEqual(activeRowers(f).map((a) => a.id), ['Y2'], 'Alum is on no team view');
 });
 
-test('stars board: stars public, GMS % never; team averages only', () => {
+test('stars board: coach-only API, GMS % allowed, never weight; team averages only', () => {
   const v = starsView(feed, TODAY);
   assert.strictEqual(v.rowers.length, 30);
   assert.ok(v.rowers.every((r) => r.stars === null || (r.stars >= 1 && r.stars <= 5)));
@@ -310,7 +376,8 @@ test('stars board: stars public, GMS % never; team averages only', () => {
   assert.ok(v.rowers.some((r) => r.stars % 1 === 0.5), 'some half stars');
   assert.ok(new Set(v.rowers.map((r) => r.stars)).size >= 3, 'a spread of stars');
   const { teamGms, ...rest } = v;
-  assert.ok(!/gmsPct|nextStar|weight/i.test(JSON.stringify(rest)));
+  assert.ok(!/weight/i.test(JSON.stringify(rest)));
+  assert.ok(v.rowers.every((r) => r.combined === null || (r.combined > 0 && r.combined <= 130)), 'combined GMS % sane');
   assert.ok(!/A9\d\d|name/.test(JSON.stringify(teamGms)), 'team GMS has no names or IDs');
 });
 
@@ -490,6 +557,11 @@ test('api: 401 without a session, team and athlete with one', async () => {
   assert.strictEqual((await res.json()).athlete.id, tested.id);
   // Star rankings are coaches only.
   assert.strictEqual((await handle(new Request('https://x/api/stars', { headers: { cookie: her } }), env, deps)).status, 403);
+  // Attendance is open to athletes, without the OYO columns (David, 2026-11-12).
+  const att = await (await handle(new Request('https://x/api/completion', { headers: { cookie: her } }), env, deps)).json();
+  assert.ok(att.rows.length > 1 && att.rows.every((r) => !('oyo' in r)) && !/birth|weight/i.test(JSON.stringify(att)));
+  const attCoach = await (await handle(new Request('https://x/api/completion', { headers: { cookie } }), env, deps)).json();
+  assert.ok(attCoach.rows.every((r) => r.oyo.length === 2));
   // No response ever carries a sign-in code.
   const codes = feed.logins.map((l) => l.code);
   assert.ok(codes.length > 0);
@@ -682,7 +754,8 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   let sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).json();
   assert.deepStrictEqual([sess.kind, sess.coachName], ['team', 'Pat Example']);
   // Rules for a new password.
-  assert.strictEqual(passwordProblem('x'), '', 'no minimum length');
+  assert.ok(passwordProblem('12345'), 'under 6 characters is refused');
+  assert.strictEqual(passwordProblem('123456'), '', '6 characters is enough');
   assert.strictEqual(passwordProblem('2/3/1980'), '', 'a date is allowed');
   assert.ok(passwordProblem(''), 'empty is refused');
   assert.strictEqual(passwordProblem('a long enough one'), '');
@@ -715,6 +788,89 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   const a = feed.athletes.find((x) => x.active);
   const [y, m, d] = dummyBirthday(a.id).split('-');
   assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, broken)).status, 200);
+  clearFeedCache();
+});
+
+test('athlete password: birthday once, then she must choose 6+ characters; a coach reset gives a random temporary one', async () => {
+  const { athletePasswordProblem, generateTempPassword } = await import('../lib/coachpw.mjs');
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const athleteStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); }, keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
+  const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore: null, athleteStore, shared: null, today: TODAY };
+  const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
+  const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
+  const login = (body) => handleLogin(post('/api/login', body), env2, deps);
+  const tokenOf = (res) => (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))?.[1];
+  const a = feed.athletes.find((x) => x.active);
+  const day = dummyBirthday(a.id), [y, m, d] = day.split('-'), bday = `${m}/${d}/${y}`;
+  clearFeedCache();
+  // Rules: 6 characters minimum, nothing else.
+  assert.ok(athletePasswordProblem('12345'));
+  assert.ok(athletePasswordProblem('     '));
+  assert.strictEqual(athletePasswordProblem('abc123'), '');
+  assert.match(generateTempPassword(), /^[a-z2-9]{8}$/);
+  // First sign-in: the birthday is right, but no session until she chooses a password.
+  let res = await login({ name: a.name, password: bday });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.strictEqual(tokenOf(res), undefined, 'no cookie yet');
+  assert.strictEqual(mem.size, 0);
+  res = await login({ name: a.name, password: bday, newPassword: 'abc' });
+  assert.strictEqual(res.status, 400, 'too short');
+  assert.strictEqual(tokenOf(res), undefined);
+  res = await login({ name: a.name, password: bday, newPassword: bday });
+  assert.strictEqual(res.status, 400, 'must differ from the birthday she typed');
+  res = await login({ name: a.name, password: 'wrong', newPassword: 'rowing2026' });
+  assert.strictEqual(res.status, 401, 'a wrong current password cannot set one');
+  assert.strictEqual(mem.size, 0);
+  res = await login({ name: a.name, password: bday, newPassword: ' rowing2026 ' });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(A.readToken(A.sessionSecret(env2), tokenOf(res)), { kind: 'athlete', id: a.id });
+  assert.ok(!JSON.stringify([...mem.values()]).includes('rowing2026'), 'only a hash is stored');
+  // After that the birthday is refused and the password works (spaces at the ends do not matter).
+  assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
+  res = await login({ name: a.name.toUpperCase(), password: 'rowing2026' });
+  assert.strictEqual(res.status, 200);
+  assert.ok(tokenOf(res), 'signed in, no further change asked');
+  assert.strictEqual((await res.json()).mustChange, undefined);
+  assert.strictEqual((await login({ name: a.name, password: 'rowing2027' })).status, 401);
+  // Coach reset: coaches only, athletes on the roster only, password shown once.
+  const coachTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), 'team', Date.now(), 'Pat Example');
+  const athTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), a.id);
+  const reset = (id, cookie, extra = {}) => handleAthletePasswords(new Request('https://x/api/athlete-passwords', { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: JSON.stringify({ reset: id }) }), env2, deps);
+  assert.strictEqual((await reset(a.id, '')).status, 401);
+  assert.strictEqual((await reset(a.id, athTok)).status, 403, 'athletes cannot reset');
+  assert.strictEqual((await reset('A000', coachTok)).status, 400);
+  assert.strictEqual((await reset(a.id, coachTok, { origin: 'https://evil.example' })).status, 400);
+  const list = await (await handleAthletePasswords(get('/api/athlete-passwords', coachTok), env2, deps)).json();
+  assert.strictEqual(list.athletes.find((x) => x.id === a.id).status, 'set');
+  assert.ok(list.athletes.some((x) => x.status === 'birthday'));
+  assert.strictEqual((await handleAthletePasswords(get('/api/athlete-passwords', athTok), env2, deps)).status, 403);
+  const out = await (await reset(a.id, coachTok)).json();
+  assert.strictEqual(out.name, a.name);
+  assert.match(out.password, /^[a-z2-9]{8}$/);
+  assert.strictEqual((await handleAthletePasswords(get('/api/athlete-passwords', coachTok), env2, deps).then((r) => r.json())).athletes.find((x) => x.id === a.id).status, 'temporary');
+  assert.ok(!JSON.stringify([...mem.values()]).includes(out.password), 'the temporary password is not stored in the clear');
+  // Her old password and her birthday stop working; the temporary one works once, then she must choose again.
+  assert.strictEqual((await login({ name: a.name, password: 'rowing2026' })).status, 401);
+  assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
+  res = await login({ name: a.name, password: out.password });
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.strictEqual(tokenOf(res), undefined);
+  res = await login({ name: a.name, password: out.password, newPassword: 'newone99' });
+  assert.strictEqual(res.status, 200);
+  assert.ok(tokenOf(res));
+  assert.strictEqual((await login({ name: a.name, password: out.password })).status, 401, 'temporary password is used up');
+  assert.strictEqual((await login({ name: a.name, password: 'newone99' })).status, 200);
+  // Coaches still sign in as before; a store that cannot save never traps an athlete behind a password she cannot set.
+  assert.strictEqual((await login({ name: 'Pat Example', password: '2/3/1980' })).status, 200);
+  const nodeps = { ...deps, athleteStore: null };
+  const b = feed.athletes.find((x) => x.active && x.id !== a.id);
+  const [by, bm, bd] = dummyBirthday(b.id).split('-');
+  res = await handleLogin(post('/api/login', { name: b.name, password: `${bm}/${bd}/${by}` }), env2, nodeps);
+  assert.ok(tokenOf(res), 'no store: birthday signs in as before');
   clearFeedCache();
 });
 
@@ -765,7 +921,7 @@ test('coach password: spaces at the ends never lock a coach out; any coach can r
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches, []);
   // A coach can reset her own too, and it is marked as hers.
-  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars' }, sam), env2, deps);
+  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars123' }, sam), env2, deps);
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches.map((c) => [c.name, c.you]), [['Sam Tester', true]]);
   // No store (local dev): an empty list, and a reset says it cannot.
@@ -1396,7 +1552,8 @@ test('slack background: a signed DM event and a photo button reach the photo flo
   const deps = { nowS: NOW, store: { get: async (k) => store.get(k) || null, set: async (k, v) => store.set(k, v), delete: async (k) => store.delete(k) },
     fetchImpl: async () => Response.json({ ok: true }) };
   const ev = JSON.stringify({ type: 'event_callback', event: { type: 'message', channel_type: 'im', user: 'UC1', text: 'hi' } });
-  assert.deepStrictEqual(await handleSlackAction(req(ev), env, deps), { ignored: 'nothing pending' });
+  // Text with no photo waiting is a question now (lib/ask.mjs); this fake Sheet can't say who is asking.
+  assert.strictEqual((await handleSlackAction(req(ev), env, deps)).status, 'error');
   assert.deepStrictEqual(await handleSlackAction(req(ev, 'wrong'), env, deps), { ignored: 'signature' });
   const btn = new URLSearchParams({ payload: JSON.stringify({ type: 'block_actions', user: { id: 'UC1' }, response_url: 'https://hooks.slack.example/r', actions: [{ action_id: 'photo_save', value: 'nope' }] }) }).toString();
   assert.strictEqual((await handleSlackAction(req(btn), env, deps)).status, 'gone');
@@ -1638,6 +1795,12 @@ test('my workouts: own and coaches see splits, teammates and strangers do not', 
 });
 
 // ---- Concept2 Logbook connect (fake keys, fake Logbook, in-memory store) ----
+/** Memory copy of the feed holding only these athletes (all active), for handlers that check an athlete is still on the Roster. */
+async function seedActive(ids = ['A901', 'A902', 'A903', 'A777']) {
+  clearFeedCache();
+  await getFeed(() => 'x', { fetchImpl: async () => new Response(JSON.stringify({ athletes: ids.map((id) => ({ id, name: id, active: true })) })), shared: null });
+}
+
 const c2env = (k) => ({
   FEED_KEY: 'fake-key', CONCEPT2_CLIENT_ID: 'fake-client',
   CONCEPT2_CLIENT_SECRET: 'fake-secret', CONCEPT2_TOKEN_KEY: 'ab'.repeat(32)
@@ -1672,6 +1835,7 @@ test('concept2: tokens are sealed and the state is signed, tied to her and short
 });
 
 test('concept2: connect redirects an athlete to Logbook with read-only scope', async () => {
+  await seedActive();
   const store = memStore();
   let res = await handleConcept2(new Request('https://x/api/concept2/connect'), c2env, { store });
   assert.strictEqual(res.status, 401);
@@ -1691,6 +1855,7 @@ test('concept2: connect redirects an athlete to Logbook with read-only scope', a
 });
 
 test('concept2: callback stores sealed tokens, status, refresh and disconnect', async () => {
+  await seedActive();
   const store = memStore(), log = [];
   const cb = (qs, who = 'A901') => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?' + qs, { headers: { cookie: c2cookie(who) } }), c2env, { store, fetch: fakeLogbook(log) });
   const state = C2.makeState(c2env, 'A901');
@@ -1772,11 +1937,41 @@ const syncWorld = (opts = {}) => {
 };
 const connectA901 = (w) => C2.saveConnection(w.env, w.store, 'A901', { access: 'access-1', refresh: 'refresh-1', expiresAt: Date.now() + 5 * 86400000 }, { id: '777', username: 'fake-rower' });
 
+test('logbook sync: every Logbook field is carried (calories, heart rate, targets, splits, flags)', () => {
+  const n = LS.normalizeResult(lbApi({
+    calories_total: 412, stroke_count: 1900, stroke_rate: 24, verified: false, ranked: true, source: 'ErgData', timezone: 'US/Eastern',
+    date_utc: '2026-10-28 15:23:00', privacy: 'partners', rest_time: 1200,
+    heart_rate: { average: 150, min: 90, max: 181, ending: 160, rest: 70, recovery: 120 },
+    workout: { targets: { pace: 1020, watts: 200 }, splits: [{ time: 1200, distance: 300, stroke_rate: 22, calories_total: 30, wattminutes_total: 99, heart_rate: { ending: 140 } }],
+      intervals: [{ type: 'time', time: 300, distance: 87, rest_time: 300, calories_total: 20, wattminutes_total: 88, heart_rate: { average: 151, max: 170 }, targets: { pace: 1010, heart_rate_zone: 4, stroke_rate: 22, calories: 25 }, machine: 'rower' }] }
+  }));
+  assert.deepStrictEqual([n.calories, n.strokeCount, n.verified, n.ranked, n.logbookSource, n.timezone, n.dateUtc, n.privacy, n.restTimeTotalS], [412, 1900, 'No', 'Yes', 'ErgData', 'US/Eastern', '2026-10-28 15:23:00', 'partners', 120]);
+  assert.deepStrictEqual([n.hrAvg, n.hrMin, n.hrMax, n.hrEnding, n.hrRest, n.hrRecovery], [150, 90, 181, 160, 70, 120]);
+  assert.deepStrictEqual(n.targets, { pace: 1020, watts: 200 });
+  assert.strictEqual(n.splits.length, 1);
+  assert.deepStrictEqual([n.splits[0].calories, n.splits[0].wattMinutes, n.splits[0].hrEnding], [30, 99, 140]);
+  const iv = n.intervals[0];
+  assert.deepStrictEqual([iv.calories, iv.wattMinutes, iv.hrAvg, iv.hrMax, iv.targetPaceS, iv.targetHrZone, iv.targetRate, iv.targetCalories, iv.machine], [20, 88, 151, 170, 101, 4, 22, 25, 'rower']);
+});
+
+test('logbook sync: a new result is sent with its full JSON and stroke data', async () => {
+  const w = syncWorld(); await connectA901(w);
+  const full = { ...w.results[122191976], calories_total: 50 };
+  const strokes = [{ t: 23, d: 155, p: 971, spm: 35, hr: 129 }];
+  const f = async (url, init) => (String(url).endsWith('/results/122191976/strokes') ? Response.json({ data: strokes }) : w.fetchImpl(url, init));
+  assert.strictEqual(await LS.syncResult(w.env, w.store, f, 'A901', full, 'access-1'), 'sent');
+  const sent = w.sheet[0].result;
+  assert.deepStrictEqual(sent.raw.strokes, strokes);
+  assert.strictEqual(sent.raw.result.calories_total, 50);
+  assert.strictEqual(sent.calories, 50);
+});
+
 test('logbook sync: normalize intervals, totals, bike and bad results', () => {
   const n = LS.normalizeResult(lbApi());
   assert.deepStrictEqual([n.localDate, n.localTime, n.machine, n.dragFactor, n.name], ['2026-10-28', '11:23', 'rower', 98, '3x0:30/0:30r row']);
   assert.strictEqual(n.intervals.length, 3);
-  assert.deepStrictEqual(n.intervals[0], { timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48 });
+  assert.deepStrictEqual(n.intervals[0], { timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48, calories: '', wattMinutes: '', type: 'time', machine: '',
+    hrAvg: '', hrMin: '', hrMax: '', hrEnding: '', hrRest: '', hrRecovery: '', targetPaceS: '', targetWatts: '', targetRate: '', targetHrZone: '', targetCalories: '' });
   const just = LS.normalizeResult(lbApi({ workout: undefined, workout_type: 'JustRow', time: 648, distance: 222, comments: '' }));
   assert.deepStrictEqual([just.intervals.length, just.timeS, just.distanceM, just.name], [0, 64.8, 222, 'JustRow']);
   // splits on a continuous piece are not intervals
@@ -1879,6 +2074,7 @@ test('feed: visitors who arrive while the Sheet is being asked share that one ca
 });
 
 test('logbook confirm: pending list is read fresh from the Sheet after a sync, confirm goes to the Sheet', async () => {
+  await seedActive();
   const w = syncWorld();
   const pendingRows = [];
   const base = w.fetchImpl;
@@ -2015,6 +2211,151 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.ok(/Counted/.test(x.calls[1].body.text));
 });
 
+test('log for an athlete: coaches only, form fields only, to the Sheet with the feed key', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/log', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const form = { date: '2026-11-11', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', test: 'yes', evil: 'x' };
+  assert.strictEqual((await handleLog(new Request('https://x/api/log', { method: 'POST' }), env, {})).status, 401);
+  assert.strictEqual((await handleLog(post(athlete, { athleteId: 'A901', form }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleLog(post(coach, { athleteId: 'A901', requestId: 'r1', form }), env, { fetchImpl: sheet({ status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice' }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { status: 'ok', athlete: 'Fake Athlete', test: '20min', sessionType: 'Practice', photo: '' });
+  assert.deepStrictEqual(calls[0], { action: 'site-log', athleteId: 'A901', coachName: 'Pat Example', requestId: 'r1', form: { date: '2026-11-11', type: 'practice', status: 'full', pieces: '20:00.0, 4936, 22', test: 'yes' }, key: 'fake-key' });
+  res = await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await res.json()).error, 'Piece 1: work time is missing');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { form }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form: { pieces: 'x'.repeat(700) } }), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'duplicate' }) })).status, 200);
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  // proof photo: re-encoded here (small, no metadata) before it goes to the Sheet
+  const { default: sharp } = await import('sharp');
+  const jpeg = await sharp({ create: { width: 3000, height: 2000, channels: 3, background: '#336699' } }).jpeg().withMetadata({ exif: { IFD0: { Copyright: 'secret place' } } }).toBuffer();
+  const before = calls.length;
+  res = await handleLog(post(coach, { athleteId: 'A901', form: { ...form, activity: 'Run' }, photo: jpeg.toString('base64') }), env, { fetchImpl: sheet({ status: 'ok', athlete: 'Fake Athlete', test: '', sessionType: 'Practice', photo: 'saved' }) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual((await res.json()).photo, 'saved');
+  const sent = calls[before].photo;
+  assert.ok(sent && sent.length < 400000, 'a small copy goes to the Sheet');
+  const meta = await sharp(Buffer.from(sent, 'base64')).metadata();
+  assert.ok(meta.width <= 1280 && !meta.exif, 'resized and no metadata kept');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: Buffer.from('not an image').toString('base64') }), env, { fetchImpl: sheet({}) })).status, 422, 'an unreadable photo is refused before the Sheet');
+  assert.strictEqual((await handleLog(post(coach, { athleteId: 'A901', form, photo: 'data:image/jpeg;base64,xx' }), env, { fetchImpl: sheet({}) })).status, 400);
+});
+
+test('log my run: athletes only, always for herself, no erg or tests, recent dates, optional photo', async () => {
+  await seedActive();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const now = () => Date.UTC(2026, 10, 12, 15);
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/log-mine', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const form = { date: '2026-11-11', type: 'oyo', activity: 'Run', pieces: '25:30.0, 5000', rpe: '6' };
+  const ok = sheet({ status: 'ok', photo: '' });
+  assert.strictEqual((await handleLogMine(new Request('https://x/api/log-mine', { method: 'POST' }), env, { now })).status, 401);
+  assert.strictEqual((await handleLogMine(post(coach, { form }), env, { fetchImpl: ok, now })).status, 403, 'coaches use Log for an athlete');
+  assert.strictEqual(calls.length, 0);
+  let res = await handleLogMine(post(athlete, { athleteId: 'A777', requestId: 'r1', form }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'site-log', self: true, athleteId: 'A901', requestId: 'r1', form, key: 'fake-key' }, 'the athlete ID comes from the sign-in, not the request');
+  for (const bad of [{ activity: 'Erg (RowErg)' }, { activity: 'BikeErg' }, { activity: 'Lifting' }, { type: 'makeup' }, { type: 'test' }, { date: '2026-10-01' }, { date: '2026-12-25' }, { date: 'yesterday' }]) {
+    res = await handleLogMine(post(athlete, { form: { ...form, ...bad } }), env, { fetchImpl: ok, now });
+    assert.strictEqual(res.status, 422, JSON.stringify(bad));
+  }
+  const n = calls.length;
+  res = await handleLogMine(post(athlete, { form: { ...form, test: 'yes', status: 'out', evil: 'x' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(Object.keys(calls[n].form).sort(), ['activity', 'date', 'pieces', 'rpe', 'type'], 'only whitelisted fields reach the Sheet');
+  res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }), now });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }), now })).status, 502);
+  assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'duplicate' }), now })).status, 200);
+  const { default: sharp } = await import('sharp');
+  const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
+  const m = calls.length;
+  res = await handleLogMine(post(athlete, { form, photo: jpeg.toString('base64') }), env, { fetchImpl: sheet({ status: 'ok', photo: 'saved' }), now });
+  assert.strictEqual((await res.json()).photo, 'saved');
+  assert.ok(calls[m].photo && calls[m].photo.length < 400000);
+  assert.strictEqual((await handleLogMine(post(athlete, { form, photo: Buffer.from('nope').toString('base64') }), env, { fetchImpl: ok, now })).status, 422);
+});
+
+test('log my run page helpers: pace and times typed on a phone', () => {
+  assert.strictEqual(parseDuration('25:30'), 1530);
+  assert.strictEqual(parseDuration('1:02:30'), 3750);
+  assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
+  ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
+  assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
+  assert.strictEqual(paceText(0, 5000), '');
+});
+
+test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const rows = [{ id: 'A901', name: 'Fake Athlete', squad: 'Varsity', lb: 131, day: '2026-10-10', by: 'Pat Example', status: 'Current' }];
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/weights', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  assert.strictEqual((await handleWeights(new Request('https://x/api/weights'), env, {})).status, 401);
+  assert.strictEqual((await handleWeights(new Request('https://x/api/weights', { headers: { cookie: athlete } }), env, {})).status, 403);
+  assert.strictEqual((await handleWeights(post(athlete, { athleteId: 'A901', lb: '120' }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleWeights(new Request('https://x/api/weights', { headers: { cookie: coach } }), env, { fetchImpl: sheet({ status: 'ok', today: '2026-11-11', yearStart: '2026-07-01', rows }) });
+  assert.deepStrictEqual((await res.json()).rows, rows);
+  assert.deepStrictEqual(calls[0], { action: 'weights-get', key: 'fake-key' });
+  assert.strictEqual(res.headers.get('cache-control'), 'private, no-store');
+  res = await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }), env, { fetchImpl: sheet({ status: 'ok', today: '2026-11-11', yearStart: '2026-07-01', rows }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[1], { action: 'weights-save', athleteId: 'A901', lb: '132', coachName: 'Pat Example', key: 'fake-key' });
+  res = await handleWeights(post(coach, { athleteId: 'A901', lb: 'lots' }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Use a number of pounds, like 128 or 128.5.' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400, 'another site cannot save for a signed-in coach');
+  assert.strictEqual((await handleWeights(post(coach, {}), env, { fetchImpl: sheet({}) })).status, 400);
+  assert.strictEqual((await handleWeights(post(coach, { athleteId: 'A901', lb: '132' }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  const wfeed = JSON.stringify(feed);
+  assert.ok(!/weight ?lb|"lb"/i.test(wfeed), 'the feed carries no weight');
+});
+
+test('workout builder: coaches only, whitelisted fields go to the Sheet, errors come back', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/workouts', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const ok = { status: 'ok', today: '2026-11-12', library: [], upcoming: [], savedId: 'W5' };
+  assert.strictEqual((await handleWorkouts(new Request('https://x/api/workouts'), env, {})).status, 401);
+  assert.strictEqual((await handleWorkouts(new Request('https://x/api/workouts', { headers: { cookie: athlete } }), env, {})).status, 403);
+  assert.strictEqual((await handleWorkouts(post(athlete, { name: 'x', pieces: [] }), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleWorkouts(new Request('https://x/api/workouts', { headers: { cookie: coach } }), env, { fetchImpl: sheet(ok) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'workout-list', key: 'fake-key' });
+  const body = { name: 'Tue 20s', dates: ['2026-11-17'], squad: 'Varsity', session: 'Practice', publish: true, evil: 'x', pieces: [{ workType: 'Time', work: '20:00', reps: 3, sneaky: 1 }] };
+  res = await handleWorkouts(post(coach, body), env, { fetchImpl: sheet(ok) });
+  assert.strictEqual((await res.json()).savedId, 'W5');
+  assert.strictEqual(calls[1].evil, undefined);
+  assert.strictEqual(calls[1].pieces[0].sneaky, undefined);
+  assert.strictEqual(calls[1].coachName, 'Pat Example');
+  assert.strictEqual(calls[1].publish, true);
+  res = await handleWorkouts(post(coach, body), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time like 20:00 is needed.' }) });
+  assert.strictEqual(res.status, 422);
+  assert.strictEqual((await handleWorkouts(post(coach, body, { origin: 'https://evil.example' }), env, { fetchImpl: sheet(ok) })).status, 400);
+  assert.strictEqual((await handleWorkouts(post(coach, {}), env, { fetchImpl: sheet(ok) })).status, 400);
+  assert.strictEqual((await handleWorkouts(post(coach, body), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', pieces: new Array(13).fill({}) }), null);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', dates: new Array(32).fill('2026-11-17'), pieces: [] }), null);
+});
+
 test('settings page: coaches only, goes to the Sheet with the feed key, errors come back per field', async () => {
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
@@ -2090,7 +2431,136 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
 });
 
+test('Add workout builder: plain language fills Single, Intervals and Variable; pieces match what the Sheet saves', () => {
+  const st = (o) => ({ cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', rows: { distance: [], time: [] }, ...o });
+  const a = parseNL('2 × 30:00 with 1:30 rest, aerobic, Monday');
+  assert.deepStrictEqual([a.type, a.by, a.n, a.work, a.rest, a.cat, a.day], ['intervals', 'time', '2', '30:00', '1:30', 'Aerobic', 0]);
+  const b = parseNL('4 x 2000 m with 4:00 rest, threshold, Wednesday');
+  assert.deepStrictEqual([b.type, b.by, b.n, b.work, b.rest, b.cat, b.day], ['intervals', 'distance', '4', '2000', '4:00', 'Threshold', 2]);
+  const v = parseNL('variable 2000, 1500, 1000, 500, 250 with 8, 6, 4, 2 min rest');
+  assert.strictEqual(v.type, 'variable'); assert.deepStrictEqual(v.rows.map((r) => r.r), ['8:00', '6:00', '4:00', '2:00', '']);
+  assert.strictEqual(parseNL('6000 m steady').single, '6000');
+  assert.strictEqual(parseNL('hello').type, undefined);
+  assert.deepStrictEqual(buildPieces(st({})).pieces, [{ workType: 'Time', reps: '2', work: '30:00', rest: '1:30', startEvery: '', zone: 'Aerobic', base: '', lowPct: '', highPct: '', rate: '' }]);
+  assert.strictEqual(buildPieces(st({ cat: 'Sprint', type: 'single', by: 'distance', single: '2,000 m' })).pieces[0].zone, 'Anaerobic');
+  assert.strictEqual(buildPieces(st({ cat: 'Benchmark', type: 'single', by: 'distance', single: '2000' })).pieces[0].zone, '');
+  const vp = buildPieces(st({ type: 'variable', by: 'distance', rows: { distance: v.rows, time: [] } }));
+  assert.strictEqual(vp.pieces.length, 5); assert.strictEqual(vp.pieces[0].work, '2000'); assert.strictEqual(vp.pieces[0].rest, '8:00');
+  assert.ok(buildPieces(st({ work: '30' })).err); assert.ok(buildPieces(st({ n: '0' })).err);
+  assert.strictEqual(previewOf(st({})).text, '2 × 30:00 / 1:30'); assert.ok(/Total work 1:00:00/.test(previewOf(st({})).note));
+  assert.strictEqual(previewOf(st({ type: 'single', by: 'distance', single: '6000' })).text, '6000 m');
+});
+
+test('Boards: GMS % goes to coaches only', () => {
+  const coachRow = leaderboardsView(feed, TODAY, { gms: true }).tests.find((t) => t.test === '2000m').season[0];
+  assert.ok('gmsPct' in coachRow);
+  assert.ok(!('gmsPct' in leaderboardsView(feed, TODAY).tests.find((t) => t.test === '2000m').season[0]));
+});
+
+test('coaches: only the admin adds, resets or removes coaches; a removed coach is signed out at once', async () => {
+  const vals = { FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec', ADMIN_COACH: 'Sam Tester' };
+  const env2 = (k) => vals[k];
+  const mem = new Map();
+  const coachStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); },
+    keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
+  const withCoaches = { ...feed, logins: [...feed.logins,
+    { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') },
+    { coach: true, code: A.loginCode(env2, 'coach:sam tester', '1975-12-31') }] };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoaches)), failDelayMs: 0, coachStore, shared: null, today: TODAY };
+  const post = (path, body, cookie, extra = {}) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: JSON.stringify(body) });
+  const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
+  const login = (name, password, extra = {}) => handleLogin(post('/api/login', { name, password, ...extra }), env2, deps);
+  const cookieFrom = (res) => A.COOKIE + '=' + (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  const coaches = (body, cookie, extra) => handleCoaches(post('/api/coaches', body, cookie, extra), env2, deps);
+  const status = async (cookie) => (await handle(get('/api/session', cookie), env2, deps)).status;
+  clearFeedCache();
+
+  // The admin keeps the Sheet birthday as the way in; another coach's birthday no longer works.
+  assert.strictEqual((await login('Pat Example', '2/3/1980')).status, 401, 'a Sheet-listed coach who is not the admin has no birthday sign-in');
+  const sam = cookieFrom(await login('Sam Tester', '12/31/1975'));
+  assert.strictEqual(await status(sam), 200);
+
+  // Only the admin manages coaches.
+  assert.strictEqual((await handleCoaches(get('/api/coaches'), env2, deps)).status, 401);
+  const athleteCookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), feed.athletes[0].id);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', athleteCookie), env2, deps)).status, 403);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', sam), env2, deps)).status, 200);
+  assert.deepStrictEqual((await (await handleCoaches(get('/api/coaches', sam), env2, deps)).json()).coaches, []);
+
+  // Add: a temporary password, shown once, that must be replaced at first sign-in.
+  let res = await coaches({ add: 'pat  EXAMPLE' }, sam);
+  assert.strictEqual(res.status, 200);
+  const added = await res.json();
+  assert.strictEqual(added.name, 'Pat Example');
+  assert.ok(/^[a-z2-9]{8}$/.test(added.password));
+  assert.strictEqual((await coaches({ add: 'Pat Example' }, sam)).status, 409, 'already on the list');
+  assert.strictEqual((await coaches({ add: 'Cher' }, sam)).status, 400, 'first and last name');
+  assert.strictEqual((await coaches({ add: 'sam tester' }, sam)).status, 400, 'the admin is already a coach');
+  assert.strictEqual((await coaches({ add: feed.athletes[0].name }, sam)).status, 409, 'not an athlete\'s name');
+  assert.strictEqual((await coaches({ add: 'Lee Other' }, sam, { origin: 'https://evil.example' })).status, 400, 'other sites cannot add coaches');
+  res = await login('Pat Example', added.password);
+  assert.deepStrictEqual(await res.json(), { mustChange: true });
+  assert.ok(!res.headers.get('set-cookie'), 'no session until she chooses a password');
+  assert.strictEqual((await login('Pat Example', added.password, { newPassword: '12345' })).status, 400, 'six characters');
+  res = await login('Pat Example', added.password, { newPassword: 'rowing2026' });
+  assert.strictEqual(res.status, 200);
+  const pat = cookieFrom(res);
+  assert.strictEqual(await status(pat), 200);
+  assert.strictEqual((await login('Pat Example', added.password)).status, 401, 'the temporary password is gone');
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 200);
+  // Pat is a coach, not the admin.
+  assert.strictEqual((await handleCoaches(get('/api/coaches', pat), env2, deps)).status, 403);
+  assert.strictEqual((await coaches({ add: 'Lee Other' }, pat)).status, 403);
+  assert.strictEqual((await coaches({ remove: 'sam tester' }, pat)).status, 403);
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'sam tester' }, pat), env2, deps)).status, 404, 'the old reset is gone');
+  const listed = await (await handleCoaches(get('/api/coaches', sam), env2, deps)).json();
+  assert.deepStrictEqual(listed.coaches.map((c) => [c.name, c.status]), [['Pat Example', 'set']]);
+
+  // Reset: new temporary password, the old one stops working, her open session stays until the admin removes her.
+  res = await coaches({ reset: 'pat example' }, sam);
+  const again = await res.json();
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual((await login('Pat Example', 'rowing2026')).status, 401);
+  assert.deepStrictEqual(await (await login('Pat Example', again.password)).json(), { mustChange: true });
+  assert.strictEqual((await coaches({ reset: 'nobody here' }, sam)).status, 404);
+
+  // Remove: signed out on the next request, and cannot sign back in.
+  assert.strictEqual((await coaches({ remove: 'sam tester' }, sam)).status, 400, 'the admin cannot be removed');
+  assert.strictEqual((await coaches({ remove: 'pat example' }, sam)).status, 200);
+  assert.strictEqual(await status(pat), 401, 'a removed coach is signed out');
+  for (const f of [(c) => handleSettings(get('/api/settings', c), env2, deps), (c) => handlePassword(post('/api/password', { current: 'x', next: 'abcdefg' }, c), env2, deps)]) {
+    assert.strictEqual((await f(pat)).status, 401);
+  }
+  assert.strictEqual((await login('Pat Example', again.password)).status, 401);
+  assert.strictEqual((await coaches({ remove: 'pat example' }, sam)).status, 404);
+  assert.strictEqual(await status(sam), 200, 'the admin stays signed in');
+
+  // With no admin set, nothing changes: the Sheet list still signs coaches in and the new endpoint is off.
+  const old = (k) => (k === 'ADMIN_COACH' ? '' : vals[k]);
+  assert.strictEqual((await handleCoaches(get('/api/coaches', sam), old, deps)).status, 404);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), old, deps)).status, 200);
+});
+
+test('inactive athletes are signed out of Log a run and the Concept2 connection too', async () => {
+  const env = (k) => (k === 'FEED_URL' ? 'https://script.example/exec' : c2env(k));
+  const feedFetch = async () => new Response(JSON.stringify({ athletes: [{ id: 'A901', name: 'Active One', active: true }, { id: 'A902', name: 'Gone Two', active: false }] }));
+  clearFeedCache();
+  const deps = { feedFetch, feedShared: null, fetchImpl: async () => new Response('{}'), store: null };
+  const cookie = (id) => A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), id);
+  const mine = (id) => new Request('https://x/api/log-mine', { method: 'POST', headers: { cookie: cookie(id), 'content-type': 'application/json' }, body: JSON.stringify({ form: {} }) });
+  assert.strictEqual((await handleLogMine(mine('A902'), env, deps)).status, 401, 'inactive');
+  assert.strictEqual((await handleLogMine(mine('NOPE'), env, deps)).status, 401, 'dropped from the Roster');
+  assert.notStrictEqual((await handleLogMine(mine('A901'), env, deps)).status, 401, 'an active athlete gets through to the form checks');
+  const c2 = (id, path = '/api/concept2/status') => handleConcept2(new Request('https://x' + path, { headers: { cookie: cookie(id) } }), env, { ...deps, store: { get: async () => null, set: async () => {}, keys: async () => [], remove: async () => {} } });
+  assert.strictEqual((await c2('A902')).status, 401);
+  assert.strictEqual((await c2('A901')).status, 200);
+  const cb = (id) => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?code=c&state=s', { headers: { cookie: cookie(id) } }), env, deps);
+  assert.ok((await cb('A902')).headers.get('location').includes('logbook=error'));
+  clearFeedCache();
+});
+
 photoTests(test);
+askTests(test);
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }

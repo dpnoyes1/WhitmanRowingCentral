@@ -6,7 +6,9 @@
  *   {key, action: 'logbook-result', athleteId, result: {
  *     id, deleted, localDate 'YYYY-MM-DD', localTime 'H:MM', machine 'rower' | 'bikerg' | 'skierg',
  *     name, workoutType, timeS, distanceM, restTimeS, restDistanceM, dragFactor,
- *     intervals: [{timeS, distanceM, rate, restTimeS, restDistanceM}] }}
+ *     intervals: [{timeS, distanceM, rate, restTimeS, restDistanceM, calories, wattMinutes, hr*, target*, type, machine}],
+ *     calories, strokeCount, hr*, splits, targets, logbookSource, verified, ranked, timezone, dateUtc,
+ *     privacy, comments, restTimeTotalS, restDistanceTotalM, raw: {result, strokes} }}
  *
  * Times are seconds, distances meters. The Logbook result id goes in Response ID
  * as "logbook:<id>", so a repeated webhook, a poll and a retry never write twice.
@@ -70,7 +72,11 @@ function logbookRows(result, ctx) {
   var pieces = (result.intervals || []).filter(function (iv) { return Number(iv.timeS) > 0; });
   if (!pieces.length) {
     // Totals only (Just Row, or Logbook sent no piece table): one piece, so the rest of the app sees a session.
-    pieces = [{ timeS: result.timeS, distanceM: result.distanceM, rate: result.rate, restTimeS: '', restDistanceM: '' }];
+    pieces = [{
+      timeS: result.timeS, distanceM: result.distanceM, rate: result.rate, restTimeS: '', restDistanceM: '',
+      calories: result.calories, hrAvg: result.hrAvg, hrMin: result.hrMin, hrMax: result.hrMax,
+      hrEnding: result.hrEnding, hrRest: result.hrRest, hrRecovery: result.hrRecovery
+    }];
   }
   if (!(Number(pieces[0].timeS) > 0)) return { skip: 'no time on result ' + result.id };
   if (pieces.length > MAX_INTERVALS) {
@@ -86,7 +92,22 @@ function logbookRows(result, ctx) {
       'Work m': numOrBlank_(iv.distanceM),
       'Avg rate': numOrBlank_(iv.rate),
       'Rest s': numOrBlank_(iv.restTimeS),
-      'Rest m': numOrBlank_(iv.restDistanceM)
+      'Rest m': numOrBlank_(iv.restDistanceM),
+      'Calories': numOrBlank_(iv.calories),
+      'Watt-min': numOrBlank_(iv.wattMinutes),
+      'Avg HR': numOrBlank_(iv.hrAvg),
+      'HR min': numOrBlank_(iv.hrMin),
+      'HR max': numOrBlank_(iv.hrMax),
+      'HR ending': numOrBlank_(iv.hrEnding),
+      'HR rest': numOrBlank_(iv.hrRest),
+      'HR recovery': numOrBlank_(iv.hrRecovery),
+      'Target pace s': numOrBlank_(iv.targetPaceS),
+      'Target watts': numOrBlank_(iv.targetWatts),
+      'Target rate': numOrBlank_(iv.targetRate),
+      'Target HR zone': numOrBlank_(iv.targetHrZone),
+      'Target calories': numOrBlank_(iv.targetCalories),
+      'Piece type': iv.type ? String(iv.type) : '',
+      'Machine': iv.machine ? String(iv.machine) : ''
     };
   });
   var sum = function (key) {
@@ -111,13 +132,65 @@ function logbookRows(result, ctx) {
     'Rest m': sum('Rest m'),
     'Main set': String(result.name || '').trim(),
     'Drag factor': numOrBlank_(result.dragFactor),
+    'Avg HR': numOrBlank_(result.hrAvg),
     'Intervals': intervals.length,
     'Coach note': note,
     'Source': 'Logbook',
     'Review status': cls.possible ? LOGBOOK_PENDING_MAKEUP : LOGBOOK_PENDING,
-    'Response ID': 'logbook:' + result.id
+    'Response ID': 'logbook:' + result.id,
+    'Calories': numOrBlank_(result.calories),
+    'Stroke count': numOrBlank_(result.strokeCount),
+    'HR min': numOrBlank_(result.hrMin),
+    'HR max': numOrBlank_(result.hrMax),
+    'HR ending': numOrBlank_(result.hrEnding),
+    'HR rest': numOrBlank_(result.hrRest),
+    'HR recovery': numOrBlank_(result.hrRecovery),
+    'Logbook type': String(result.workoutType || ''),
+    'Logbook source': String(result.logbookSource || ''),
+    'Verified': String(result.verified || ''),
+    'Ranked': String(result.ranked || ''),
+    'Timezone': String(result.timezone || ''),
+    'Date UTC': String(result.dateUtc || ''),
+    'Privacy': String(result.privacy || ''),
+    'Logbook comments': String(result.comments || ''),
+    'Rest s total': numOrBlank_(result.restTimeTotalS),
+    'Rest m total': numOrBlank_(result.restDistanceTotalM),
+    'Splits JSON': (result.splits && result.splits.length) ? JSON.stringify(result.splits) : '',
+    'Targets JSON': result.targets ? JSON.stringify(result.targets) : ''
   };
   return { entry: entry, intervals: intervals };
+}
+
+/**
+ * Pure: the "Logbook raw" rows for one result: its full JSON and its stroke data, split into chunks that fit a cell.
+ * raw = {result, strokes}. Returns [] when the site sent no raw copy.
+ */
+function logbookRawRows(resultId, athleteId, raw, now) {
+  var rows = [];
+  if (!raw) return rows;
+  var push = function (kind, text) {
+    for (var i = 0, part = 1; i < text.length || i === 0; i += LOGBOOK_RAW_CHUNK, part++) {
+      rows.push({
+        'Result ID': String(resultId), 'Athlete ID': athleteId, 'Received at': now, 'Kind': kind,
+        'Part': part, 'JSON': text.slice(i, i + LOGBOOK_RAW_CHUNK)
+      });
+      if (!text.length) break;
+    }
+  };
+  if (raw.result) push('Result', JSON.stringify(raw.result));
+  if (raw.strokes && raw.strokes.length) push('Strokes', JSON.stringify(raw.strokes));
+  return rows;
+}
+
+/** Removes the Logbook raw rows of one result, so an update replaces them. */
+function deleteLogbookRaw_(resultId) {
+  var sheet = tab_(TABS.LOGBOOK_RAW);
+  var last = sheet.getLastRow();
+  if (last < 2) return;
+  var ids = sheet.getRange(2, 1, last - 1, 1).getValues();
+  for (var i = ids.length - 1; i >= 0; i--) {
+    if (String(ids[i][0]) === String(resultId)) sheet.deleteRow(i + 2);
+  }
 }
 
 function sumPieces_(list) {
@@ -191,6 +264,12 @@ function processLogbookResult_(body) {
     photoTakeOverFromSlack_(rows);   // a Slack photo of this same workout moves onto the Logbook entry
     appendObject_(TABS.ENTRIES, rows.entry);
     appendObjects_(TABS.INTERVALS, rows.intervals);
+    try {   // a problem saving the raw copy must never lose the session itself
+      deleteLogbookRaw_(result.id);
+      appendObjects_(TABS.LOGBOOK_RAW, logbookRawRows(result.id, roster['Athlete ID'], body.result.raw, new Date()));
+    } catch (rawErr) {
+      logChange_({ Who: 'logbook', Tab: TABS.LOGBOOK_RAW, 'Row ID': 'logbook:' + result.id, Note: 'RAW COPY ERROR: ' + rawErr.message });
+    }
     SpreadsheetApp.flush();
     var out = { status: existing ? 'updated' : 'created', entryId: rows.entry['Entry ID'] };
     var slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);

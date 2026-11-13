@@ -39,6 +39,7 @@ function setup() {
   seedSettings_();
   removeDefaultSheet_();
   tab_(TABS.WEIGHTS).hideSheet();   // coach-only; hidden so it never shows up on a shared screen
+  tab_(TABS.LOGBOOK_RAW).hideSheet();   // raw Logbook JSON and strokes, coach-only
 
   var settings = getSettings();
   var form = settings['form.id'] ? tryOpenForm_(settings['form.id']) : null;
@@ -147,6 +148,7 @@ function dropRetiredRosterColumns_(sheet) {
 var RETIRED_SETTING_KEYS = [
   'default_warmup', 'spike_threshold_pct', 'modified_multiplier',
   'oyo.performance.required', 'oyo.performance.elite',
+  'oyo.standard.elite', 'oyo.break.elite',
   'gms.star1_s', 'gms.star2_s', 'gms.star3_s',
   'target.UT2.2000m', 'target.UT1.2000m', 'target.AT.2000m', 'target.AN.2000m',
   'target.UT2.20min', 'target.UT1.20min', 'target.AT.20min', 'target.AN.20min'

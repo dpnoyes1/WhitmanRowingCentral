@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "Bash(npx @google/clasp push:*)",
-      "Bash(npx @google/clasp status:*)"
+      "Bash(npx @google/clasp status:*)",
+      "Bash(npx @google/clasp update-deployment:*)"
     ]
   }
 }

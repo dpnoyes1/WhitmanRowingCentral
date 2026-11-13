@@ -1,15 +1,16 @@
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, completionView, workoutView, balanceView } from '../lib/views.mjs';
+import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
+import * as C2 from '../lib/concept2.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handle(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
   let feed;
@@ -31,13 +32,30 @@ export async function handle(req, envFn, deps = {}) {
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
   if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today), notLogged: notLoggedView(data, today) } : {}), meta });
-  if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today), meta });
+  if (path === '/api/leaderboards') return json({ ...leaderboardsView(data, today, { gms: who.kind === 'team' }), meta });
   // Star rankings are coaches only (David, 2026-10-23); stars next to names stay public.
   if (path === '/api/stars') return who.kind === 'team' ? json({ ...starsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   // Load flags, consistency table and trends for every rower: coaches only (David, 2026-10-23).
-  if (path === '/api/insights') return who.kind === 'team' ? json({ ...insightsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
-  // Completion grid: coaches only (David, 2026-11-01).
-  if (path === '/api/completion') return who.kind === 'team' ? json({ ...completionView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  if (path === '/api/insights') {
+    if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
+    // Missing Logbook account (David, 2026-11-12): from Dec 1; the connection list is read only once the card is live.
+    let connected = null;
+    if (today >= LOGBOOK_MISSING_FROM) {
+      try {
+        const store = deps.store === undefined ? await C2.defaultStore() : deps.store;
+        if (store) connected = (await C2.connectedList(store)).map((c) => c.id);
+      } catch (err) { console.error('logbook list error:', err.message); }
+    }
+    return json({ ...insightsView(data, today), logbook: logbookMissingView(data, connected, today), meta });
+  }
+  // Lineups: each rower's best 2k, 20' and GMS %, coaches only (David, 2026-11-11).
+  if (path === '/api/lineups') return who.kind === 'team' ? json({ ...lineupsView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
+  // Attendance: everyone on the team sees it (David, 2026-11-12); the OYO columns stay coaches only.
+  if (path === '/api/completion') {
+    const view = completionView(data, today);
+    if (who.kind === 'team') return json({ ...view, meta });
+    return json({ ...view, rows: view.rows.map(({ oyo, ...r }) => r), meta });
+  }
   // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).
   if (path === '/api/balance') return who.kind === 'team' ? json({ ...balanceView(data, today), meta }) : json({ error: 'Coaches only.' }, 403);
   if (path === '/api/oyo') return json({ ...oyoView(data, today), meta });
@@ -97,4 +115,4 @@ function ownInsights(i) {
 
 export default (req) => handle(req, env);
 
-export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/photo/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/completion', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };
+export const config = { path: ['/api/team', '/api/athlete/:id', '/api/workout/:id', '/api/photo/:id', '/api/leaderboards', '/api/stars', '/api/oyo', '/api/insights', '/api/completion', '/api/lineups', '/api/balance', '/api/week', '/api/week/:id', '/api/session'], method: 'GET' };

@@ -2,7 +2,7 @@
 // tab through the feed key; the Sheet (apps-script/SettingsPage.gs) owns the list
 // of fields and checks every value. Coaches only, and never from the cached
 // feed: the page always shows what the Sheet holds right now.
-import { session } from '../lib/auth.mjs';
+import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 
 const env = (k) => Netlify.env.get(k);
@@ -10,7 +10,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handleSettings(req, envFn, deps = {}) {
-  const who = session(envFn, req);
+  const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   if (who.kind !== 'team') return json({ error: 'Coaches only.' }, 403);
   const fetchImpl = deps.fetchImpl || fetch;

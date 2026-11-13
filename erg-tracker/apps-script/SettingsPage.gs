@@ -25,14 +25,12 @@ function settingsPageSections_() {
         return { key: 'multiplier.' + a[0], label: a[0], type: 'decimal', min: 0, max: 3 };
       }) },
     { id: 'oyo', title: 'OYO goals (weekly, weighted min)',
-      note: 'The same Required and Elite goal for every athlete. Break weeks use their own goals; leave those blank to keep the usual goal.',
+      note: 'You type the Standard goal; it is the same for every athlete. Elite is worked out for you (Standard + 100%, so double). Over-reaching on the Insights page is 150% or more of Standard. Break weeks use their own Standard goal; leave it blank to keep the usual goal.',
       fields: [
-        { key: 'oyo.standard.required', label: 'Required', type: 'int', min: 0, max: 2000 },
-        { key: 'oyo.standard.elite', label: 'Elite', type: 'int', min: 0, max: 2000 },
+        { key: 'oyo.standard.required', label: 'Standard goal', type: 'int', min: 0, max: 2000, help: 'Weekly weighted minutes. Elite = double this.' },
         { key: 'oyo.break.dates', label: 'Break dates', type: 'ranges', optional: true, wide: true,
           help: 'Like 12/23/2026-01/03/2027. More than one: separate with ;. A week with 4 or more break days uses the break goals.' },
-        { key: 'oyo.break.required', label: 'Break week Required', type: 'int', min: 0, max: 2000, optional: true },
-        { key: 'oyo.break.elite', label: 'Break week Elite', type: 'int', min: 0, max: 2000, optional: true }
+        { key: 'oyo.break.required', label: 'Break week Standard goal', type: 'int', min: 0, max: 2000, optional: true, help: 'Elite for a break week is double this.' }
       ] },
     { id: 'gms', title: 'Gold Medal Standard and stars',
       note: 'GMS % is always measured against the 1v8 standard. A band\'s lower edge counts as in. Any valid 2k or 20\' earns 1 star.',

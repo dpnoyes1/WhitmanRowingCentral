@@ -251,13 +251,19 @@ export function insightsView(feed, today) {
   const last = addDays(monday, -7);
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const splitWeeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));
+  const thisWeekMin = weekMinutes(feed.entries, feed.settings, monday);
   const rows = activeRowers(feed).map((a) => {
     const mine = feed.entries.filter((e) => e.athleteId === a.id);
     const [prev, cur] = loadTrend(mine, feed.settings, [last, monday]).map(loadRow);
     const record = practiceRecord(a, feed, today);
     const proj = projected2k(a.id, feed.benchmarks, yearStart);
+    const season = record.filter((r) => r.date >= yearStart), recent = record.slice(-ATTENDANCE_RECENT);
+    const oyoNow = round((thisWeekMin[a.id] || { oyo: 0 }).oyo), goals = oyoGoals(a, monday, feed.settings);
     return {
       ...athleteSummary(a), lastWeek: prev, thisWeek: cur,
+      attendance: { season: pct(season.filter((r) => r.done).length, season.length), recent: pct(recent.filter((r) => r.done).length, recent.length), recentOf: recent.length },
+      oyo: { minutes: oyoNow, standard: goals.oyoRequired, pct: goals.oyoRequired ? round((100 * oyoNow) / goals.oyoRequired) : null },
+      tests: { has2k: hasTest(feed, a.id, '2000m', yearStart, today), has20: hasTest(feed, a.id, '20min', yearStart, today) },
       splitTrend: trendRow(splitTrend(steadySplits(mine, splitWeeks))),
       projected2k: proj && round(proj.timeS, 1),
       month: { ...monthConsistency(record, today), streak: practiceStreak(record) },
@@ -267,12 +273,58 @@ export function insightsView(feed, today) {
   // Missed practices lead; a load jump only breaks ties (David, 2026-11-03).
   const bad = (r) => Number(r.missed.flag) * 2 + Number(r.thisWeek.flag || r.lastWeek.flag);
   rows.sort((x, y) => (bad(y) - bad(x)) || (y.missed.count - x.missed.count) || x.name.localeCompare(y.name));
-  return { today, weekStart: monday, lastWeekStart: last, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
-    missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, rowers: rows };
+  // A test is only "missing" once the team has done it this school year (David, 2026-11-12: no team 2k yet, so nobody is
+  // flagged for it): at least half of the active rowers have a valid result.
+  const teamDid = (k) => rows.length > 0 && rows.filter((r) => r.tests[k]).length * 2 >= rows.length;
+  return { today, weekStart: monday, lastWeekStart: last, testsRun: { has2k: teamDid('has2k'), has20: teamDid('has20') }, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
+    missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, overreachPct: OYO_OVERREACH_PCT, attendanceRecent: ATTENDANCE_RECENT, rowers: rows };
+}
+
+/** The Missing Logbook account card starts on this date (David, 2026-11-12). */
+export const LOGBOOK_MISSING_FROM = '2026-12-01';
+
+/**
+ * Insights card "Missing Logbook account" (David, 2026-11-12): active rowers with no Concept2 Logbook connection, shown
+ * from December 1. connectedIds is the set of athlete IDs the site holds a Logbook connection for, or null when it could
+ * not be read (then `missing` is null and the page says so rather than listing everyone).
+ */
+export function logbookMissingView(feed, connectedIds, today) {
+  const active = today >= LOGBOOK_MISSING_FROM;
+  if (!active) return { from: LOGBOOK_MISSING_FROM, active, missing: [] };
+  if (!connectedIds) return { from: LOGBOOK_MISSING_FROM, active, missing: null };
+  const have = new Set(connectedIds);
+  return { from: LOGBOOK_MISSING_FROM, active, missing: activeRowers(feed).filter((a) => !have.has(a.id)).map((a) => athleteSummary(a)).sort((x, y) => x.name.localeCompare(y.name)) };
+}
+
+/** Overreaching on OYO (David, 2026-11-11): 150% or more of the Standard goal. Replaces the old 200% idea. */
+export const OYO_OVERREACH_PCT = 150;
+/** "Past 2 weeks" on Insights attendance = the last 10 practices (David, 2026-11-11). */
+export const ATTENDANCE_RECENT = 10;
+
+function hasTest(feed, id, test, yearStart, today) {
+  return feed.benchmarks.some((b) => b.athleteId === id && b.test === test && b.date >= yearStart && b.date <= today && b.valid !== false);
+}
+
+/**
+ * Coaches only: what the Lineups page needs per rower (David, 2026-11-11). Best 2k time, best 20' meters and
+ * the combined GMS % (average of her best 2k % and best 20' %; one test: that test). A rower with no GMS % (no test,
+ * or no weight on file so the Sheet gave none) has gmsPct null and sits in a boat but is left out of the averages.
+ * Times and meters are raw, never weight.
+ */
+export function lineupsView(feed, today) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
+  const rowers = activeRowers(feed).map((a) => {
+    const mine = feed.benchmarks.filter((b) => b.athleteId === a.id && b.date >= yearStart && b.date <= today && b.valid !== false);
+    const k2 = mine.filter((b) => b.test === '2000m' && b.timeS).reduce((m, b) => (m === null || b.timeS < m ? b.timeS : m), null);
+    const m20 = mine.filter((b) => b.test === '20min' && b.meters).reduce((m, b) => (m === null || b.meters > m ? b.meters : m), null);
+    const g = STAR_TESTS.map((t) => bestGms(feed, a.id, t, yearStart, today)).filter(Boolean).map((b) => b.gmsPct);
+    return { ...athleteSummary(a), k2S: k2, m20, gmsPct: g.length ? round(g.reduce((x, y) => x + y, 0) / g.length, 1) : null };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  return { today, yearStart, rowers };
 }
 
 /** Completion grid: the last 10 practice days shown (David, 2026-11-01); the % is the whole school year. */
-export const COMPLETION_DAYS = 10;
+export const COMPLETION_DAYS = 15;
 
 /**
  * Coaches' grid, one row per active rower: season completion %, then one cell
@@ -342,33 +394,12 @@ const STAR_TESTS = ['2000m', '20min'];
  * year and the piece's date. All time keeps inactive and graduated athletes.
  * Raw erg scores only; no GMS on boards.
  */
-export function leaderboardsView(feed, today) {
-  const st = feed.settings.schoolYearStart;
-  const yearStart = schoolYearStart(today, st);
-  const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+export function leaderboardsView(feed, today, { gms = false } = {}) {
+  const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   const starCache = {};
-  const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
-  // group: null = all pieces; 'freshman' / 'varsity' = pieces done in those grades.
+  const opts = (from, group) => ({ from, to: today, group, today, starCache, gms });
   const all = '0000-00-00';
-  const board = (test, from, group) => {
-    const best = {};
-    feed.benchmarks.forEach((b) => {
-      const a = byId[b.athleteId];
-      if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > today) return;
-      if (isAlum(a) && from !== all) return;   // Alum: All Time boards only (All, Varsity, Fr/Nov)
-      if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
-      if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
-    });
-    return Object.values(best)
-      .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
-      .map((b, i) => {
-        const a = byId[b.athleteId];
-        return {
-          rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
-          dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st)
-        };
-      });
-  };
+  const board = (test, from, group) => testBoard(feed, test, opts(from, group));
   return {
     today, yearStart,
     tests: TESTS.map((t) => ({
@@ -377,6 +408,39 @@ export function leaderboardsView(feed, today) {
       varsity: { season: board(t, yearStart, 'varsity'), allTime: board(t, all, 'varsity') }
     }))
   };
+}
+
+/**
+ * One board: best valid raw result per rower for `test` from `from` to `to`
+ * (dates inclusive), ranked. group: null = all pieces; 'freshman' / 'varsity' =
+ * pieces done in those grades. Alumni appear only on boards that start at the
+ * beginning of time (All Time), or, with opts.pastYear, on a past school year's
+ * board, since they were on the team then (ErgBot questions, 2026-11-07).
+ */
+export function testBoard(feed, test, { from, to, group = null, today, starCache = {}, pastYear = false, gms = false }) {
+  const st = feed.settings.schoolYearStart;
+  const yearStart = schoolYearStart(today, st);
+  const byId = Object.fromEntries(feed.athletes.filter((a) => a.role === 'Rower').map((a) => [a.id, a]));
+  const stars = (id) => (id in starCache ? starCache[id] : (starCache[id] = seasonStars(feed, id, yearStart, today).stars));
+  const allTime = from === '0000-00-00';
+  const best = {};
+  feed.benchmarks.forEach((b) => {
+    const a = byId[b.athleteId];
+    if (!a || b.test !== test || !b.valid || !resultValue(b) || b.date < from || b.date > to || b.date > today) return;
+    if (isAlum(a) && !allTime && !pastYear) return;   // Alum: All Time boards only (All, Varsity, Fr/Nov)
+    if (group && boardGroup(a.gradYear, b.date, st) !== group) return;
+    if (!best[a.id] || better(test, b, best[a.id])) best[a.id] = b;
+  });
+  return Object.values(best)
+    .sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : x.date < y.date ? -1 : 1))
+    .map((b, i) => {
+      const a = byId[b.athleteId];
+      return {
+        rank: i + 1, ...athleteSummary(a), active: a.active, alum: isAlum(a) || a.grade === 'Graduated', stars: stars(a.id), ...testRow(b),
+        dateApprox: !!b.dateApprox, schoolYear: schoolYearLabel(b.date, st), group: boardGroup(a.gradYear, b.date, st),
+        ...(gms ? { gmsPct: typeof b.gmsPct === 'number' ? b.gmsPct : null } : {})
+      };
+    });
 }
 
 // ---- coach split averages (David, 2026-10-25) --------------------------------
@@ -494,7 +558,17 @@ export function seasonStars(feed, id, yearStart, today) {
 /** Public stars board (stars only, never GMS %) plus team GMS averages. */
 export function starsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
-  const rowers = activeRowers(feed).map((a) => ({ ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today) })).sort((x, y) => (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
+  // Coaches only (/api/stars is 403 for athletes): GMS % per test, the combined % (average of the two) and the next star.
+  const rowers = activeRowers(feed).map((a) => {
+    const best = Object.fromEntries(STAR_TESTS.map((t) => [t, bestGms(feed, a.id, t, yearStart, today)]));
+    const pcts = STAR_TESTS.map((t) => best[t] && best[t].gmsPct).filter((x) => typeof x === 'number');
+    const nextFrom = STAR_TESTS.find((t) => best[t] && best[t].nextStar);
+    return { ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today),
+      k2Pct: best['2000m'] && typeof best['2000m'].gmsPct === 'number' ? best['2000m'].gmsPct : null,
+      m20Pct: best['20min'] && typeof best['20min'].gmsPct === 'number' ? best['20min'].gmsPct : null,
+      combined: pcts.length ? round(pcts.reduce((x, y) => x + y, 0) / pcts.length, 1) : null,
+      next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
+  }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   return { today, yearStart, rowers, teamGms: feed.teamGms };
 }
 
