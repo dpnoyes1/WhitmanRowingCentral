@@ -667,3 +667,6 @@ table.insights td a.nm { white-space: nowrap; }
 .gms-std { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-block: 12px; }
 .gms-keys { display: flex; gap: 8px 20px; flex-wrap: wrap; }
 .gms-key { display: flex; align-items: center; gap: 8px; }
+.gms-row { cursor: pointer; }
+.gms-detail td { padding-top: 0; }
+.gms-used { padding: 2px 0; }

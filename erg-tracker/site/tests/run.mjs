@@ -47,6 +47,7 @@ const test = (name, fn) => tests.push([name, fn]);
 
 test('GMS page: team test run, life time list, per-rower test flags', () => {
   const v = starsView(feed, TODAY);
+  assert.ok(v.rowers.filter((r) => r.stars !== null).every((r) => r.used.length >= 1 && r.used.every((u) => u.gmsPct !== null && !('weight' in u))), 'each starred rower lists the results used');
   assert.ok(v.lifeRowers.length === v.rowers.length && v.rowers.every((r) => r.tests && 'has2k' in r.tests));
   assert.deepEqual(teamTestsRun([{ tests: { has2k: false, has20: true } }, { tests: { has2k: false, has20: true } }]), { has2k: false, has20: true });
   assert.deepEqual(teamTestsRun([{ tests: { has2k: true, has20: false } }, { tests: { has2k: false, has20: false } }, { tests: { has2k: false, has20: false } }]), { has2k: false, has20: false });

@@ -576,6 +576,8 @@ export function starsView(feed, today) {
       k2Pct: best['2000m'] && typeof best['2000m'].gmsPct === 'number' ? best['2000m'].gmsPct : null,
       m20Pct: best['20min'] && typeof best['20min'].gmsPct === 'number' ? best['20min'].gmsPct : null,
       combined: pcts.length ? round(pcts.reduce((x, y) => x + y, 0) / pcts.length, 1) : null,
+      // The results the GMS % and stars come from (best by GMS % in the window), shown when a row is opened. Never weight.
+      used: STAR_TESTS.map((t) => best[t] && { test: t, id: best[t].id, date: best[t].date, timeS: best[t].timeS, meters: best[t].meters, gmsPct: best[t].gmsPct, stars: best[t].stars }).filter(Boolean),
       next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
   }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   const rowers = build(yearStart), lifeRowers = build('0000-00-00');

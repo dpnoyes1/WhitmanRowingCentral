@@ -1141,6 +1141,7 @@ async function showStars() {
     : `${fmtNum(r.next.nextStar.metersMore)}m more on the 20' (${splitsTxt(r.next.nextStar.splitFaster)})`);
   const run = v.testsRun || { has2k: true, has20: true };
   let which = 'season';
+  const open = new Set();
   const draw = () => {
     const rowers = which === 'season' ? v.rowers : v.lifeRowers;
     const tested = rowers.filter((r) => r.stars !== null);
@@ -1155,10 +1156,10 @@ async function showStars() {
         <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, '')}${star(1, '')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
       <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
-        ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+        ${tested.map((r, i) => `<tr class="gms-row" data-r="${esc(r.id)}" tabindex="0" aria-expanded="${open.has(r.id)}"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
           <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
           <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
-          <td class="muted">${nextTxt(r)}</td></tr>`).join('')}
+          <td class="muted">${nextTxt(r)}</td></tr>${open.has(r.id) ? `<tr class="gms-detail"><td></td><td colspan="6">${r.used.map((u) => `<div class="gms-used"><b>${TEST_LABELS[u.test]}</b> ${fmtResult(u)} <span class="muted">${split(u)} /500m · ${fmtDate(u.date, { month: 'short', day: 'numeric', year: 'numeric' })} · ${pct(u.gmsPct)} · ${starText(u.stars)}</span></div>`).join('')}</td></tr>` : ''}`).join('')}
       </table></div></div>
       ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
       <div class="card"><h2>Team Gold Medal Standard</h2>
@@ -1166,7 +1167,12 @@ async function showStars() {
         <div class="table-wrap"><table><tr><th>Group</th><th class="r">${esc(cur.schoolYear)}</th>${prev ? `<th class="r">${esc(prev.schoolYear)}</th>` : ''}</tr>
         ${keys.map((k) => `<tr><td>${esc(cur.groups[k].label)}</td><td class="r">${avg(cur, k)}</td>${prev ? `<td class="r">${avg(prev, k)}</td>` : ''}</tr>`).join('')}
         </table></div><p class="muted small">Raw erg speed.</p></div>${footer(v.meta)}`;
-    app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; draw(); }; });
+    app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; open.clear(); draw(); }; });
+    const toggle = (tr) => { const id = tr.dataset.r; open.has(id) ? open.delete(id) : open.add(id); draw(); };
+    app.querySelectorAll('tr.gms-row').forEach((tr) => {
+      tr.onclick = (ev) => { if (!ev.target.closest('a')) toggle(tr); };
+      tr.onkeydown = (ev) => { if ((ev.key === 'Enter' || ev.key === ' ') && !ev.target.closest('a')) { ev.preventDefault(); toggle(tr); } };
+    });
     wireFooter();
   };
   draw();
