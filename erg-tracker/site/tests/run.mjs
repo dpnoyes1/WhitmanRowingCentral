@@ -1733,7 +1733,7 @@ test('home-screen install: manifest and icons match their declared sizes', () =>
   assert.strictEqual(manifest.display, 'standalone');
   const html = fs.readFileSync(path.join(publicDir, 'index.html'), 'utf8');
   assert.ok(html.includes('href="/manifest.webmanifest"'));
-  const icons = [...manifest.icons, { src: '/icons/apple-touch-icon.png', sizes: '180x180' }];
+  const icons = [...manifest.icons, { src: '/icons/apple-touch-icon-v2.png', sizes: '180x180' }];
   for (const icon of icons) {
     const file = fs.readFileSync(path.join(publicDir, icon.src));
     assert.strictEqual(file.toString('ascii', 1, 4), 'PNG', icon.src);
