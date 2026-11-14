@@ -13,6 +13,8 @@
   }
 
   const choice = saved();
+  // No remembered sign-in: show the sign-in layout from the first frame. Otherwise the full layout shows at once instead of a blue bar first.
+  try { if (!JSON.parse(localStorage.getItem('wrc.session'))) root.classList.add('out'); } catch { root.classList.add('out'); }
   root.dataset.theme = 'dark';   // dark only (David, 2026-11-11); the old light choice is ignored
 
   function current() {

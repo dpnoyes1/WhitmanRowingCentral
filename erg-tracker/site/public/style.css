@@ -95,9 +95,10 @@ a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible
 .theme-toggle { display: inline-flex; align-items: center; justify-content: center; width: 36px; height: 36px; flex: none; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--text-2); cursor: pointer; }
 .theme-toggle svg { fill: none; }
 .top, .tabbar, .scrim { display: none; }
-body:not(.authed) .side { display: none; }
-body:not(.authed) .shell { padding: 0; }
-body:not(.authed) .top { display: flex; }
+/* Signed out only (html.out, set in theme.js before first paint): the plain sign-in layout. Signed in or unknown, the full layout shows from the first frame. */
+html.out .side { display: none; }
+html.out .shell { padding: 0; }
+html.out .top { display: flex; }
 .login .error:empty { display: none; }
 .skip { position: fixed; left: 8px; top: -60px; z-index: 50; padding: 10px 14px; border-radius: 10px; background: var(--accent); color: var(--accent-ink); font-weight: 600; text-decoration: none; }
 .skip:focus { top: 8px; }
@@ -666,3 +667,6 @@ table.insights td a.nm { white-space: nowrap; }
 .gms-std { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-block: 12px; }
 .gms-keys { display: flex; gap: 8px 20px; flex-wrap: wrap; }
 .gms-key { display: flex; align-items: center; gap: 8px; }
+.gms-row { cursor: pointer; }
+.gms-detail td { padding-top: 0; }
+.gms-used { padding: 2px 0; }
