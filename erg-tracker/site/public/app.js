@@ -1155,7 +1155,7 @@ async function showStars() {
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
         <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, '')}${star(1, '')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
-      <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r">Details</th></tr>
+      <div class="card"><div class="gms-all"><button type="button" class="btn ghost sm" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></div><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r">Details</th></tr>
         ${tested.map((r, i) => `<tr class="gms-row"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
           <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
           <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
@@ -1169,6 +1169,8 @@ async function showStars() {
         ${keys.map((k) => `<tr><td>${esc(cur.groups[k].label)}</td><td class="r">${avg(cur, k)}</td>${prev ? `<td class="r">${avg(prev, k)}</td>` : ''}</tr>`).join('')}
         </table></div><p class="muted small">Raw erg speed.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; open.clear(); draw(); }; });
+    const allBtn = document.getElementById('gms-all');
+    if (allBtn) allBtn.onclick = () => { const all = tested.length && tested.every((r) => open.has(r.id)); tested.forEach((r) => (all ? open.delete(r.id) : open.add(r.id))); draw(); };
     app.querySelectorAll('.gms-toggle').forEach((b) => {
       b.onclick = () => { const id = b.dataset.r; open.has(id) ? open.delete(id) : open.add(id); draw(); const n = app.querySelector(`.gms-toggle[data-r="${id}"]`); if (n) n.focus(); };
     });

@@ -673,3 +673,4 @@ table.insights td a.nm { white-space: nowrap; }
 .gms-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
 .gms-detail td { padding-top: 0; background: rgba(255,255,255,.03); }
 .gms-used { padding: 2px 0; }
+.gms-all { display: flex; justify-content: flex-end; padding-bottom: 8px; }
