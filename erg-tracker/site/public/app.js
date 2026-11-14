@@ -102,6 +102,7 @@ function setNav(active) {
   document.getElementById('menu').hidden = false;
   document.getElementById('log-top').hidden = false;
   document.body.classList.add('authed');
+  document.documentElement.classList.remove('out');
   document.getElementById('tabbar').hidden = false;
   closeMenu();
   const m = me();
@@ -378,6 +379,7 @@ function showLogin(note = '') {
   document.getElementById('menu').hidden = true;
   document.getElementById('log-top').hidden = true;
   document.body.classList.remove('authed');
+  document.documentElement.classList.add('out');
   document.getElementById('tabbar').hidden = true;
   closeMenu();
   app.innerHTML = `<div class="login card">
