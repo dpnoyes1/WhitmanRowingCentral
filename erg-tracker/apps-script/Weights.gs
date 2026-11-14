@@ -72,15 +72,17 @@ function processWeightsSave_(body) {
     var p = weightsParse_(body.lb);
     if (p.error) return { status: 'invalid', message: p.error };
     var id = String(body.athleteId || '').trim();
-    var rows = weightsPageRows_(readObjects_(TABS.ROSTER), readObjects_(TABS.WEIGHTS), '0000-00-00');
+    var roster = readObjects_(TABS.ROSTER), weights = readObjects_(TABS.WEIGHTS);   // read once; the answer is rebuilt from these
+    var rows = weightsPageRows_(roster, weights, '0000-00-00');
     var a = rows.filter(function (r) { return r.id === id; })[0];
     if (!a) return { status: 'invalid', message: 'That athlete is not on the roster.' };
     var t = weightsTodayAndYear_(), d = t.today.split('-').map(Number);
     var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
-    appendObject_(TABS.WEIGHTS, { Date: new Date(d[0], d[1] - 1, d[2]), 'Athlete ID': id, Athlete: a.name, 'Weight lb': p.lb, 'Entered by': by, Note: 'site Weights page' });
+    var day = new Date(d[0], d[1] - 1, d[2]);
+    appendObject_(TABS.WEIGHTS, { Date: day, 'Athlete ID': id, Athlete: a.name, 'Weight lb': p.lb, 'Entered by': by, Note: 'site Weights page' });
+    weights.push({ Date: day, 'Athlete ID': id, 'Weight lb': p.lb, 'Entered by': by });
     logChange_({ Who: by, Tab: TABS.WEIGHTS, 'Row ID': id, Field: 'Weight lb', 'Old value': a.lb === null ? '' : a.lb, 'New value': p.lb, Note: 'site Weights page' });
-    SpreadsheetApp.flush();
-    return { status: 'ok', rows: weightsPageRows_(readObjects_(TABS.ROSTER), readObjects_(TABS.WEIGHTS), t.yearStart), today: t.today, yearStart: t.yearStart };
+    return { status: 'ok', rows: weightsPageRows_(roster, weights, t.yearStart), today: t.today, yearStart: t.yearStart };
   } catch (err) {
     return { status: 'error', error: err.message };
   } finally {

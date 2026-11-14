@@ -233,7 +233,7 @@ export function openPlan(v, ctx) {
       const out = await res.json().catch(() => ({}));
       if (res.status === 401) { ctx.signedOut(); return; }
       if (!res.ok) { err = out.error || 'Nothing was saved.'; busy = false; draw(); return; }
-      data = out;
+      data = out; if (ctx.saved) ctx.saved(out);
       const n = B.days.length;
       msg = B.mode === 'new'
         ? `Saved as ${out.savedId}${n ? ` and put on ${n} day${n > 1 ? 's' : ''}${publish ? ', published' : ' as a draft'}` : ' in the library'}.`
@@ -245,4 +245,6 @@ export function openPlan(v, ctx) {
     draw();
   };
   draw();
+  // Opened from the last answer: swap in the Sheet's current one unless a save is under way or the page has changed.
+  if (ctx.refresh) ctx.refresh.then((nv) => { if (!busy && ctx.stillHere()) { data = nv; draw(); } }).catch(() => {});
 }

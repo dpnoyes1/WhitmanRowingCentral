@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, workoutView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
+import { teamTestsRun, lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, workoutView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -44,6 +44,14 @@ const TODAY = '2026-10-23';
 let passed = 0;
 const tests = [];
 const test = (name, fn) => tests.push([name, fn]);
+
+test('GMS page: team test run, life time list, per-rower test flags', () => {
+  const v = starsView(feed, TODAY);
+  assert.ok(v.lifeRowers.length === v.rowers.length && v.rowers.every((r) => r.tests && 'has2k' in r.tests));
+  assert.deepEqual(teamTestsRun([{ tests: { has2k: false, has20: true } }, { tests: { has2k: false, has20: true } }]), { has2k: false, has20: true });
+  assert.deepEqual(teamTestsRun([{ tests: { has2k: true, has20: false } }, { tests: { has2k: false, has20: false } }, { tests: { has2k: false, has20: false } }]), { has2k: false, has20: false });
+  assert.deepEqual(teamTestsRun([]), { has2k: false, has20: false });
+});
 
 test('browser scripts parse as modules', async () => {
   const { execFileSync } = await import('node:child_process');
