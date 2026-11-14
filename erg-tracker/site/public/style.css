@@ -667,6 +667,9 @@ table.insights td a.nm { white-space: nowrap; }
 .gms-std { display: flex; align-items: center; gap: 12px 24px; flex-wrap: wrap; padding-block: 12px; }
 .gms-keys { display: flex; gap: 8px 20px; flex-wrap: wrap; }
 .gms-key { display: flex; align-items: center; gap: 8px; }
-.gms-row { cursor: pointer; }
-.gms-detail td { padding-top: 0; }
+.gms-toggle { width: 44px; height: 44px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; display: inline-flex; align-items: center; justify-content: center; }
+.gms-toggle:hover { background: var(--surface-2, rgba(255,255,255,.08)); color: var(--text); }
+.gms-toggle svg { width: 20px; height: 20px; fill: none; stroke: currentColor; stroke-width: 2; stroke-linecap: round; stroke-linejoin: round; transition: transform .15s; }
+.gms-toggle[aria-expanded="true"] svg { transform: rotate(180deg); }
+.gms-detail td { padding-top: 0; background: rgba(255,255,255,.03); }
 .gms-used { padding: 2px 0; }
