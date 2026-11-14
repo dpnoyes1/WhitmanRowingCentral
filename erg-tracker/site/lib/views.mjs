@@ -277,8 +277,7 @@ export function insightsView(feed, today) {
   rows.sort((x, y) => (bad(y) - bad(x)) || (y.missed.count - x.missed.count) || x.name.localeCompare(y.name));
   // A test is only "missing" once the team has done it this school year (David, 2026-11-12: no team 2k yet, so nobody is
   // flagged for it): at least half of the active rowers have a valid result.
-  const teamDid = (k) => rows.length > 0 && rows.filter((r) => r.tests[k]).length * 2 >= rows.length;
-  return { today, weekStart: monday, lastWeekStart: last, testsRun: { has2k: teamDid('has2k'), has20: teamDid('has20') }, jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
+  return { today, weekStart: monday, lastWeekStart: last, testsRun: teamTestsRun(rows), jumpPct: feed.settings.loadJumpPct ?? LOAD_JUMP_PCT,
     missedFlagAt: MISSED_FLAG_AT, missedWindowDays: MISSED_WINDOW_DAYS, overreachPct: OYO_OVERREACH_PCT, attendanceRecent: ATTENDANCE_RECENT, rowers: rows };
 }
 
@@ -302,6 +301,12 @@ export function logbookMissingView(feed, connectedIds, today) {
 export const OYO_OVERREACH_PCT = 150;
 /** "Past 2 weeks" on Insights attendance = the last 10 practices (David, 2026-11-11). */
 export const ATTENDANCE_RECENT = 10;
+
+/** A test counts as run by the team once at least half the active rowers have a valid result this school year. rows: [{ tests: { has2k, has20 } }]. */
+export function teamTestsRun(rows) {
+  const did = (k) => rows.length > 0 && rows.filter((r) => r.tests[k]).length * 2 >= rows.length;
+  return { has2k: did('has2k'), has20: did('has20') };
+}
 
 function hasTest(feed, id, test, yearStart, today) {
   return feed.benchmarks.some((b) => b.athleteId === id && b.test === test && b.date >= yearStart && b.date <= today && b.valid !== false);
@@ -561,17 +566,20 @@ export function seasonStars(feed, id, yearStart, today) {
 export function starsView(feed, today) {
   const yearStart = schoolYearStart(today, feed.settings.schoolYearStart);
   // Coaches only (/api/stars is 403 for athletes): GMS % per test, the combined % (average of the two) and the next star.
-  const rowers = activeRowers(feed).map((a) => {
-    const best = Object.fromEntries(STAR_TESTS.map((t) => [t, bestGms(feed, a.id, t, yearStart, today)]));
+  // Season = this school year; life = every test on file (David, 2026-11-14: Season Best / Life Time Best toggle).
+  const build = (from) => activeRowers(feed).map((a) => {
+    const best = Object.fromEntries(STAR_TESTS.map((t) => [t, bestGms(feed, a.id, t, from, today)]));
     const pcts = STAR_TESTS.map((t) => best[t] && best[t].gmsPct).filter((x) => typeof x === 'number');
     const nextFrom = STAR_TESTS.find((t) => best[t] && best[t].nextStar);
-    return { ...athleteSummary(a), ...seasonStars(feed, a.id, yearStart, today),
+    return { ...athleteSummary(a), ...seasonStars(feed, a.id, from, today),
+      tests: { has2k: hasTest(feed, a.id, '2000m', from, today), has20: hasTest(feed, a.id, '20min', from, today) },
       k2Pct: best['2000m'] && typeof best['2000m'].gmsPct === 'number' ? best['2000m'].gmsPct : null,
       m20Pct: best['20min'] && typeof best['20min'].gmsPct === 'number' ? best['20min'].gmsPct : null,
       combined: pcts.length ? round(pcts.reduce((x, y) => x + y, 0) / pcts.length, 1) : null,
       next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
   }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
-  return { today, yearStart, rowers, teamGms: feed.teamGms };
+  const rowers = build(yearStart), lifeRowers = build('0000-00-00');
+  return { today, yearStart, rowers, lifeRowers, testsRun: teamTestsRun(rowers), teamGms: feed.teamGms };
 }
 
 /** Public OYO board: this week's and last week's weighted OYO minutes vs each goal. */

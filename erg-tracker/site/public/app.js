@@ -1128,30 +1128,46 @@ async function showBoards() {
 async function showStars() {
   const v = await api('/api/stars');
   setNav('stars');
-  const tested = v.rowers.filter((r) => r.stars !== null);
-  const untested = v.rowers.filter((r) => r.stars === null);
   const cur = v.teamGms[0], prev = v.teamGms[1];
   const keys = ['team', 'varsity', 'novice', 'rank1_8', 'rank9_16', 'rank17'];
   const avg = (y, k) => (!y ? '–' : y.groups[k].hidden || y.groups[k].avg === null ? '–' : y.groups[k].avg.toFixed(1) + '%');
   const pct = (x) => (x === null ? '–' : x.toFixed(1) + '%');
-  const nextTxt = (r) => (r.stars === 5 ? 'Top band' : !r.next ? '' : r.next.test === '2000m' ? `${r.next.nextStar.secondsFaster.toFixed(1)} s faster on the 2k` : `${fmtNum(r.next.nextStar.metersMore)} m more on the 20'`);
-  const avgStars = tested.length ? tested.reduce((n, r) => n + r.stars, 0) / tested.length : null;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1>
-    <p class="muted small">Average of 2k and 20' stars, this school year. Stars at 95 / 96 / 97 / 100% of GMS.</p></div></div>
-    <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
-    <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
-      ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
-        <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
-        <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
-        <td class="muted">${nextTxt(r)}</td></tr>`).join('')}
-    </table></div></div>
-    ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
-    <div class="card"><h2>Team Gold Medal Standard</h2>
-      <p class="muted small">Best GMS %, through ${fmtDate(cur.throughDate)}${prev ? `, vs last year` : ''}. Groups under 3 hidden.</p>
-      <div class="table-wrap"><table><tr><th>Group</th><th class="r">${esc(cur.schoolYear)}</th>${prev ? `<th class="r">${esc(prev.schoolYear)}</th>` : ''}</tr>
-      ${keys.map((k) => `<tr><td>${esc(cur.groups[k].label)}</td><td class="r">${avg(cur, k)}</td>${prev ? `<td class="r">${avg(prev, k)}</td>` : ''}</tr>`).join('')}
-      </table></div><p class="muted small">Raw erg speed.</p></div>${footer(v.meta)}`;
-  wireFooter();
+  // "63m more on the 20' (1.6 splits)": meters touch the number; splits = seconds off the 500m split.
+  const splitsTxt = (n) => `${n.toFixed(1)} split${n.toFixed(1) === '1.0' ? '' : 's'}`;
+  const nextTxt = (r) => (r.stars === 5 ? 'Top band' : !r.next ? '' : r.next.test === '2000m'
+    ? `${r.next.nextStar.secondsFaster.toFixed(1)}s faster on the 2k (${splitsTxt(r.next.nextStar.secondsFaster / 4)})`
+    : `${fmtNum(r.next.nextStar.metersMore)}m more on the 20' (${splitsTxt(r.next.nextStar.splitFaster)})`);
+  const run = v.testsRun || { has2k: true, has20: true };
+  let which = 'season';
+  const draw = () => {
+    const rowers = which === 'season' ? v.rowers : v.lifeRowers;
+    const tested = rowers.filter((r) => r.stars !== null);
+    // Flag only a person with none of the tests the team has done (David, 2026-11-14: no team 2k yet, so no 2k flag).
+    const done = [run.has2k && 'has2k', run.has20 && 'has20'].filter(Boolean);
+    const untested = which === 'season' ? rowers.filter((r) => done.length && done.every((k) => !r.tests[k])) : [];
+    const avgStars = tested.length ? tested.reduce((n, r) => n + r.stars, 0) / tested.length : null;
+    const star = (n, text) => `<div class="gms-key"><span class="stars" role="img" aria-label="${starWord(n)}">${starText(n)}</span><span>${text}</span></div>`;
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1></div>
+      <div class="seg" role="group" aria-label="Which results"><button type="button" data-w="season" aria-pressed="${which === 'season'}">Season Best</button><button type="button" data-w="life" aria-pressed="${which === 'life'}">Life Time Best</button></div></div>
+      <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
+        <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, 'Closing in on a 3v8 seat')}${star(1, 'Building the base')}</div></div>
+      <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
+      <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
+        ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+          <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
+          <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
+          <td class="muted">${nextTxt(r)}</td></tr>`).join('')}
+      </table></div></div>
+      ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
+      <div class="card"><h2>Team Gold Medal Standard</h2>
+        <p class="muted small">Best GMS %, through ${fmtDate(cur.throughDate)}${prev ? `, vs last year` : ''}. Groups under 3 hidden.</p>
+        <div class="table-wrap"><table><tr><th>Group</th><th class="r">${esc(cur.schoolYear)}</th>${prev ? `<th class="r">${esc(prev.schoolYear)}</th>` : ''}</tr>
+        ${keys.map((k) => `<tr><td>${esc(cur.groups[k].label)}</td><td class="r">${avg(cur, k)}</td>${prev ? `<td class="r">${avg(prev, k)}</td>` : ''}</tr>`).join('')}
+        </table></div><p class="muted small">Raw erg speed.</p></div>${footer(v.meta)}`;
+    app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; draw(); }; });
+    wireFooter();
+  };
+  draw();
 }
 
 /** Coaches only: load jumps, effort, trends and consistency for every rower. */
@@ -1310,11 +1326,32 @@ async function showLogFor() {
   draw();
 }
 
+/**
+ * Coach pages that read the Sheet live (Weights, Settings, Plan) take several seconds when Apps Script is cold.
+ * The last answer is kept in memory only (never on disk) so a return visit draws at once and refreshes behind it,
+ * and the three are fetched in the background right after a coach opens the site (David, 2026-11-14).
+ */
+const LIVE = new Map();
+const LIVE_PATHS = ['/api/weights', '/api/settings', '/api/workouts'];
+function liveGet(path) {
+  const hit = LIVE.get(path);
+  const fresh = api(path).then((v) => { LIVE.set(path, v); return v; });
+  fresh.catch(() => {});
+  return hit ? { cached: hit, fresh } : { cached: null, fresh };
+}
+let warmed = false;
+function warmLive() {
+  if (warmed || !isCoach()) return;
+  warmed = true;
+  setTimeout(() => LIVE_PATHS.forEach((p) => { if (!LIVE.has(p)) api(p).then((v) => LIVE.set(p, v)).catch(() => {}); }), 1500);
+}
+
 /** Coaches only: current weight per rower, entered here instead of in the hidden tab. Weight never reaches a team or athlete page. */
 async function showWeights() {
-  let v = await api('/api/weights');
+  const live = liveGet('/api/weights');
+  let v = live.cached || await live.fresh;
   setNav('weights');
-  let editing = null, msg = '';
+  let editing = null, msg = '', saving = false;
   const draw = () => {
     const n = (s) => v.rows.filter((r) => r.status === s).length;
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Weights</h1><p class="muted">Current weight only. Past tests keep their dated weight.</p></div></div>
@@ -1335,25 +1372,37 @@ async function showWeights() {
     app.querySelectorAll('[data-wsave]').forEach((b) => {
       b.onclick = async () => {
         b.disabled = true;
+        const before = v;
         try {
-          const res = await fetch('/api/weights', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: b.dataset.wsave, lb: app.querySelector('#wt-in').value }) });
+          // Shows the new weight at once; the Sheet confirms behind it and the old row comes back if it refuses.
+          const id = b.dataset.wsave, raw = app.querySelector('#wt-in').value;
+          const num = Number(String(raw).trim().replace(/\s*lbs?\.?$/i, ''));
+          if (/^\d{2,3}(\.\d)?$/.test(String(raw).trim().replace(/\s*lbs?\.?$/i, '')) && num >= 60 && num <= 300) {
+            v = { ...v, rows: v.rows.map((r) => (r.id === id ? { ...r, lb: num, day: v.today, status: 'Current', by: (SESSION && SESSION.coachName) || r.by } : r)) };
+            editing = null; msg = 'Saving…'; saving = true; draw();
+          }
+          const res = await fetch('/api/weights', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: id, lb: raw }) });
           const out = await res.json().catch(() => ({}));
+          saving = false;
           if (res.status === 401) { showLogin('You were signed out. Please sign in again.'); return; }
-          if (!res.ok) { msg = out.error || 'Nothing was saved.'; b.disabled = false; draw(); return; }
-          v = out; editing = null; msg = 'Saved.';
-        } catch { msg = 'Could not reach the site. Nothing was saved.'; }
+          if (!res.ok) { v = before; editing = id; msg = out.error || 'Nothing was saved.'; draw(); return; }
+          v = out; LIVE.set('/api/weights', out); editing = null; msg = 'Saved.';
+        } catch { if (saving) { v = before; } saving = false; msg = 'Could not reach the site. Nothing was saved.'; }
         draw();
       };
     });
   };
   draw();
+  if (live.cached) live.fresh.then((nv) => { if (!editing && !saving && location.hash === '#/weights') { v = nv; draw(); } }).catch(() => {});
 }
 
 /** Coaches only: build a workout and schedule it. Saves to the Sheet's Workouts and Schedule tabs. */
 async function showPlan() {
-  const v = await api('/api/workouts');
+  const live = liveGet('/api/workouts');
+  const v = live.cached || await live.fresh;
   setNav('plan');
-  openPlan(v, { app, esc, fmtDate, signedOut: () => showLogin('You were signed out. Please sign in again.') });
+  openPlan(v, { app, esc, fmtDate, signedOut: () => showLogin('You were signed out. Please sign in again.'),
+    saved: (out) => LIVE.set('/api/workouts', out), refresh: live.cached ? live.fresh : null, stillHere: () => location.hash === '#/plan' });
 }
 
 /** Coaches only: build boats from today's group. Nothing is saved. */
@@ -1419,7 +1468,8 @@ async function showOyo() {
   const render = () => {
     const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
-    const met = rows.filter((r) => r.status !== 'short').length, elite = rows.filter((r) => r.status === 'elite').length;
+    const metNow = v.rowers.filter((r) => r.status !== 'short').length, metLast = v.rowers.filter((r) => r.lastWeek.status !== 'short').length;
+    const elite = rows.filter((r) => r.status === 'elite').length;
     // One scale for every bar, so the Required and Elite marks line up down the board.
     // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
     const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
@@ -1427,11 +1477,11 @@ async function showOyo() {
     const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
-      <div class="tiles">${tile('Goal met', `${met}/${rows.length}`, which === 'now' ? 'this week' : 'last week')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
+      <div class="tiles">${tile('Goal met, this week', `${metNow}/${v.rowers.length}`, 'so far')}${tile('Goal met, last week', `${metLast}/${v.rowers.length}`, '')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
-          <div class="sub">${fmtMin(r.minutes)} of ${fmtMin(r.required)}${r.status === 'elite' ? ' · Elite' : ''}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
+          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
@@ -1606,20 +1656,35 @@ function wireCoachAdmin() {
   });
 }
 
+/**
+ * Settings boxes in two stacks of near-equal height (David, 2026-11-14), as in the Coach Settings mockup:
+ * each box goes to the shorter stack, GMS and OYO first. One column on a phone.
+ */
+function settingsColumns(sections, extraCards) {
+  const rank = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; };
+  const items = [...sections].sort((x, y) => rank(x) - rank(y)).map((s) => ({
+    weight: 2 + s.fields.reduce((n, f) => n + 1.4 + (f.help ? 0.6 : 0), 0) + (s.note ? 1 : 0),
+    html: `<section class="card"><h2>${esc(s.title)}</h2>
+        ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
+        ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
+          <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
+          ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`
+  }));
+  extraCards.filter(Boolean).forEach((html) => items.push({ weight: 3 + (html.match(/<li/g) || []).length * 1.2 + (html.match(/<select/g) ? 2 : 0), html }));
+  const cols = [{ w: 0, h: [] }, { w: 0, h: [] }];
+  items.forEach((it) => { const c = cols[0].w <= cols[1].w ? cols[0] : cols[1]; c.w += it.weight; c.h.push(it.html); });
+  return cols.map((c) => `<div class="settings-col">${c.h.join('')}</div>`).join('');
+}
+
 async function showSettings() {
-  const [v, pw, apw] = await Promise.all([api('/api/settings'), loadCoachCard(), api('/api/athlete-passwords').catch(() => null)]);
+  const live = liveGet('/api/settings');
+  const [v, pw, apw] = await Promise.all([live.cached || live.fresh, loadCoachCard(), api('/api/athlete-passwords').catch(() => null)]);
   setNav('settings');
   const draw = (sections, saved) => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Settings</h1></div>
       <button class="btn" id="save" type="button" disabled>Save changes</button></div>
       <p id="settings-msg" class="${saved ? 'notice' : 'error'}" role="status" ${saved ? '' : 'hidden'}>${saved ? esc(saved) : ''}</p>
-      <div class="settings-grid">${[...sections].sort((x, y) => { const r = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; }; return r(x) - r(y); }).map((s) => `<section class="card"><h2>${esc(s.title)}</h2>
-        ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
-        ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
-          <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
-          ${f.help ? `<span class="muted small">${esc(f.help)}</span>` : ''}<span class="error small" id="e-${esc(f.key)}" hidden></span></div>`).join('')}</section>`).join('')}
-        ${coachPasswordsCard(pw)}
-        ${athletePasswordsCard(apw)}
+      <div class="settings-grid">${settingsColumns(sections, [coachPasswordsCard(pw), athletePasswordsCard(apw)])}
       </div><p class="muted small">Changes recalculate all history. Live in ~5 min.</p>${footer(v.meta)}`;
     wireFooter();
     wireCoachPasswords();
@@ -1638,7 +1703,7 @@ async function showSettings() {
         const res = await fetch('/api/settings', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ changes }) });
         if (res.status === 401) { setSession(null); showLogin(); return; }
         const body = await res.json().catch(() => ({}));
-        if (res.ok) return draw(body.sections, body.changed ? `Saved ${body.changed} change${body.changed === 1 ? '' : 's'}.` : 'Nothing was different.');
+        if (res.ok) { LIVE.set('/api/settings', { ...v, sections: body.sections }); return draw(body.sections, body.changed ? `Saved ${body.changed} change${body.changed === 1 ? '' : 's'}.` : 'Nothing was different.'); }
         Object.entries(body.errors || {}).forEach(([k, m]) => {
           const e = document.getElementById('e-' + k);
           if (e) { e.textContent = m; e.hidden = false; }
@@ -1651,6 +1716,8 @@ async function showSettings() {
     };
   };
   draw(v.sections, '');
+  // Drawn from the last answer: pick up the Sheet's current values unless a field has been touched.
+  if (live.cached) live.fresh.then((nv) => { if (location.hash === '#/settings' && app.querySelector('input[data-key]') && ![...app.querySelectorAll('input[data-key]')].some((i) => i.value.trim() !== i.dataset.was)) draw(nv.sections, ''); }).catch(() => {});
 }
 
 /**
@@ -1756,6 +1823,7 @@ async function route() {
         setSession(await api('/api/session'));
       }
     }
+    warmLive();
     if (page === 'team') return await showTeam();
     if (page === 'athletes') return await showAthletes();
     if (page === 'week') {
