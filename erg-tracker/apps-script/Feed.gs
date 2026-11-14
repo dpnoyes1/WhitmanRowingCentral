@@ -339,6 +339,7 @@ function siteFeed(inputs, asOf) {
       rateCap30r20: rateCap,
       makeupWindowDays: num('makeup_window_days', 7),
       loadJumpPct: num('load.jump_pct', 15),
+      starLabels: { 5: String(s['gms.star5_label'] === undefined ? '1v8' : s['gms.star5_label']).trim(), 4: String(s['gms.star4_label'] === undefined ? '2v8' : s['gms.star4_label']).trim(), 3: String(s['gms.star3_label'] === undefined ? '3v8 / Fr 8' : s['gms.star3_label']).trim(), 2: String(s['gms.star2_label'] === undefined ? '' : s['gms.star2_label']).trim(), 1: String(s['gms.star1_label'] === undefined ? '' : s['gms.star1_label']).trim() },
       oyoBreak: {
         ranges: feedBreakRanges_(s['oyo.break.dates']),
         required: num('oyo.break.required', null),

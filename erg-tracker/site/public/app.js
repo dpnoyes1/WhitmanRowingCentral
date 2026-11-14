@@ -1153,7 +1153,7 @@ async function showStars() {
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1></div>
       <div class="seg" role="group" aria-label="Which results"><button type="button" data-w="season" aria-pressed="${which === 'season'}">Season Best</button><button type="button" data-w="life" aria-pressed="${which === 'life'}">Life Time Best</button></div></div>
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
-        <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, '')}${star(1, '')}</div></div>
+        <div class="gms-keys">${[5, 4, 3, 2, 1].map((n) => star(n, esc(v.starLabels[n] || ''))).join('')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
       <div class="card"><div class="gms-all"><button type="button" class="btn ghost sm" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></div><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r">Details</th></tr>
         ${tested.map((r, i) => `<tr class="gms-row"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
@@ -1670,7 +1670,7 @@ function wireCoachAdmin() {
  * each box goes to the shorter stack, GMS and OYO first. One column on a phone.
  */
 function settingsColumns(sections, extraCards) {
-  const rank = (z) => { const i = ['gms', 'oyo'].indexOf(z.id); return i < 0 ? 2 : i; };
+  const rank = (z) => { const i = ['gms', 'oyo', 'star5', 'star4', 'star3', 'star2', 'star1'].indexOf(z.id); return i < 0 ? 9 : i; };
   const items = [...sections].sort((x, y) => rank(x) - rank(y)).map((s) => ({
     weight: 2 + s.fields.reduce((n, f) => n + 1.4 + (f.help ? 0.6 : 0), 0) + (s.note ? 1 : 0),
     html: `<section class="card"><h2>${esc(s.title)}</h2>
