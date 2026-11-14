@@ -1450,12 +1450,12 @@ async function showCompletion() {
  * Balance trend chart (David, 2026-11-14): each test as % change in watts from her first result, on a real time axis.
  * trend = balanceTrend from /api/balance. Lines are told apart by weight, dash and direct labels, not colour alone.
  */
-function balanceChart(trend, today) {
+function balanceChart(trend, today, size = null) {
   const tests = [['20min', "20'", 'bal-l20'], ['2000m', '2k', 'bal-l2k'], ['100m', '100m', 'bal-l100']]
     .map(([t, label, cls]) => ({ t, label, cls, pts: trend[t].points })).filter((x) => x.pts.length);
   if (!tests.length) return '<p class="empty">No tests yet.</p>';
   const narrow = window.innerWidth < 600;
-  const W = narrow ? 380 : 640, H = 200, padL = 40, padB = 24, padT = 12, padR = narrow ? 64 : 76;
+  const W = size ? size.W : narrow ? 380 : 640, H = size ? size.H : 200, padL = 40, padB = 24, padT = 12, padR = narrow ? 64 : 76;
   const day = (d) => new Date(d + 'T12:00:00').getTime();
   const all = tests.flatMap((x) => x.pts);
   const t0 = Math.min(...all.map((p) => day(p.date))), t1 = Math.max(day(today), ...all.map((p) => day(p.date)));
@@ -1465,7 +1465,7 @@ function balanceChart(trend, today) {
   const y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
   const signed = (v) => `${v > 0 ? '+' : ''}${Math.round(v * 10) / 10}%`;
   const grid = [lo, 0, hi].map((v) => `<line class="grid-line" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"${v === 0 ? ' stroke-dasharray="3 3"' : ''}/>` +
-    `<text class="axis" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}%</text>`).join('');
+    (v === lo && y(0) - y(lo) < 14 ? '' : `<text class="axis" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}%</text>`)).join('');
   const lines = tests.map((s) => `<path d="${s.pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.pct).toFixed(1)}`).join('')}" class="bal-line ${s.cls}"/>`).join('');
   const dots = tests.map((s) => s.pts.map((p) => `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.pct).toFixed(1)}" r="4.5" class="bal-dot ${s.cls}"
       data-tip="${esc(`<b>${fmtDate(p.date)}</b><br>${s.label}: ${Math.round(p.watts)} W · ${fmtResult({ test: s.t, ...p })} · ${signed(p.pct)}`)}"/>`).join('')).join('');
@@ -1562,6 +1562,15 @@ async function showBalance() {
     app.querySelectorAll('.gms-toggle').forEach((b) => {
       b.onclick = () => { const id = b.dataset.r; open.has(id) ? open.delete(id) : open.add(id); draw(); const n = app.querySelector(`.gms-toggle[data-r="${id}"]`); if (n) n.focus(); };
     });
+    // Desktop: the chart is as tall as the three tiles beside it (David, 2026-11-14); drawn at real pixel size so text keeps its size.
+    if (window.innerWidth > 560) {
+      app.querySelectorAll('.bal-detail').forEach((d) => {
+        const row = d.previousElementSibling, id = row && row.querySelector('.gms-toggle').dataset.r;
+        const r = all.find((x) => x.id === id), box = d.querySelector('.bal-chart'), note = box.querySelector('.note');
+        const h = d.querySelector('.bal-tiles').offsetHeight - (note ? note.offsetHeight + 8 : 0);
+        if (r && h > 120 && box.clientWidth > 200) box.querySelector('.chart').innerHTML = balanceChart(r.trend, v.today, { W: Math.round(box.clientWidth), H: Math.round(h) }).replace(/^<div class="chart">|<\/div>$/g, '');
+      });
+    }
     wireTips(app);
     wireFooter();
   };
