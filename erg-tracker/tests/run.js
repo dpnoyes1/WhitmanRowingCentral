@@ -1421,6 +1421,11 @@ test('settings page: only listed keys change, errors block everything, unchanged
   // star bands must rise, judged on the values as they will be
   assert.ok(plan({ 'gms.star3_pct': '94' }).errors['gms.star3_pct'], '3 stars below 2 stars');
   assert.deepStrictEqual(plan({ 'gms.star2_pct': '90', 'gms.star3_pct': '93' }).errors, {});
+  // star labels: one box per star level with its text (David, 2026-11-14); blank allowed, long text refused
+  assert.strictEqual(plan({ 'gms.star2_label': 'Rising' }).updates.map((u) => u.value).join(), 'Rising');
+  assert.deepStrictEqual(plan({ 'gms.star1_label': '' }).errors, {});
+  assert.ok(plan({ 'gms.star5_label': 'x'.repeat(41) }).errors['gms.star5_label']);
+  assert.strictEqual(g.settingsPageSections_().filter((s) => /^star\d$/.test(s.id)).map((s) => s.id).join(), 'star5,star4,star3,star2,star1');
   // the page lists every field with a value, and none of the withheld keys
   const view = JSON.parse(JSON.stringify(g.settingsPageView_({ 'multiplier.Run': '1.3' })));
   const keys = view.reduce((a, s) => a.concat(s.fields.map((f) => f.key)), []);

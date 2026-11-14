@@ -33,13 +33,34 @@ function settingsPageSections_() {
         { key: 'oyo.break.required', label: 'Break week Standard goal', type: 'int', min: 0, max: 2000, optional: true, help: 'Elite for a break week is double this.' }
       ] },
     { id: 'gms', title: 'Gold Medal Standard and stars',
-      note: 'GMS % is always measured against the 1v8 standard. A band\'s lower edge counts as in. Any valid 2k or 20\' earns 1 star.',
+      note: 'GMS % is always measured against the 1v8 standard. A band\'s lower edge counts as in. Star cutoffs and labels are in the boxes below.',
       fields: [
-        { key: 'gms.standard_s', label: '1v8 standard (1500m 8+)', type: 'time', min: 120, max: 1200, help: 'm:ss.s, like 5:00.0' },
-        { key: 'gms.star2_pct', label: '2 stars at GMS %', type: 'decimal', min: 1, max: 200 },
-        { key: 'gms.star3_pct', label: '3 stars at GMS %', type: 'decimal', min: 1, max: 200 },
-        { key: 'gms.star4_pct', label: '4 stars at GMS %', type: 'decimal', min: 1, max: 200 },
-        { key: 'gms.star5_pct', label: '5 stars at GMS %', type: 'decimal', min: 1, max: 200 }
+        { key: 'gms.standard_s', label: '1v8 standard (1500m 8+)', type: 'time', min: 120, max: 1200, help: 'm:ss.s, like 5:00.0' }
+      ] },
+    { id: 'star5', title: '5 stars',
+      fields: [
+        { key: 'gms.star5_pct', label: 'GMS %', type: 'decimal', min: 1, max: 200 },
+        { key: 'gms.star5_label', label: 'Text on GMS Rating page', type: 'text', optional: true }
+      ] },
+    { id: 'star4', title: '4 stars',
+      fields: [
+        { key: 'gms.star4_pct', label: 'GMS %', type: 'decimal', min: 1, max: 200 },
+        { key: 'gms.star4_label', label: 'Text on GMS Rating page', type: 'text', optional: true }
+      ] },
+    { id: 'star3', title: '3 stars',
+      fields: [
+        { key: 'gms.star3_pct', label: 'GMS %', type: 'decimal', min: 1, max: 200 },
+        { key: 'gms.star3_label', label: 'Text on GMS Rating page', type: 'text', optional: true }
+      ] },
+    { id: 'star2', title: '2 stars',
+      fields: [
+        { key: 'gms.star2_pct', label: 'GMS %', type: 'decimal', min: 1, max: 200 },
+        { key: 'gms.star2_label', label: 'Text on GMS Rating page', type: 'text', optional: true }
+      ] },
+    { id: 'star1', title: '1 star',
+      note: 'Any valid 2k or 20\' earns 1 star, so there is no cutoff.',
+      fields: [
+        { key: 'gms.star1_label', label: 'Text on GMS Rating page', type: 'text', optional: true }
       ] },
     { id: 'rules', title: 'Training rules',
       fields: [
@@ -135,6 +156,9 @@ function settingsParse_(field, raw) {
         if (!/^(Mon|Tue|Wed|Thu|Fri|Sat|Sun)(-even|-odd)?$/.test(parts[i])) return { error: 'Use days like Mon,Wed,Fri-even.' };
       }
       return { value: parts.join(',') };
+    case 'text':
+      if (t.length > 40) return { error: 'Use 40 characters or fewer.' };
+      return { value: t };
     case 'mmdd':
       m = t.match(/^(\d{1,2})-(\d{1,2})$/);
       if (!m || !settingsIsDay_(2024, Number(m[1]), Number(m[2]))) return { error: 'Use month-day, like 07-01.' };

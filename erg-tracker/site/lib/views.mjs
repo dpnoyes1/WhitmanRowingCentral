@@ -581,7 +581,7 @@ export function starsView(feed, today) {
       next: nextFrom ? { test: nextFrom, nextStar: best[nextFrom].nextStar } : null };
   }).sort((x, y) => (y.combined ?? -1) - (x.combined ?? -1) || (y.stars ?? -1) - (x.stars ?? -1) || x.name.localeCompare(y.name));
   const rowers = build(yearStart), lifeRowers = build('0000-00-00');
-  return { today, yearStart, rowers, lifeRowers, testsRun: teamTestsRun(rowers), teamGms: feed.teamGms };
+  return { today, yearStart, rowers, lifeRowers, testsRun: teamTestsRun(rowers), starLabels: { 5: '1v8', 4: '2v8', 3: '3v8 / Fr 8', 2: '', 1: '', ...(feed.settings.starLabels || {}) }, teamGms: feed.teamGms };
 }
 
 /** Public OYO board: this week's and last week's weighted OYO minutes vs each goal. */
