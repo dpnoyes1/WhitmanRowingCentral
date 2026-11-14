@@ -1150,7 +1150,7 @@ async function showStars() {
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1></div>
       <div class="seg" role="group" aria-label="Which results"><button type="button" data-w="season" aria-pressed="${which === 'season'}">Season Best</button><button type="button" data-w="life" aria-pressed="${which === 'life'}">Life Time Best</button></div></div>
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
-        <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, 'Closing in on a 3v8 seat')}${star(1, 'Building the base')}</div></div>
+        <div class="gms-keys">${star(5, '1v8')}${star(4, '2v8')}${star(3, '3v8 / Fr 8')}${star(2, 'Within 1 point of a 3v8 seat')}${star(1, 'Test logged, 5+ points to gold')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
       <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th></tr>
         ${tested.map((r, i) => `<tr><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
