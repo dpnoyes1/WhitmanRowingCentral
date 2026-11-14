@@ -1446,27 +1446,126 @@ async function showCompletion() {
   wireFooter();
 }
 
+/**
+ * Balance trend chart (David, 2026-11-14): each test as % change in watts from her first result, on a real time axis.
+ * trend = balanceTrend from /api/balance. Lines are told apart by weight, dash and direct labels, not colour alone.
+ */
+function balanceChart(trend, today) {
+  const tests = [['20min', "20'", 'bal-l20'], ['2000m', '2k', 'bal-l2k'], ['100m', '100m', 'bal-l100']]
+    .map(([t, label, cls]) => ({ t, label, cls, pts: trend[t].points })).filter((x) => x.pts.length);
+  if (!tests.length) return '<p class="empty">No tests yet.</p>';
+  const narrow = window.innerWidth < 600;
+  const W = narrow ? 380 : 640, H = 200, padL = 40, padB = 24, padT = 12, padR = narrow ? 64 : 76;
+  const day = (d) => new Date(d + 'T12:00:00').getTime();
+  const all = tests.flatMap((x) => x.pts);
+  const t0 = Math.min(...all.map((p) => day(p.date))), t1 = Math.max(day(today), ...all.map((p) => day(p.date)));
+  const span = Math.max(t1 - t0, 86400000);
+  const lo = Math.min(0, ...all.map((p) => p.pct)) - 1, hi = Math.max(0, ...all.map((p) => p.pct)) + 1;
+  const x = (d) => padL + ((day(d) - t0) / span) * (W - padL - padR);
+  const y = (v) => padT + (H - padT - padB) * (1 - (v - lo) / (hi - lo));
+  const signed = (v) => `${v > 0 ? '+' : ''}${Math.round(v * 10) / 10}%`;
+  const grid = [lo, 0, hi].map((v) => `<line class="grid-line" x1="${padL}" x2="${W - padR}" y1="${y(v)}" y2="${y(v)}"${v === 0 ? ' stroke-dasharray="3 3"' : ''}/>` +
+    `<text class="axis" x="${padL - 6}" y="${y(v) + 4}" text-anchor="end">${Math.round(v)}%</text>`).join('');
+  const lines = tests.map((s) => `<path d="${s.pts.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.pct).toFixed(1)}`).join('')}" class="bal-line ${s.cls}"/>`).join('');
+  const dots = tests.map((s) => s.pts.map((p) => `<circle cx="${x(p.date).toFixed(1)}" cy="${y(p.pct).toFixed(1)}" r="4.5" class="bal-dot ${s.cls}"
+      data-tip="${esc(`<b>${fmtDate(p.date)}</b><br>${s.label}: ${Math.round(p.watts)} W · ${fmtResult({ test: s.t, ...p })} · ${signed(p.pct)}`)}"/>`).join('')).join('');
+  // Direct labels at the right end, nudged apart when two ends are within 12px.
+  const ends = tests.map((s) => ({ s, y: y(s.pts[s.pts.length - 1].pct), text: `${s.label} ${signed(s.pts[s.pts.length - 1].pct)}` })).sort((a1, b1) => a1.y - b1.y);
+  ends.forEach((e, i) => { if (i && e.y - ends[i - 1].y < 12) e.y = ends[i - 1].y + 12; });
+  const labels = ends.map((e) => `<text class="bal-end ${e.s.cls}" x="${W - padR + 8}" y="${e.y + 4}">${esc(e.text)}</text>`).join('');
+  const years = [new Date(t0).toLocaleDateString('en-US', { month: 'short', year: '2-digit' }), new Date(t1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' })];
+  const axisX = `<text class="axis" x="${padL}" y="${H - 6}">${years[0]}</text><text class="axis" x="${W - padR}" y="${H - 6}" text-anchor="end">${years[1]}</text>`;
+  return `<div class="chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Change in watts from the first result, by test">${grid}${axisX}${lines}${dots}${labels}</svg></div>`;
+}
+
 async function showBalance() {
   const v = await api('/api/balance');
   setNav('balance');
-  const dash = '<span class="muted">–</span>';
-  const gap = (g) => !g ? `<td class="r" colspan="4">${dash}</td>`
-    : `<td class="r">${g.ratioPct}%${g.weak ? ' <span class="pill warn" title="Results far apart in time">weak</span>' : ''}<div class="muted small">${g.wattsHi}/${g.wattsLo} W · ${g.daysApart}d apart</div></td>
-       <td class="r">${g.avgRatioPct}% <span class="muted small">${g.pairs} pair${g.pairs === 1 ? '' : 's'}</span></td>
-       <td class="r">${g.rules.paul.ratioPct}%</td><td class="r">${g.rules.tracker.ratioPct}%</td>`;
-  const sum = (s) => `${s.rowers} rowers · actual ${s.ratioPct ?? '–'}% · Paul ${s.paulPct ?? '–'}% · tracker rule ${s.trackerPct ?? '–'}%`;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only · athletes never see this page</div><h1>Balance</h1>
-    <p class="muted small">Shorter vs longer piece watts, last ${v.windowDays} days. Weak: recency under ${v.weakBelow}.</p></div></div>
-    <div class="card"><div class="table-wrap"><table class="insights">
-      <tr><th rowspan="2">Rower</th><th class="r" colspan="4">100m vs 2k</th><th class="r" colspan="4">2k vs 20'</th></tr>
-      <tr><th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th>
-        <th class="r">Best pair</th><th class="r">Average</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th></tr>
-      ${v.rowers.map((r) => `<tr><td><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a><div class="muted small">${esc(r.squad)}</div></td>${gap(r.sprint)}${gap(r.endurance)}</tr>`).join('')}
-    </table></div>
-    <p class="muted small">Team means (best pair): 100m vs 2k: ${sum(v.sprint)}. 2k vs 20': ${sum(v.endurance)}.</p>
-    <p class="muted small">Best pair: 2k + closest piece in time. Paul's Law: +5 s/500 m per doubling. 20' = 2k + 8.5 s; 100m = 0.786 × 2k.</p></div>
-    ${footer(v.meta)}`;
-  wireFooter();
+  let squad = 'all', sort = 'endurance';
+  const open = new Set();
+  let focusId = null;
+  const signed = (n) => `${n > 0 ? '+' : ''}${Math.abs(n) < 1 ? n.toFixed(1) : Math.round(n)}%`;
+  const months = Math.round(v.windowDays / 30.4), weakMonths = Math.round((v.halfLifeDays * Math.log2(1 / v.weakBelow)) / 30.4);
+  const noTest = { sprint: ['100m', '100m'], endurance: ['20min', "20'"] };
+  const dash = '–';
+  const draw = () => {
+    const all = v.rowers;
+    const lean = (r, k) => (r[k] && r[k].leanPct !== null ? r[k].leanPct : null);
+    const scale = Math.max(10, ...all.flatMap((r) => ['sprint', 'endurance'].map((k) => Math.abs(lean(r, k) ?? 0))));
+    const shown = all.filter((r) => squad === 'all' || r.squad === (squad === 'varsity' ? 'Varsity' : 'Novice'))
+      .sort((a, b) => {
+        if (sort === 'name') return a.name.localeCompare(b.name);
+        const la = lean(a, sort), lb = lean(b, sort);
+        return (la === null) - (lb === null) || (lb ?? 0) - (la ?? 0) || a.name.localeCompare(b.name);
+      });
+    const chg = (t) => { const c = v.team.change[t]; return c.pct === null ? dash : signed(c.pct); };
+    const chgSub = (t) => `this school year · ${v.team.change[t].rowers} rower${v.team.change[t].rowers === 1 ? '' : 's'}`;
+    const wattsOf = (r, t) => (r.trend[t].best ? r.trend[t].best.watts : dash);
+    const cell = (r, k, label) => {
+      const g = r[k];
+      const [t, tl] = noTest[k];
+      if (!g) return `<div class="bal-cell"><span class="bal-lab">${label}</span><span class="muted small">${!r.trend['2000m'].best ? 'no 2k test' : !r.trend[t].best ? `no ${tl} test` : 'no pair'}</span></div>`;
+      if (g.leanPct === null) return `<div class="bal-cell"><span class="bal-lab">${label}</span><span class="muted small">needs ${v.minTeam} rowers</span></div>`;
+      const w = Math.min(50, (Math.abs(g.leanPct) / scale) * 50), pos = g.leanPct >= 0;
+      const actual = k === 'sprint' ? g.wattsHi : g.wattsLo;
+      return `<div class="bal-cell${g.weak ? ' weak' : ''}"><span class="bal-lab">${label}</span>
+        <span class="bal-bar" role="img" aria-label="${label} lean ${pos ? 'plus' : 'minus'} ${Math.abs(g.leanPct)} percent" title="Expected ${g.expectedWatts} W from the 2k, actual ${actual} W"><i class="${pos ? 'pos' : 'neg'}" style="width:${w}%"></i></span>
+        <b class="num">${signed(g.leanPct)}</b>${g.weak ? `<span class="muted small bal-weak">tests ${g.daysApart} days apart</span>` : ''}</div>`;
+    };
+    const detail = (r) => {
+      const tile3 = [['20min', "20'"], ['2000m', '2k'], ['100m', '100m']].map(([t, label]) => {
+        const b = r.trend[t].best, s = r.trend[t].sinceLastPct;
+        return tile(label, b ? `${b.watts} W` : dash, b ? `${fmtResult({ test: t, ...b })} · ${split({ test: t, ...b })} /500m<br>${fmtDate(b.date, { month: 'short', day: 'numeric', year: 'numeric' })}${s !== null ? `<br>${signed(s)} since last test` : ''}` : 'no result in 12 months');
+      }).join('');
+      return `<div class="bal-detail"><div class="bal-tiles">${tile3}</div><div class="bal-chart">${balanceChart(r.trend, v.today)}${r.sentence ? `<p class="note">${esc(r.sentence)}</p>` : ''}</div></div>`;
+    };
+    const seg = (key, cur, items) => `<div class="seg" role="group" aria-label="${key}">${items.map(([val, label]) => `<button type="button" data-${key}="${val}" aria-pressed="${cur === val}">${label}</button>`).join('')}</div>`;
+    const mid = v.middle;
+    const so = (m, f) => (m.ratio === null ? dash : f(m));
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Balance</h1></div>
+      <div class="bal-ctl">${seg('squad', squad, [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}${seg('sort', sort, [['endurance', 'Endurance'], ['sprint', 'Sprint'], ['name', 'Name']])}</div></div>
+      <div class="tiles">${tile('All three tests', `${v.team.allThree}/${v.team.rowers}`, `last ${months} months`)}${tile("Team 20'", chg('20min'), chgSub('20min'))}${tile('Team 2k', chg('2000m'), chgSub('2000m'))}${tile('Team 100m', chg('100m'), chgSub('100m'))}</div>
+      <div class="card bal-list"><div class="bal-row bal-headrow"><span>Rower</span><span>Watts <span class="muted small">100m / 2k / 20'</span></span><span>Sprint lean</span><span>Endurance lean</span><span></span></div>
+        ${shown.map((r) => `<div class="bal-row"><div class="bal-who"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a>
+            <div class="sub muted small">${esc(r.squad)}${[r.sprint && r.sprint.tag, r.endurance && r.endurance.tag].filter(Boolean).map((t) => ` <span class="pill a">${t}</span>`).join('')}</div></div>
+          <span class="bal-watts num">${wattsOf(r, '100m')} / ${wattsOf(r, '2000m')} / ${wattsOf(r, '20min')}</span>
+          ${cell(r, 'sprint', 'Sprint')}${cell(r, 'endurance', 'Endurance')}
+          <button type="button" class="gms-toggle" data-r="${esc(r.id)}" aria-expanded="${open.has(r.id)}" aria-label="Show trend for ${esc(r.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>${open.has(r.id) ? detail(r) : ''}`).join('') || '<p class="empty">No rowers.</p>'}</div>
+      <details class="card bal-check"><summary>Model check</summary>
+        <div class="table-wrap"><table><tr><th></th><th class="r">Rowers</th><th class="r">Actual</th><th class="r">Paul's Law</th><th class="r">Tracker rule</th></tr>
+          ${[['100m vs 2k', v.sprint], ['2k vs 20’', v.endurance]].map(([n, s]) => `<tr><td>${n}</td><td class="r">${s.rowers}</td><td class="r">${s.ratioPct ?? dash}%</td><td class="r">${s.paulPct ?? dash}%</td><td class="r">${s.trackerPct ?? dash}%</td></tr>`).join('')}</table></div>
+        <h3>Whitman so far</h3>
+        <div class="table-wrap"><table><tr><th></th><th class="r">Team middle</th><th class="r">Middle 80%</th><th class="r">Rowers</th><th class="r">Pairs</th></tr>
+          <tr><td>20' as % of 2k watts</td><td class="r">${so(mid.endurance, (m) => (m.ratio * 100).toFixed(1) + '%')}</td><td class="r">${mid.endurance.p10 === null ? dash : `${(mid.endurance.p10 * 100).toFixed(1)}% to ${(mid.endurance.p90 * 100).toFixed(1)}%`}</td><td class="r">${mid.endurance.rowers}</td><td class="r">${mid.endurance.pairs}</td></tr>
+          <tr><td>100m as multiple of 2k watts</td><td class="r">${so(mid.sprint, (m) => m.ratio.toFixed(2) + '×')}</td><td class="r">${mid.sprint.p10 === null ? dash : `${mid.sprint.p10.toFixed(2)}× to ${mid.sprint.p90.toFixed(2)}×`}</td><td class="r">${mid.sprint.rowers}</td><td class="r">${mid.sprint.pairs}</td></tr></table></div></details>
+      <div class="card bal-help"><h2>How to read this page</h2>
+        <h3>The three tests</h3>
+        <ul><li>20': aerobic engine. Built by steady volume.</li><li>2k: race performance. The anchor for both comparisons.</li><li>100m: max strength and power.</li></ul>
+        <h3>Where the lean comes from</h3>
+        <ol><li>For each rower, take her 2k and the 20' closest to it in time, from the last ${months} months. Same for the 100m.</li>
+          <li>Divide the watts. Example: 20' at 179 W and 2k at 209 W means her 20' holds 86% of her 2k power.</li>
+          <li>Do the same for every rower and take the team's middle value. Example: 82%.</li>
+          <li>A typical teammate with her 2k would pull 171 W. She pulled 179 W, so her endurance lean is +5%.</li></ol>
+        <h3>Reading the bars</h3>
+        <ul><li>Right (blue): stronger at that test than her 2k suggests.</li><li>Left (darker blue): weaker than her 2k suggests.</li><li>Sprint-leaning / Endurance-leaning: the top quarter of the team on that bar.</li>
+          <li>High endurance lean: the engine is there, so the 2k has room to come up.</li><li>Low endurance lean: the 2k is ahead of her base. More steady work.</li><li>Low sprint lean: strength is the limit.</li></ul>
+        <h3>What it is not</h3>
+        <ul><li>The comparison is with this team, not an ideal. There are no target numbers yet.</li><li>Size mostly cancels out, because each rower is compared with her own 2k.</li>
+          <li>Greyed rows: the two tests were more than about ${weakMonths} months apart, so read them loosely.</li><li>No bar: a test is missing, or fewer than ${v.minTeam} rowers have the pair.</li></ul>
+        <h3>The trend chart</h3>
+        <p>Open a rower to see each test as % change in watts from her first result. The line climbing fastest is what is improving most.</p>
+        <h3>Model check</h3>
+        <p>Whitman's numbers so far beside Paul's Law and the tracker rules. More tests close together make it more useful, especially a 100m near a 2k.</p></div>
+      ${footer(v.meta)}`;
+    app.querySelectorAll('[data-squad]').forEach((b) => { b.onclick = () => { squad = b.dataset.squad; draw(); }; });
+    app.querySelectorAll('[data-sort]').forEach((b) => { b.onclick = () => { sort = b.dataset.sort; draw(); }; });
+    app.querySelectorAll('.gms-toggle').forEach((b) => {
+      b.onclick = () => { const id = b.dataset.r; open.has(id) ? open.delete(id) : open.add(id); draw(); const n = app.querySelector(`.gms-toggle[data-r="${id}"]`); if (n) n.focus(); };
+    });
+    wireTips(app);
+    wireFooter();
+  };
+  draw();
 }
 
 async function showOyo() {

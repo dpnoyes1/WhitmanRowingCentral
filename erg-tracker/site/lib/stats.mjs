@@ -429,7 +429,7 @@ export function ruleSplits(split2k) {
  */
 export function balanceGap(athleteId, benchmarks, today, hi, lo) {
   const from = addDays(today, -BALANCE_WINDOW_DAYS);
-  const mine = (test) => benchmarks.filter((b) => b.athleteId === athleteId && b.test === test && b.valid && b.date >= from && b.date <= today && benchmarkWatts(b));
+  const mine = (test) => benchmarks.filter((b) => b.athleteId === athleteId && b.test === test && b.valid && !b.dateApprox && b.date >= from && b.date <= today && benchmarkWatts(b));   // Record Board imports carry a placeholder date (David, 2026-11-14)
   const pairs = [];
   mine(hi).forEach((a) => mine(lo).forEach((b) => {
     const days = Math.abs(daysBetween(a.date, b.date));
@@ -442,6 +442,118 @@ export function balanceGap(athleteId, benchmarks, today, hi, lo) {
   const total = pairs.reduce((s, p) => s + p.weight, 0);
   const avgRatio = pairs.reduce((s, p) => s + p.weight * p.ratio, 0) / total;
   return { best, avgRatio, pairs: pairs.length, weak: best.weight < BALANCE_WEAK_WEIGHT };
+}
+
+// ---- balance page: lean against the team middle (David, 2026-11-14, coaches only) ----
+// Two ratios per rower, the 2k as the anchor: endurance = 20' watts / 2k watts, sprint = 100m watts / 2k watts.
+// Lean = how far her ratio sits above or below the team's median ratio. Descriptive only: no target numbers.
+
+export const BALANCE_MIN_TEAM = 8;        // fewer rowers with a non-weak pair than this and there is no team middle
+export const BALANCE_TESTS = ['20min', '2000m', '100m'];
+
+const bRound = (x, p = 1) => Math.round(x * 10 ** p) / 10 ** p;
+
+/** Median of a number list: the mean of the middle two for an even count, null for none. */
+export function balanceMedian(values) {
+  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const m = Math.floor(v.length / 2);
+  return v.length % 2 ? v[m] : (v[m - 1] + v[m]) / 2;
+}
+
+/** Value at fraction q (0 to 1) of a list, by linear interpolation. Null for none. */
+export function balanceQuantile(values, q) {
+  const v = values.filter((x) => Number.isFinite(x)).sort((a, b) => a - b);
+  if (!v.length) return null;
+  const pos = (v.length - 1) * q, lo = Math.floor(pos), hi = Math.ceil(pos);
+  return v[lo] + (v[hi] - v[lo]) * (pos - lo);
+}
+
+/** Ratio of the pair's watts, 2k as the anchor. kind 'sprint' = 100m / 2k, 'endurance' = 20' / 2k. gap is a balanceGap result. */
+export function balanceRatio(gap) {
+  if (!gap) return null;
+  const { wattsHi, wattsLo } = gap.best;
+  return gap.best.hi.test === '100m' ? wattsHi / wattsLo : wattsLo / wattsHi;
+}
+
+/** Team middle for one gap: median ratio of rowers whose best pair is not weak; null under BALANCE_MIN_TEAM. gaps = list of balanceGap results (or null). */
+export function balanceMiddle(gaps) {
+  const ok = gaps.filter((g) => g && !g.weak).map(balanceRatio);
+  return ok.length >= BALANCE_MIN_TEAM ? balanceMedian(ok) : null;
+}
+
+/** Lean of one rower: percent above or below the team middle, and the watts the middle would predict from her 2k. */
+export function balanceLean(gap, middle) {
+  if (!gap || !middle) return null;
+  const ratio = balanceRatio(gap);
+  const w2k = gap.best.hi.test === '100m' ? gap.best.wattsLo : gap.best.wattsHi;
+  return { leanPct: bRound(100 * (ratio / middle - 1), 1), expectedWatts: Math.round(w2k * middle) };
+}
+
+/** Top quarter of the non-weak leans, ties included, only above zero. leans = [{ id, leanPct }]. Returns the tagged ids. */
+export function balanceTags(leans) {
+  const sorted = leans.filter((l) => l.leanPct !== null && l.leanPct !== undefined).sort((a, b) => b.leanPct - a.leanPct);
+  const n = Math.floor(sorted.length / 4);
+  if (!n) return [];
+  const cut = sorted[n - 1].leanPct;
+  return sorted.filter((l) => l.leanPct >= cut && l.leanPct > 0).map((l) => l.id);
+}
+
+/** Every valid 100m / 2k / 20' result with watts, all years, one per day (the higher watts), with % change from her first. */
+export function balanceTrend(athleteId, benchmarks, today) {
+  const from = addDays(today, -BALANCE_WINDOW_DAYS);
+  const out = {};
+  BALANCE_TESTS.forEach((test) => {
+    const byDay = {};
+    benchmarks.forEach((b) => {
+      if (b.athleteId !== athleteId || b.test !== test || !b.valid || b.dateApprox || b.date > today) return;
+      const w = benchmarkWatts(b);
+      if (w && (!byDay[b.date] || w > byDay[b.date].watts)) byDay[b.date] = { b, watts: w };
+    });
+    const list = Object.entries(byDay).sort(([a], [z]) => (a < z ? -1 : 1)).map(([date, x]) => ({ date, watts: x.watts, b: x.b }));
+    const first = list.length ? list[0].watts : null;
+    const points = list.map((x) => ({ date: x.date, watts: bRound(x.watts, 1), pct: bRound(100 * (x.watts / first - 1), 1), ...(test === '20min' ? { meters: x.b.meters } : { timeS: x.b.timeS }) }));
+    const inYear = list.filter((x) => x.date >= from);
+    let best = null;
+    inYear.forEach((x) => { if (!best || x.watts > best.watts) best = x; });
+    const pctOf = (a, b) => bRound(100 * (a / b - 1), 1);
+    out[test] = {
+      points,
+      best: best ? { date: best.date, watts: Math.round(best.watts), ...(test === '20min' ? { meters: best.b.meters } : { timeS: best.b.timeS }), split500: test === '20min' ? (1200 * 500) / best.b.meters : test === '2000m' ? best.b.timeS / 4 : best.b.timeS * 5 } : null,
+      sinceLastPct: list.length >= 2 ? pctOf(list[list.length - 1].watts, list[list.length - 2].watts) : null,
+      yearPct: inYear.length >= 2 ? pctOf(inYear[inYear.length - 1].watts, inYear[0].watts) : null
+    };
+  });
+  return out;
+}
+
+/** One fixed-rule sentence from the 12-month change of each test: "20' up 8% in 12 months, 2k down 2%, 100m flat." */
+export function balanceSentence(trend) {
+  const names = [['20min', "20'"], ['2000m', '2k'], ['100m', '100m']];
+  const parts = [];
+  names.forEach(([t, label]) => {
+    const y = trend && trend[t] ? trend[t].yearPct : null;
+    if (y === null || y === undefined) return;
+    const word = Math.abs(y) < 0.5 ? 'flat' : `${y > 0 ? 'up' : 'down'} ${Math.round(Math.abs(y))}%`;
+    parts.push(`${label} ${word}${parts.length ? '' : ' in 12 months'}`);
+  });
+  return parts.length ? parts.join(', ') + '.' : '';
+}
+
+/** Median change in watts of one test across active rowers with two or more results since yearStart. pct null under 3 rowers. */
+export function balanceTeamChange(rowerIds, benchmarks, yearStart, today, test) {
+  const ids = new Set(rowerIds);
+  const mine = {};
+  benchmarks.forEach((b) => {
+    if (!ids.has(b.athleteId) || b.test !== test || !b.valid || b.dateApprox || b.date < yearStart || b.date > today) return;
+    const w = benchmarkWatts(b);
+    if (w) (mine[b.athleteId] = mine[b.athleteId] || []).push({ date: b.date, w });
+  });
+  const changes = Object.values(mine).filter((l) => l.length >= 2).map((l) => {
+    l.sort((a, b) => (a.date < b.date ? -1 : 1));
+    return l[l.length - 1].w / l[0].w - 1;
+  });
+  return { pct: changes.length >= 3 ? bRound(100 * balanceMedian(changes), 1) : null, rowers: changes.length };
 }
 
 // ---- test pacing post-mortem (David, 2026-11-01) --------------------------------

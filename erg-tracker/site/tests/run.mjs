@@ -1688,6 +1688,88 @@ test('balance: watts ratios, recency weighting, rule comparison (coaches only)',
   assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
 });
 
+test('balance: lean against the team middle, tags, trend (coaches only)', () => {
+  const near = (a, b, tol) => assert.ok(Math.abs(a - b) <= tol, a + ' vs ' + b);
+  const splitOf = (w) => 500 * Math.pow(2.8 / w, 1 / 3);
+  // Fake results from target watts: a 2k time, a 20' distance or a 100m time that give exactly those watts.
+  const r2k = (id, date, w) => ({ athleteId: id, test: '2000m', date, valid: true, timeS: splitOf(w) * 4 });
+  const r20 = (id, date, w) => ({ athleteId: id, test: '20min', date, valid: true, meters: (1200 * 500) / splitOf(w) });
+  const r100 = (id, date, w) => ({ athleteId: id, test: '100m', date, valid: true, timeS: splitOf(w) / 5 });
+  const TD = '2026-10-23';
+  assert.strictEqual(S.balanceMedian([]), null);
+  assert.strictEqual(S.balanceMedian([3, 1, 2]), 2);
+  assert.strictEqual(S.balanceMedian([4, 1, 3, 2]), 2.5);
+  // Nine rowers, 2k 200 W; 20' at 80% of it for most, X1 at 84% (5% above the middle), X9 far apart in time (weak).
+  const ids = ['X1', 'X2', 'X3', 'X4', 'X5', 'X6', 'X7', 'X8', 'X9'];
+  const frac = { X1: 0.84, X2: 0.8, X3: 0.8, X4: 0.8, X5: 0.8, X6: 0.8, X7: 0.8, X8: 0.8, X9: 0.9 };
+  const rows = [];
+  ids.forEach((id) => { rows.push(r2k(id, id === 'X9' ? '2026-01-02' : '2026-10-01', 200)); rows.push(r20(id, '2026-10-08', 200 * frac[id])); });
+  const gaps = (list) => list.map((id) => S.balanceGap(id, rows, TD, '2000m', '20min'));
+  assert.ok(gaps(ids)[8].weak);
+  const mid = S.balanceMiddle(gaps(ids));
+  near(mid, 0.8, 1e-9);                                  // the weak X9 does not feed the median; the other eight do
+  const lean1 = S.balanceLean(gaps(ids)[0], mid);
+  near(lean1.leanPct, 5, 0.05);
+  assert.strictEqual(lean1.expectedWatts, 160);
+  assert.strictEqual(S.balanceLean(gaps(ids)[1], mid).leanPct, 0);
+  assert.ok(S.balanceLean(gaps(ids)[8], mid).leanPct > 0);   // a weak pair still gets a lean
+  assert.strictEqual(S.balanceMiddle(gaps(ids.slice(0, 7))), null);   // under 8 rowers: no middle
+  assert.strictEqual(S.balanceLean(gaps(ids)[0], null), null);
+  // Tags: floor(n/4) of the non-weak leans, ties included, nothing at or below zero.
+  const ln = (id, leanPct) => ({ id, leanPct });
+  assert.deepStrictEqual(S.balanceTags([ln('a', 9), ln('b', 5), ln('c', 3), ln('d', 1), ln('e', 0), ln('f', -2), ln('g', -4), ln('h', -6), ln('i', -8)]).sort(), ['a', 'b']);
+  assert.deepStrictEqual(S.balanceTags([ln('a', 9), ln('b', 5), ln('c', 5), ln('d', 1), ln('e', 0), ln('f', -2), ln('g', -4), ln('h', -6), ln('i', -8)]).sort(), ['a', 'b', 'c']);   // tie with the last one taken
+  assert.deepStrictEqual(S.balanceTags([ln('a', 0), ln('b', 0), ln('c', -1), ln('d', -2)]), []);
+  assert.deepStrictEqual(S.balanceTags([ln('a', 5), ln('b', 4), ln('c', 3)]), []);   // under 4 rowers: nobody
+  // Placeholder dates are ignored.
+  const approx = [{ ...r2k('Z', '2026-10-01', 200), dateApprox: true }, r20('Z', '2026-10-02', 160)];
+  assert.strictEqual(S.balanceGap('Z', approx, TD, '2000m', '20min'), null);
+  assert.strictEqual(S.balanceTrend('Z', approx, TD)['2000m'].points.length, 0);
+  // Trend: first point 0, later points as % change, a same-day duplicate keeps the higher watts.
+  const tr = S.balanceTrend('T', [r2k('T', '2025-09-01', 200), r2k('T', '2026-03-01', 210), r2k('T', '2026-03-01', 205), r2k('T', '2026-10-01', 220), r20('T', '2026-10-02', 150)], TD);
+  assert.strictEqual(tr['2000m'].points.length, 3);
+  assert.strictEqual(tr['2000m'].points[0].pct, 0);
+  near(tr['2000m'].points[1].pct, 5, 0.05);
+  near(tr['2000m'].points[2].pct, 10, 0.05);
+  assert.strictEqual(tr['2000m'].best.watts, 220);
+  near(tr['2000m'].sinceLastPct, 4.8, 0.1);              // 220 against 210
+  near(tr['2000m'].yearPct, 4.8, 0.1);                   // first inside 12 months is the 2026-03 result
+  assert.strictEqual(tr['20min'].sinceLastPct, null);    // one result
+  assert.strictEqual(tr['20min'].yearPct, null);
+  assert.strictEqual(tr['100m'].best, null);
+  assert.strictEqual(tr['2000m'].points.every((p) => p.date <= TD), true);
+  // Sentence.
+  assert.strictEqual(S.balanceSentence({ '20min': { yearPct: 8.2 }, '2000m': { yearPct: -2.4 }, '100m': { yearPct: 0.2 } }), "20' up 8% in 12 months, 2k down 2%, 100m flat.");
+  assert.strictEqual(S.balanceSentence({ '20min': { yearPct: null }, '2000m': { yearPct: 3 }, '100m': { yearPct: null } }), '2k up 3% in 12 months.');
+  assert.strictEqual(S.balanceSentence({ '20min': { yearPct: null }, '2000m': { yearPct: null }, '100m': { yearPct: null } }), '');
+  // Team change: null under 3 rowers.
+  const two = [r2k('A', '2026-08-01', 200), r2k('A', '2026-10-01', 210), r2k('B', '2026-08-01', 200), r2k('B', '2026-10-01', 220)];
+  assert.strictEqual(S.balanceTeamChange(['A', 'B'], two, '2026-07-01', TD, '2000m').pct, null);
+  const three = [...two, r2k('C', '2026-08-01', 200), r2k('C', '2026-10-01', 230)];
+  assert.strictEqual(S.balanceTeamChange(['A', 'B', 'C'], three, '2026-07-01', TD, '2000m').pct, 10);
+  // The page payload: new fields present, nobody's weight or birthday.
+  const bv = balanceView(feed, TODAY);
+  assert.strictEqual(bv.rowers.length, 30);
+  assert.strictEqual(bv.minTeam, 8);
+  assert.ok(bv.rowers.every((x) => x.trend && typeof x.sentence === 'string' && typeof x.hasAll === 'boolean'));
+  assert.ok(bv.rowers.every((x) => !x.endurance || ('leanPct' in x.endurance && 'expectedWatts' in x.endurance && 'tag' in x.endurance)));
+  assert.ok('sprint' in bv.middle && 'endurance' in bv.middle && 'change' in bv.team && typeof bv.team.allThree === 'number');
+  assert.ok(!/weight|birthday/i.test(JSON.stringify(bv)));
+  // Whole team feeds the middle: a feed of the nine fake rowers gives every rower a lean; trim to seven and none has one.
+  const mk = (list) => ({ ...feed, athletes: feed.athletes.map((a, i) => (i < list.length ? { ...a, id: list[i], active: true, role: 'Rower', gradYear: 2028 } : { ...a, active: false })), benchmarks: rows.filter((b) => list.includes(b.athleteId)) });
+  const nine = balanceView(mk(ids), TODAY);
+  assert.strictEqual(nine.rowers.length, 9);
+  assert.ok(nine.rowers.every((x) => x.endurance.leanPct !== null));
+  assert.strictEqual(nine.rowers.find((x) => x.id === 'X1').endurance.tag, 'Endurance-leaning');
+  assert.strictEqual(nine.rowers.filter((x) => x.endurance.tag).length, 1);   // only X1 is above zero; the weak X9 is never tagged
+  assert.strictEqual(nine.rowers.find((x) => x.id === 'X9').endurance.tag, null);
+  assert.strictEqual(nine.rowers.find((x) => x.id === 'X1').sprint, null);    // no 100m test
+  assert.strictEqual(nine.middle.sprint.ratio, null);
+  assert.strictEqual(nine.middle.endurance.p10, null);                        // under 10 non-weak rowers
+  const seven = balanceView(mk(ids.slice(0, 7)), TODAY);
+  assert.ok(seven.rowers.every((x) => x.endurance.leanPct === null && x.endurance.tag === null));
+});
+
 test('api routes: every /api path the handler answers is in the function config', () => {
   // A route missing from config.path 404s on Netlify without ever reaching the handler (the Balance page, 2026-10-27).
   const src = fs.readFileSync(path.join(path.dirname(fileURLToPath(import.meta.url)), '../functions/api.mjs'), 'utf8');

@@ -674,3 +674,60 @@ table.insights td a.nm { white-space: nowrap; }
 .gms-detail td { padding-top: 0; background: rgba(255,255,255,.03); }
 .gms-used { padding: 2px 0; }
 .gms-all { display: flex; justify-content: flex-end; padding-bottom: 8px; }
+
+/* Balance page (David, 2026-11-14): one bar per rower per gap, lean against the team middle */
+.bal-ctl { display: flex; gap: 10px; flex-wrap: wrap; }
+.bal-row { display: grid; grid-template-columns: minmax(150px, 1.2fr) 9.5em minmax(0, 1.5fr) minmax(0, 1.5fr) 44px; gap: 14px; align-items: center; padding: 10px 4px; border-top: 1px solid var(--border); }
+.bal-row:first-child { border-top: 0; }
+.bal-headrow { color: var(--muted); font-size: .8125rem; padding-bottom: 6px; }
+.bal-headrow .small { font-size: .75rem; }
+.bal-who .sub { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.bal-who .pill.a { color: var(--link); background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.bal-watts { color: var(--text-2); font-size: .875rem; }
+.bal-cell { display: grid; grid-template-columns: minmax(0, 1fr) 3.4em; gap: 4px 8px; align-items: center; }
+.bal-cell .bal-lab { display: none; }
+.bal-cell > .muted { grid-column: 1 / -1; }
+.bal-cell > .bal-weak { grid-column: 1 / -1; }
+.bal-cell .num { text-align: right; font-variant-numeric: tabular-nums; }
+.bal-cell.weak .bal-bar, .bal-cell.weak .num { opacity: .5; }
+.bal-bar { position: relative; display: block; height: 14px; background: var(--track); border-radius: 4px; overflow: hidden; }
+.bal-bar::before { content: ""; position: absolute; left: 50%; top: 0; bottom: 0; width: 1px; background: var(--text); opacity: .6; z-index: 1; }
+.bal-bar i { position: absolute; top: 0; bottom: 0; display: block; }
+.bal-bar i.pos { left: 50%; background: var(--series-1); }
+.bal-bar i.neg { right: 50%; background: var(--series-2); }
+.bal-detail { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.5fr); gap: 16px; padding: 8px 4px 16px; }
+.bal-tiles { display: grid; gap: 8px; align-content: start; }
+.bal-tiles .tile { padding: 12px 14px; }
+.bal-tiles .tile .value { font-size: 1.25rem; }
+.bal-chart .note { margin-top: 8px; }
+.bal-line { fill: none; stroke-linejoin: round; stroke-linecap: round; }
+.bal-line.bal-l20 { stroke: var(--accent); stroke-width: 2.25; }
+.bal-line.bal-l2k { stroke: var(--text); stroke-width: 1.75; }
+.bal-line.bal-l100 { stroke: var(--muted); stroke-width: 1.75; stroke-dasharray: 5 4; }
+.bal-dot { stroke: var(--surface); stroke-width: 2; }
+.bal-dot.bal-l20 { fill: var(--accent); }
+.bal-dot.bal-l2k { fill: var(--text); }
+.bal-dot.bal-l100 { fill: var(--muted); }
+.bal-end { font-size: 11px; font-weight: 600; }
+.bal-end.bal-l20 { fill: var(--link); }
+.bal-end.bal-l2k { fill: var(--text); }
+.bal-end.bal-l100 { fill: var(--muted); }
+details.bal-check summary { cursor: pointer; font-weight: 600; min-height: 32px; display: flex; align-items: center; }
+details.bal-check[open] summary { margin-bottom: 8px; }
+.bal-check h3, .bal-help h3 { font-size: .95rem; margin: 16px 0 6px; }
+.bal-help h2 { margin-bottom: 0; }
+.bal-help ul, .bal-help ol { margin: 0; padding-left: 1.3em; line-height: 1.55; }
+.bal-help p { margin: 0; line-height: 1.55; }
+@media (max-width: 560px) {
+  .bal-row { grid-template-columns: minmax(0, 1fr) 44px; gap: 6px 8px; }
+  .bal-headrow, .bal-watts { display: none; }
+  .bal-row > .bal-cell { grid-column: 1 / -1; grid-template-columns: 5.5em minmax(0, 1fr) 3.4em; }
+  .bal-cell .bal-lab { display: block; color: var(--text-2); font-size: .8125rem; }
+  .bal-cell > .muted { grid-column: 2 / -1; }
+  .bal-cell > .bal-weak { grid-column: 2 / -1; }
+  .bal-row > .gms-toggle { grid-column: 2; grid-row: 1; }
+  .bal-detail { grid-template-columns: minmax(0, 1fr); }
+  .bal-ctl { width: 100%; }
+  .bal-ctl .seg { flex: 1 1 100%; }
+  .bal-ctl .seg button { flex: 1; justify-content: center; min-height: 40px; }
+}

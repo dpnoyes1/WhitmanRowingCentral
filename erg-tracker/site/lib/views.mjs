@@ -6,7 +6,7 @@ import {
   addDays, weekStart, schoolYearStart, rawMinutes, weightedMinutes, bucket, practiceRecord,
   practiceStreak, openMakeups, pacingFor, teamRank, gmsSummary, weekMinutes, oyoStatus, oyoWeekStreak, zoneMinutes, daysBetween, personalBests,
   resultValue, better, boardGroup, schoolYearLabel, TESTS, loadTrend, steadySplits, splitTrend, projected2k, monthConsistency, LOAD_JUMP_PCT, oyoGoals, isBreakWeek, meterTotal,
-  balanceGap, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT
+  balanceGap, balanceRatio, balanceMiddle, balanceLean, balanceTags, balanceTrend, balanceSentence, balanceTeamChange, balanceQuantile, BALANCE_MIN_TEAM, ruleSplits, wattsFromSplit, BALANCE_WINDOW_DAYS, BALANCE_HALF_LIFE_DAYS, BALANCE_WEAK_WEIGHT, BALANCE_TESTS
 } from './stats.mjs';
 
 const WEEKS_SHOWN = 8;
@@ -746,15 +746,66 @@ export function balanceView(feed, today) {
       avgRatioPct: ratioPct(g.avgRatio), pairs: g.pairs, rules
     };
   };
-  const rows = activeRowers(feed).map((a) => ({
-    ...athleteSummary(a),
-    sprint: gapRow(balanceGap(a.id, feed.benchmarks, today, '100m', '2000m'), (r) => ({ paul: r.paul100, tracker: r.rule100 })),
-    endurance: gapRow(balanceGap(a.id, feed.benchmarks, today, '2000m', '20min'), (r) => ({ paul: r.paul20, tracker: r.rule20 }))
-  })).sort((x, y) => x.name.localeCompare(y.name));
+  const roster = activeRowers(feed);
+  const rawGaps = roster.map((a) => ({
+    a,
+    sprint: balanceGap(a.id, feed.benchmarks, today, '100m', '2000m'),
+    endurance: balanceGap(a.id, feed.benchmarks, today, '2000m', '20min')
+  }));
+  // Team middle, 2k as the anchor; the whole active team, whatever the squad filter shows (David, 2026-11-14).
+  const mid = { sprint: balanceMiddle(rawGaps.map((r) => r.sprint)), endurance: balanceMiddle(rawGaps.map((r) => r.endurance)) };
+  const leans = { sprint: [], endurance: [] };
+  const withLean = (id, key, g) => {
+    const row = gapRow(g, key === 'sprint' ? (r) => ({ paul: r.paul100, tracker: r.rule100 }) : (r) => ({ paul: r.paul20, tracker: r.rule20 }));
+    if (!row) return null;
+    const l = balanceLean(g, mid[key]);
+    row.leanPct = l ? l.leanPct : null;
+    row.expectedWatts = l ? l.expectedWatts : null;
+    row.tag = null;
+    if (l && !g.weak) leans[key].push({ id, leanPct: l.leanPct });
+    return row;
+  };
+  const rows = rawGaps.map((r) => {
+    const trend = balanceTrend(r.a.id, feed.benchmarks, today);
+    return {
+      ...athleteSummary(r.a),
+      sprint: withLean(r.a.id, 'sprint', r.sprint),
+      endurance: withLean(r.a.id, 'endurance', r.endurance),
+      trend, sentence: balanceSentence(trend),
+      hasAll: BALANCE_TESTS.every((t) => trend[t].best)
+    };
+  }).sort((x, y) => x.name.localeCompare(y.name));
+  const tagged = { sprint: new Set(balanceTags(leans.sprint)), endurance: new Set(balanceTags(leans.endurance)) };
+  rows.forEach((r) => {
+    if (r.sprint && tagged.sprint.has(r.id)) r.sprint.tag = 'Sprint-leaning';
+    if (r.endurance && tagged.endurance.has(r.id)) r.endurance.tag = 'Endurance-leaning';
+  });
   const mean = (list) => (list.length ? round(list.reduce((s, v) => s + v, 0) / list.length, 1) : null);
   const summary = (key) => {
     const g = rows.map((r) => r[key]).filter(Boolean);
     return { rowers: g.length, ratioPct: mean(g.map((x) => x.ratioPct)), paulPct: mean(g.map((x) => x.rules.paul.ratioPct)), trackerPct: mean(g.map((x) => x.rules.tracker.ratioPct)) };
   };
-  return { today, windowDays: BALANCE_WINDOW_DAYS, halfLifeDays: BALANCE_HALF_LIFE_DAYS, weakBelow: BALANCE_WEAK_WEIGHT, rowers: rows, sprint: summary('sprint'), endurance: summary('endurance') };
+  // "Whitman so far": descriptive only, never a target (David, 2026-11-14).
+  const middleOf = (key) => {
+    const gs = rawGaps.map((r) => r[key]).filter((g) => g && !g.weak);
+    const ratios = gs.map(balanceRatio);
+    const enough = mid[key] !== null;
+    return {
+      ratio: enough ? round(mid[key], 3) : null, rowers: gs.length, pairs: gs.reduce((n, g) => n + g.pairs, 0),
+      p10: enough && ratios.length >= 10 ? round(balanceQuantile(ratios, 0.1), 3) : null,
+      p90: enough && ratios.length >= 10 ? round(balanceQuantile(ratios, 0.9), 3) : null
+    };
+  };
+  const yearStart = schoolYearStart(today, feed.settings && feed.settings.schoolYearStart);
+  const ids = roster.map((a) => a.id);
+  const out = {
+    today, windowDays: BALANCE_WINDOW_DAYS, halfLifeDays: BALANCE_HALF_LIFE_DAYS, weakBelow: BALANCE_WEAK_WEIGHT, minTeam: BALANCE_MIN_TEAM,
+    rowers: rows, sprint: summary('sprint'), endurance: summary('endurance'),
+    middle: { sprint: middleOf('sprint'), endurance: middleOf('endurance') },
+    team: {
+      allThree: rows.filter((r) => r.hasAll).length, rowers: rows.length,
+      change: Object.fromEntries(BALANCE_TESTS.map((t) => [t, balanceTeamChange(ids, feed.benchmarks, yearStart, today, t)]))
+    }
+  };
+  return out;
 }
