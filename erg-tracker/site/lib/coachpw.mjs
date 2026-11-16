@@ -1,7 +1,7 @@
 // Coach passwords (David, 2026-11-03). A coach who signs in with name and birthday can set a
 // personal password. It is kept as a salted scrypt hash in Netlify Blobs (store `coachpw`, one key per
 // coach name), never in the Sheet or the repo. Once set, the birthday no longer signs that coach in.
-import { scrypt, randomBytes, timingSafeEqual } from 'node:crypto';
+import { scrypt, randomBytes, timingSafeEqual, createHash } from 'node:crypto';
 
 const STORE = 'coachpw';
 const ATHLETE_STORE = 'athletepw';
@@ -57,21 +57,38 @@ export function generateTempPassword(length = 8) {
   return out;
 }
 
-/** temp = true marks a coach-issued password the athlete must replace at her next sign-in. */
+/**
+ * A short stamp of one saved password (from its salt, which changes on every save). A session carries the stamp it
+ * signed in with, so a password change, a coach's reset or a removed coach ends every older session (review 2026-11-16).
+ * '' means no password of their own.
+ */
+export function credVersion(rec) {
+  return rec && rec.hash && rec.salt ? createHash('sha256').update('cred:' + rec.salt).digest('base64url').slice(0, 12) : '';
+}
+
+/** The saved record for this key, or null when there is none. A store error is thrown. */
+export async function readCredential(store, key) {
+  const rec = await store.get(key);
+  return rec && rec.hash ? rec : null;
+}
+
+/** temp = true marks a coach-issued password the athlete must replace at her next sign-in. Returns the new record's stamp (credVersion). */
 export async function setCoachPassword(store, key, password, { temp = false } = {}) {
   const salt = randomBytes(16);
   const hash = await derive(cleanPassword(password), salt);
-  await store.set(key, { salt: salt.toString('base64'), hash: hash.toString('base64'), updatedAt: new Date().toISOString(), ...(temp ? { temp: true } : {}) });
+  const rec = { salt: salt.toString('base64'), hash: hash.toString('base64'), updatedAt: new Date().toISOString(), ...(temp ? { temp: true } : {}) };
+  await store.set(key, rec);
+  return credVersion(rec);
 }
 
-/** { ok: true/false, temp } for a stored password, or null when there is none. A store error is thrown. */
+/** { ok: true/false, temp, v } for a stored password (v = credVersion), or null when there is none. A store error is thrown. */
 export async function checkPasswordRecord(store, key, password) {
   if (!store) return null;
   const rec = await store.get(key);
   if (!rec || !rec.hash) return null;
   const given = await derive(cleanPassword(password), Buffer.from(rec.salt, 'base64'));
   const want = Buffer.from(rec.hash, 'base64');
-  return { ok: given.length === want.length && timingSafeEqual(given, want), temp: !!rec.temp };
+  return { ok: given.length === want.length && timingSafeEqual(given, want), temp: !!rec.temp, v: credVersion(rec) };
 }
 
 /** True when this coach has a personal password. */

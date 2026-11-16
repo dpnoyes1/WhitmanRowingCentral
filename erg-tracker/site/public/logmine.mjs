@@ -40,7 +40,7 @@ export function openLogMine(ctx) {
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Note for coaches (optional)', 'note')}
         <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
-          <span class="muted small">Kept as a small private copy, with location data removed.</span></div>
+          <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save'}</button></div></form>`;
     const f = app.querySelector('#logmine');

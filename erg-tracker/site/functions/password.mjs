@@ -3,7 +3,7 @@
 // password if she has one, otherwise her birthday. The new one is kept as a salted hash in Netlify Blobs.
 // Reset (David, 2026-11-03: any coach can reset any coach): GET /api/coach-passwords lists the coaches
 // with a personal password; POST /api/coach-passwords { reset: key } clears one, so that coach's birthday works again.
-import { liveSession, adminKey, athleteFor, nameKey, displayName } from '../lib/auth.mjs';
+import { liveSession, adminKey, athleteFor, nameKey, displayName, sessionSecret, makeToken, sessionCookie } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { defaultCoachStore, checkCoachPassword, setCoachPassword, passwordProblem, cleanPassword, coachesWithPassword, resetCoachPassword } from '../lib/coachpw.mjs';
 
@@ -68,11 +68,13 @@ export async function handlePassword(req, envFn, deps = {}) {
     await new Promise((r) => setTimeout(r, deps.failDelayMs ?? 600));
     return json({ error: 'Your current password is not right. If you have not set one yet, it is your birthday (MM/DD/YYYY).' }, 403);
   }
-  try { await setCoachPassword(store, key, next); } catch (err) {
+  let cred;
+  try { cred = await setCoachPassword(store, key, next); } catch (err) {
     console.error('password save error:', err.message);
     return json({ error: 'The new password could not be saved. Try again.' }, 502);
   }
-  return json({ ok: true });
+  // Her other sessions end (their stamp no longer matches); this one gets a fresh cookie so she stays signed in here.
+  return Response.json({ ok: true }, { headers: { 'cache-control': 'no-store', 'set-cookie': sessionCookie(makeToken(sessionSecret(envFn), 'team', Date.now(), who.name, cred)) } });
 }
 
 export default (req) => handlePassword(req, env);

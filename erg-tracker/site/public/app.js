@@ -1324,7 +1324,7 @@ async function showLogFor() {
           : '<p class="muted small">Test question: only single 2000 m, 500 m, 100 m or 20:00.</p>'}
         ${field('Note for coaches (optional)', 'note')}
         <div class="f"><span>Photo of the screen or watch (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lf-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lf-photo" accept="image/*" aria-label="Photo of the screen or watch">'}
-          <span class="muted small">Kept as a small private copy, with location data removed. Proof for runs, rides and other non-erg work.</span></div>`}
+          <span class="muted small">Only the athlete and coaches can see it. Kept as a small copy, with location data removed. Proof for runs, rides and other non-erg work.</span></div>`}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save workout'}</button></div></form>`;
     const f = app.querySelector('#logfor');
