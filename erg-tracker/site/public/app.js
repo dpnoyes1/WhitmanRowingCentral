@@ -598,7 +598,7 @@ async function showAthlete(id) {
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
-    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.bests) : starsLine(v.gms)}
+    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.bests, v.starKey) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     ${v.own || v.coach ? pacingCard(v.pacing) : ''}
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes', v.insights && v.insights.load)}
@@ -793,7 +793,7 @@ function nextStarText(g) {
 }
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
-function gmsCard(gms, coach = false, summary = null, bests = []) {
+function gmsCard(gms, coach = false, summary = null, bests = [], key = null) {
   if (!gms.length) {
     // A 2k or 20' this season but no GMS means no weight on file: the result stands, unadjusted (David, 2026-11-11).
     const tested = bests.some((b) => b.season && (b.test === '2000m' || b.test === '20min'));
@@ -802,16 +802,18 @@ function gmsCard(gms, coach = false, summary = null, bests = []) {
       ? `A test is recorded this season, and it is shown unadjusted below. The GMS % and stars appear once a coach adds ${her} weight.`
       : `No 2k or 20' test this season yet. A test gives ${herObj} a GMS % and stars.`}</p></div>`;
   }
-  // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
+  // Next star per test, visible (David, 2026-11-16): time for the 2k, meters for the 20', with the split it works out to.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
+  const keyRows = key ? key.map((k) => `<div class="gms-key"><span class="stars" role="img" aria-label="${starWord(k.stars)}">${starText(k.stars)}</span><span>${Number(k.pct).toFixed(1).replace(/\.0$/, '')}% or better${k.label ? ` · ${esc(k.label)}` : ''}</span></div>`).join('') : '';
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best GMS this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
     </table></div>
-    ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
+    ${more ? `<div class="small gms-next"><b>To the next star</b>${more}</div>` : ''}
     ${summary ? `<p class="callout">${esc(summary)}</p>` : ''}
-    <p class="muted small">100% = 1v8 standard. Stars from 2k and 20'. Best GMS % per test.</p></div>`;
+    <p class="muted small">100% = 1v8 standard. Any 2k or 20' earns 1 star. Stars shown = average of the 2k and 20'.</p>
+    ${keyRows ? `<div class="gms-keys">${keyRows}</div>` : ''}</div>`;
 }
 
 // ---- week ahead ----

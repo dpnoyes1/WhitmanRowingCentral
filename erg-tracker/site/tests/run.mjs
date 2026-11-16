@@ -301,7 +301,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
       assert.strictEqual(b.allTime.result, best);
     });
-    const { gms, gmsSummary, pacing, ...rest } = v;
+    const { gms, gmsSummary, pacing, starKey, ...rest } = v;
     assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(rest)), a.name);
     assert.ok(!/"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(gms)), a.name);
   });
