@@ -33,6 +33,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     var id = e['Entry ID'];
     if (!isDate_(e.Date) || e.Date < from || e.Date > today) return;
     if (String(e.Status) !== 'Full' || String(e['Review status'] || '').trim() !== '') return;
+    if (isWaterEntry_(e)) return;   // water is never checked against an erg plan, so coaches get no mismatch DM
     if (posted.indexOf(id) >= 0) return;
     try {
       var planned = plannedFor(e, squads[e['Athlete ID']], inp.schedule);

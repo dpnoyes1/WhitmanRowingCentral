@@ -16,6 +16,9 @@ const round = (x, p = 0) => (x === null || x === undefined ? null : Math.round(x
 /** Alum is an explicit squad; alumni show only on the All Time boards (David, 2026-10-27). */
 export const isAlum = (a) => /^alum$/i.test(a.squad || '');
 
+/** An entry from the SpeedCoach water import (on-water plan Step 2). */
+export const isWater = (e) => e.activity === 'Water' || e.source === 'SpeedCoach';
+
 export function activeRowers(feed) {
   return feed.athletes.filter((a) => a.active && a.role === 'Rower' && !isAlum(a));
 }
@@ -121,11 +124,12 @@ export function athleteView(feed, id, today) {
   const thisWeek = weekMinutes(mine, feed.settings, monday)[id] || { practice: 0, oyo: 0, total: 0 };
   const goals = oyoGoals(a, monday, feed.settings);
 
-  let seasonMin = 0, seasonMeters = 0;
+  // Water meters are their own number beside erg meters (on-water plan, David 2026-11-13); water minutes count in training minutes.
+  let seasonMin = 0, seasonMeters = 0, seasonWaterM = 0;
   mine.forEach((e) => {
     if (e.date < yearStart || e.date > today) return;
     seasonMin += weightedMinutes(e, feed.settings);
-    seasonMeters += meterTotal(e);
+    if (isWater(e)) seasonWaterM += meterTotal(e); else seasonMeters += meterTotal(e);
   });
 
   const weeks = Array.from({ length: WEEKS_SHOWN }, (_, i) => addDays(monday, -7 * (WEEKS_SHOWN - 1 - i)));
@@ -150,7 +154,7 @@ export function athleteView(feed, id, today) {
     season: {
       practicesDone: season.filter((r) => r.done).length, practicesExpected: season.length,
       completionPct: pct(season.filter((r) => r.done).length, season.length),
-      trainingMin: round(seasonMin), meters: round(seasonMeters),
+      trainingMin: round(seasonMin), meters: round(seasonMeters), waterMeters: round(seasonWaterM),
       makeupsDone: season.filter((r) => r.how === 'Make-up').length
     },
     streaks: { practices: practiceStreak(record), oyoWeeks: oyoWeekStreak(a, feed, today) },

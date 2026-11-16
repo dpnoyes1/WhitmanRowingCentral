@@ -168,6 +168,7 @@ function processLineupsSave_(body) {
       'Old value': lineupsSummary_(before), 'New value': lineupsSummary_(rows), Note: 'site Lineups page' });
     var out = processLineupsList_({ date: clean.date });
     out.saved = rows.map(function (r) { return r['Lineup ID']; });
+    out.recredited = waterRecredit_(clean.date, clean.shift, by);   // water already imported for this practice follows the new lineup
     return out;
   } catch (err) {
     return { status: 'error', error: err.message };

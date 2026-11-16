@@ -18,7 +18,9 @@ var TABS = {
   SQUAD_HISTORY: 'Squad history',
   RACES: 'Races',
   LOGBOOK_RAW: 'Logbook raw',
-  LINEUPS: 'Lineups'
+  LINEUPS: 'Lineups',
+  WATER_SESSIONS: 'Water sessions',
+  WATER_PIECES: 'Water pieces'
 };
 
 var HEADERS = {};
@@ -86,6 +88,16 @@ HEADERS[TABS.LINEUPS] = [
   'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'From piece', 'Saved by', 'Saved at'
 ];
 
+// Coach-only (on-water plan Step 2). One row per imported SpeedCoach / CoxBox file, and one per work piece in it. Times in seconds,
+// splits in seconds per 500 m, Start time as UTC ISO text. The original file is in a private Drive folder (File link).
+HEADERS[TABS.WATER_SESSIONS] = [
+  'Session ID', 'Date', 'Shift', 'Unit', 'Boat name', 'Boat class', 'Lineup ID', 'Start time', 'Elapsed s', 'Moving s', 'Meters',
+  'Avg split s', 'Avg rate', 'Strokes', 'Pieces', 'Kind', 'File name', 'File link', 'Curve JSON', 'Imported by', 'Imported at'
+];
+HEADERS[TABS.WATER_PIECES] = [
+  'Piece ID', 'Session ID', 'Piece #', 'Start time', 'Work s', 'Meters', 'Avg split s', 'Avg rate', 'Strokes', 'Match group', 'Lineup ID'
+];
+
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 // Full Logbook result as JSON, and its stroke-by-stroke data, one row per chunk (a cell holds at most 50,000 characters).
 // Coach-only and hidden. Nothing reads it yet; it exists so no Logbook field is ever lost.
@@ -102,6 +114,8 @@ TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rat
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
 TEXT_COLUMNS[TABS.LOGBOOK_RAW] = ['Result ID', 'JSON'];
 TEXT_COLUMNS[TABS.LINEUPS] = ['Lineup ID', 'Boat name', 'Boat class'];
+TEXT_COLUMNS[TABS.WATER_SESSIONS] = ['Session ID', 'Unit', 'Boat name', 'Boat class', 'Lineup ID', 'Start time', 'File name', 'File link', 'Curve JSON'];
+TEXT_COLUMNS[TABS.WATER_PIECES] = ['Piece ID', 'Session ID', 'Start time', 'Lineup ID'];
 
 /**
  * Columns the Sheet fills itself with one array formula in the header cell.
@@ -127,6 +141,9 @@ var ACTIVITIES = [
   ['Elliptical', 0.7],
   ['Lifting', 0]
 ];
+// Activities that carry a minutes weight. Water (on-water plan, David 2026-11-13: 1.0, same as the erg) is weighted like the others but
+// is never on the Form, /log or Log a run: only the water import writes it. The Form uses ACTIVITIES; Settings and the feed use this.
+var WEIGHTED_ACTIVITIES = ACTIVITIES.concat([['Water', 1.0]]);
 
 // Every test also becomes an Entries session. meters/seconds fill the fixed side
 // of the piece; zone is the default tag for that session (assumption, edit freely).
@@ -198,8 +215,9 @@ var SETTINGS_DEFAULTS = [
   ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
   ['form.id', '', 'Written by setup()'],
   ['form.edit_url', '', 'Written by setup()'],
-  ['form.share_url', '', 'Prefilled link to share with athletes. Written by setup()']
-].concat(ACTIVITIES.map(function (a) {
+  ['form.share_url', '', 'Prefilled link to share with athletes. Written by setup()'],
+  ['water.units', '', 'SpeedCoach / CoxBox unit number = boat it usually lives in, like 3121111=Hudson; 011009863=Potomac. The water import suggests it.']
+].concat(WEIGHTED_ACTIVITIES.map(function (a) {
   return ['multiplier.' + a[0], String(a[1]), 'Coaching approximation; edit freely'];
 }));
 

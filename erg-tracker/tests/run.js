@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs', 'Lineups.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs', 'Lineups.gs', 'Water.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1652,6 +1652,111 @@ test('Lineups: rows keep their Lineup ID on a correction and get the next free I
   assert.deepStrictEqual(Array.from(back[0].seats), ['A901', 'A902', '', 'A904']);
   assert.strictEqual(back[0].seatNames[0], 'Fake One');
   assert.strictEqual(back[2].seats.length, 8);
+});
+
+const deq = (a, b, m) => assert.deepStrictEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)), m);
+test('Water: credits every rower with the boat time and meters, the cox with attendance only (on-water Step 2)', () => {
+  const roster = { A901: { name: 'Fake One' }, A902: { name: 'Fake Two' }, A905: { name: 'Fake Cox', cox: true } };
+  const session = { sessionId: 'WS-3121111-1801000000', date: '2027-02-03', movingS: 5400.04, meters: 15245.4, boatName: 'Hudson', boatClass: '4+', kind: 'Practice' };
+  const lineup = { lineupId: 'L20270203-1', seats: ['A901', '', 'A902', ''], cox: 'A905' };
+  const rows = g.waterCredits_(session, lineup, roster, 'Pat Example', 'now');
+  deq(rows.map((r) => [r['Athlete ID'], r['Work s'], r['Work m']]), [['A901', 5400, 15245], ['A902', 5400, 15245], ['A905', '', '']]);
+  const r = rows[0];
+  deq([r['Entry ID'], r['Response ID'], r['Session type'], r.Status, r.Activity, r.Source, r['Entered by'], r['Main set']],
+    ['WTR-WS-3121111-1801000000-A901', 'water:WS-3121111-1801000000:A901', 'Practice', 'Full', 'Water', 'SpeedCoach', 'Coach Pat Example', 'Water: Hudson (4+)']);
+  assert.ok(rows.every((x) => Object.keys(x).every((k) => g.HEADERS[g.TABS.ENTRIES].includes(k))), 'only real Entries columns');
+  assert.strictEqual(rows[2]['Coach note'], 'Coxswain: attendance only');
+  deq(g.waterCredits_(session, null, roster, 'Pat', 'now'), [], 'no lineup, no credit');
+  assert.strictEqual(g.waterCredits_({ ...session, kind: 'Pieces' }, lineup, roster, 'Pat', 'now')[0]['Main set'], 'Water: Hudson (4+), pieces');
+});
+
+test('Water: a re-import or lineup change updates, adds and removes rows by Response ID, never doubling', () => {
+  const sid = 'WS-1-2';
+  const existing = [{ row: 10, 'Response ID': 'water:WS-1-2:A901' }, { row: 14, 'Response ID': 'water:WS-1-2:A902' }, { row: 12, 'Response ID': 'water:WS-1-2:A903' }, { row: 3, 'Response ID': 'water:WS-1-22:A901' }];
+  const wanted = [{ 'Response ID': 'water:WS-1-2:A901' }, { 'Response ID': 'water:WS-1-2:A904' }];
+  const plan = g.waterReconcile_(sid, existing, wanted);
+  deq(plan.update.map((u) => u.row), [10]);
+  deq(plan.add.map((a) => a['Response ID']), ['water:WS-1-2:A904']);
+  deq(Array.from(plan.remove), [14, 12], 'removed bottom-up; another session (WS-1-22) untouched');
+  const same = g.waterReconcile_(sid, existing.slice(0, 1), wanted.slice(0, 1));
+  deq([same.update.length, same.add.length, same.remove.length], [1, 0, 0], 'the same file twice changes nothing but the row itself');
+});
+
+test('Water: which saved lineup a session credits', () => {
+  const lineups = [
+    { lineupId: 'L1', date: '2027-02-03', shift: 'Early', boatName: 'Hudson', fromPiece: '' },
+    { lineupId: 'L2', date: '2027-02-03', shift: 'Late', boatName: 'Hudson', fromPiece: '' },
+    { lineupId: 'L3', date: '2027-02-03', shift: 'Early', boatName: 'Hudson', fromPiece: 3 }];
+  const s = { date: '2027-02-03', shift: 'Late', boatName: 'hudson', lineupId: '' };
+  assert.strictEqual(g.waterLineupFor_(s, lineups).lineupId, 'L2', 'by boat name and shift, any case');
+  assert.strictEqual(g.waterLineupFor_({ ...s, lineupId: 'L1' }, lineups).lineupId, 'L1', 'a kept Lineup ID wins');
+  assert.strictEqual(g.waterLineupFor_({ ...s, lineupId: 'L9' }, lineups).lineupId, 'L2', 'a gone Lineup ID falls back to the name');
+  assert.strictEqual(g.waterLineupFor_({ ...s, boatName: 'Potomac' }, lineups), null);
+});
+
+test('Water: units list, session IDs and the suggested boat', () => {
+  deq(JSON.parse(JSON.stringify(g.waterUnits_('3121111=Hudson; 011009863 = Potomac II;bad'))), { 3121111: 'Hudson', '011009863': 'Potomac II' });
+  assert.strictEqual(g.waterSessionId_('011009863', 1792857600.4), 'WS-011009863-1792857600');
+  assert.strictEqual(g.waterSessionId_('', 5), 'WS-nounit-5');
+  const sessions = [{ unit: '777', boatName: 'Old', start: '2027-02-01T20:00:00Z' }, { unit: '777', boatName: 'Newer', start: '2027-02-02T20:00:00Z' }];
+  assert.strictEqual(g.waterSuggestBoat_('777', {}, sessions), 'Newer', 'the boat it was last saved with');
+  assert.strictEqual(g.waterSuggestBoat_('777', { 777: 'Hudson' }, sessions), 'Hudson', 'Settings first');
+  assert.strictEqual(g.waterSuggestBoat_('888', {}, sessions), '');
+  const f = g.settingsPageSections_().flatMap((x) => x.fields).find((x) => x.key === 'water.units');
+  deq(JSON.parse(JSON.stringify(g.settingsParse_(f, ' 3121111 = Hudson ;011009863=Potomac '))), { value: '3121111=Hudson; 011009863=Potomac' });
+  assert.match(g.settingsParse_(f, 'Hudson').error, /unit = boat/);
+  assert.match(g.settingsParse_(f, '1234=A; 1234=B').error, /twice/);
+  assert.ok(g.settingsPageSections_().flatMap((x) => x.fields).some((x) => x.key === 'multiplier.Water'), 'Water weight on the Settings page');
+  assert.ok(g.SETTINGS_DEFAULTS.some((d) => d[0] === 'multiplier.Water' && d[1] === '1'));
+  assert.ok(!g.ACTIVITIES.some((a) => a[0] === 'Water'), 'never on the Form');
+});
+
+test('Water: cleaning a save from the site', () => {
+  const base = { session: { sessionId: 'WS-1-2', date: '2027-02-03', shift: 'Early', kind: 'Practice', boatName: ' Hudson ', boatClass: '8+', movingS: 5400, meters: 15245, curve: [{ durS: 60, splitS: 110 }] },
+    pieces: [{ start: 'x', workS: 200, meters: 1000, splitS: 100, rate: 32, strokes: 100 }] };
+  const c = g.waterCleanSave_(base);
+  assert.strictEqual(c.boatName, 'Hudson');
+  assert.strictEqual(c.pieces[0].n, 1);
+  const err = (patch) => g.waterCleanSave_({ ...base, session: { ...base.session, ...patch } }).error;
+  assert.match(err({ date: '' }), /date/);
+  assert.match(err({ shift: 'x' }), /shift/);
+  assert.match(err({ kind: 'Fun' }), /Practice, Pieces or Race/);
+  assert.match(err({ boatName: '' }), /boat/);
+  assert.match(err({ boatClass: '9+' }), /class/);
+  assert.match(err({ meters: 999999 }), /looks wrong/);
+  const row = g.waterSessionRow_(c, 'link', 'Coach Pat', 'now');
+  assert.ok(Object.keys(row).every((k) => g.HEADERS[g.TABS.WATER_SESSIONS].includes(k)));
+  assert.ok(g.waterPieceRows_(c).every((r) => Object.keys(r).every((k) => g.HEADERS[g.TABS.WATER_PIECES].includes(k))));
+  assert.strictEqual(g.waterPieceRows_(c)[0]['Piece ID'], 'WS-1-2-P1');
+});
+
+test('Water: her own log of a practice the SpeedCoach already credited is left out of the feed; erg work and tests stay', () => {
+  const d = new Date(2027, 1, 3), d2 = new Date(2027, 1, 4);
+  const entries = [
+    { 'Entry ID': 'W1', Date: d, 'Athlete ID': 'A901', 'Session type': 'Practice', Activity: 'Water', Source: 'SpeedCoach' },
+    { 'Entry ID': 'E1', Date: d, 'Athlete ID': 'A901', 'Session type': 'Practice', Activity: 'Run', Source: 'Form' },
+    { 'Entry ID': 'E2', Date: d, 'Athlete ID': 'A901', 'Session type': 'Practice', Activity: 'Erg (RowErg)', Source: 'Form' },
+    { 'Entry ID': 'E3', Date: d, 'Athlete ID': 'A901', 'Session type': 'OYO', Activity: 'Run', Source: 'Form' },
+    { 'Entry ID': 'E4', Date: d2, 'Athlete ID': 'A901', 'Session type': 'Practice', Activity: 'Run', Source: 'Form' },
+    { 'Entry ID': 'E5', Date: d, 'Athlete ID': 'A902', 'Session type': 'Practice', Activity: 'Run', Source: 'Form' },
+    { 'Entry ID': 'E6', Date: d, 'Athlete ID': 'A901', 'Session type': 'Practice', Activity: '', Source: 'Logbook' }];
+  deq(Object.keys(g.waterDuplicateIds_(entries)), ['E1']);
+  assert.ok(g.isWaterEntry_({ activity: 'Water' }) && g.isWaterEntry_({ Source: 'SpeedCoach' }) && !g.isWaterEntry_({ Activity: 'Run', Source: 'Form' }));
+});
+
+test('Water: entries reach the feed with their minutes and meters but never the week plan check', () => {
+  const settings = {}; g.SETTINGS_DEFAULTS.forEach(([k, v]) => { settings[k] = v; });
+  const d = g.buildDummyData({ settings });
+  const day = d.practices.map((p) => p.Date).sort((a, b) => b - a)[0];
+  const id = d.roster[0]['Athlete ID'];
+  d.entries.push({ 'Entry ID': 'WTR-X-' + id, Date: day, 'Athlete ID': id, Athlete: d.roster[0].Name, 'Session type': 'Practice', Status: 'Full',
+    Activity: 'Water', 'Work s': 5400, 'Work m': 15245, Source: 'SpeedCoach', 'Response ID': 'water:X:' + id });
+  const feed = g.siteFeed({ roster: d.roster, entries: d.entries, intervals: d.intervals, benchmarks: d.benchmarks, weights: d.weights,
+    practices: d.practices, schedule: d.schedule, workouts: d.workouts, squadHistory: [], settings, signLogin: () => 'x' }, new Date(day.getTime() + 864e5));
+  const e = JSON.parse(JSON.stringify(feed)).entries.find((x) => x.id === 'WTR-X-' + id);
+  deq([e.activity, e.workS, e.workM, e.source], ['Water', 5400, 15245, 'SpeedCoach']);
+  assert.strictEqual(feed.settings.multipliers.Water, 1);
+  assert.ok(!JSON.stringify(feed.weeks || []).includes('WTR-X-'), 'not in any week result');
 });
 
 console.log(`${passed} tests passed`);

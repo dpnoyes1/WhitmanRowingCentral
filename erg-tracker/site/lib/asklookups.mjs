@@ -248,7 +248,7 @@ function athlete(feed, asker, input, today) {
   if (v.gms.length) lines.push('GMS this season: ' + v.gms.map((g) => `${label(g.test)} ${g.gmsPct}%${g.stars ? ` (${g.stars}★)` : ''}`).join(', '));
   if (stars.length) lines.push(`Season stars: ${Math.round((2 * mean(stars))) / 2}★`);
   lines.push(`This week: ${v.week.practicesDone} of ${v.week.practicesExpected} practices, ${v.week.oyoMin} OYO min (goal ${v.athlete.oyoRequired}).`);
-  lines.push(`Season: ${v.season.completionPct === null ? 'no practices yet' : `${v.season.completionPct}% of practices`}, ${meters(v.season.meters || 0)}.`);
+  lines.push(`Season: ${v.season.completionPct === null ? 'no practices yet' : `${v.season.completionPct}% of practices`}, ${meters(v.season.meters || 0)}${v.season.waterMeters ? ` plus ${meters(v.season.waterMeters)} on the water` : ''}.`);
   const recent = v.tests.filter((t) => t.valid).slice(0, 3);
   if (recent.length) lines.push('Latest tests: ' + recent.map((t) => `${label(t.test)} ${resultText(t.test, t.result)} (${shortDate(t.date)})`).join(', '));
   return { text: lines.join('\n') };

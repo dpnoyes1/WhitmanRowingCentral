@@ -21,9 +21,15 @@ function settingsPageSections_() {
   return [
     { id: 'multipliers', title: 'Activity multipliers',
       note: 'Weighted minutes = minutes x multiplier. Applied when the site reads, so a change recalculates all history.',
-      fields: ACTIVITIES.map(function (a) {
+      fields: WEIGHTED_ACTIVITIES.map(function (a) {
         return { key: 'multiplier.' + a[0], label: a[0], type: 'decimal', min: 0, max: 3 };
       }) },
+    { id: 'water', title: 'On-water import',
+      note: 'Which boat each SpeedCoach or CoxBox usually lives in. The Water import page suggests that boat for a file from that unit, and the coach confirms it every time.',
+      fields: [
+        { key: 'water.units', label: 'Units and boats', type: 'units', optional: true, wide: true,
+          help: 'Unit number = boat name, separated by ;. Like 3121111=Hudson; 011009863=Potomac' }
+      ] },
     { id: 'oyo', title: 'OYO goals (weekly, weighted min)',
       note: 'You type the Standard goal; it is the same for every athlete. Elite is worked out for you (Standard + 100%, so double). Over-reaching on the Insights page is 150% or more of Standard. Break weeks use their own Standard goal; leave it blank to keep the usual goal.',
       fields: [
@@ -159,6 +165,16 @@ function settingsParse_(field, raw) {
     case 'text':
       if (t.length > 40) return { error: 'Use 40 characters or fewer.' };
       return { value: t };
+    case 'units':
+      var pairs = t.split(';').map(function (x) { return x.trim(); }).filter(function (x) { return x; }), seen = {}, outU = [];
+      for (var u = 0; u < pairs.length; u++) {
+        m = pairs[u].match(/^(\d{3,})\s*=\s*(.{1,40})$/);
+        if (!m) return { error: 'Use unit = boat, like 3121111=Hudson; separate with ;.' };
+        if (seen[m[1]]) return { error: 'Unit ' + m[1] + ' is listed twice.' };
+        seen[m[1]] = true; outU.push(m[1] + '=' + m[2].trim());
+      }
+      if (outU.join('; ').length > 600) return { error: 'Too long: 600 characters at most.' };
+      return { value: outU.join('; ') };
     case 'mmdd':
       m = t.match(/^(\d{1,2})-(\d{1,2})$/);
       if (!m || !settingsIsDay_(2024, Number(m[1]), Number(m[2]))) return { error: 'Use month-day, like 07-01.' };

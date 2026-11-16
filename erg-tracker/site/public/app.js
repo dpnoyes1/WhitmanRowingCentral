@@ -8,6 +8,7 @@ import { openPlan } from './plan.mjs';
 import { openLogMine } from './logmine.mjs';
 import { shrinkPhoto } from './photo.mjs';
 import { openLineups } from './lineups.mjs';
+import { openWater } from './water.mjs';
 import { KEY as BACK_KEY, navStep, snapshot, backTarget, clampScroll } from './backstack.mjs';
 
 const app = document.getElementById('app');
@@ -129,6 +130,7 @@ function setNav(active) {
   document.getElementById('nav-balance').hidden = !isCoach();
   document.getElementById('nav-completion').hidden = false;
   document.getElementById('nav-lineups').hidden = !isCoach();
+  document.getElementById('nav-water').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
   document.getElementById('sec-coach').hidden = !isCoach();
@@ -606,7 +608,7 @@ async function showAthlete(id) {
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
       ${tile('Practice streak', v.streaks.practices, 'in a row')}
       ${tile('OYO goal streak', v.streaks.oyoWeeks, v.streaks.oyoWeeks === 1 ? 'week' : 'weeks in a row')}
-      ${tile('Season training', fmtMin(s.trainingMin), fmtNum(s.meters) + ' m')}
+      ${tile('Season training', fmtMin(s.trainingMin), fmtNum(s.meters) + ' m' + (s.waterMeters ? ' · ' + fmtNum(s.waterMeters) + ' m on the water' : ''))}
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
@@ -1460,6 +1462,11 @@ async function showPlan() {
 }
 
 /** Coaches only: build boats from today's group. Nothing is saved. */
+function showWater() {
+  setNav('water');
+  openWater({ app, esc, fmtTime, fmtNum });
+}
+
 async function showLineups() {
   const v = await api('/api/lineups');
   setNav('lineups');
@@ -2082,6 +2089,7 @@ async function route() {
     if (page === 'insights' && isCoach()) return await showInsights();
     if (page === 'completion' || page === 'attendance') return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
+    if (page === 'water' && isCoach()) return showWater();
     if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'plan' && isCoach()) return await showPlan();
     if (page === 'log' && isCoach()) return await showLogFor();
@@ -2093,7 +2101,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'lineups', 'water', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     navReplace = true;   // the redirect replaces this entry in Back, too
     location.replace(m ? '#/me' : '#/team');

@@ -6,6 +6,14 @@ import { writeFit, practiceFit, piecesFit, strokesFor } from '../scripts/make-fi
 import * as A from '../lib/auth.mjs';
 import { handleLineupsSaved, cleanLineupsBody } from '../functions/lineups-saved.mjs';
 import { shiftFor, saveBody, boatsFromSaved, todayET } from '../public/lineups.mjs';
+import { handleWater, suggestFor, easternDay } from '../functions/water.mjs';
+import { clock, lineupFor, creditLine } from '../public/water.mjs';
+import { athleteView, isWater } from '../lib/views.mjs';
+import * as S from '../lib/stats.mjs';
+import { createRequire } from 'node:module';
+const { dummyFeed } = createRequire(import.meta.url)('../scripts/dummy-feed.js');
+const feed = dummyFeed();
+const TODAY = '2026-10-23';
 
 let passed = 0;
 const tests = [];
@@ -310,6 +318,95 @@ test('Lineups page helpers: default shift, the save body, opening a saved practi
   assert.strictEqual(skipped, 2);
   assert.strictEqual(boats.length, 1);
   assert.deepStrictEqual([boats[0].s, boats[0].pin, boats[0].name, boats[0].lid, boats[0].cox], [['A901', null, null, 'A904'], [true, false, false, true], 'Hudson', 'L1', 'A905']);
+});
+
+
+test('Water API: coaches only; preview reads the file and suggests boat, shift and lineup; save re-reads the file', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(typeof reply === 'function' ? reply(JSON.parse(init.body)) : reply)); };
+  const start = Date.UTC(2027, 1, 3, 20, 40) / 1000;   // Wed Feb 3, 3:40 pm ET
+  const data = Buffer.from(writeFit(practiceFit({ start }).spec)).toString('base64');
+  const post = (p, cookie, body, extra = {}) => new Request('https://x' + p, { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const ctx = { status: 'ok', units: { 3121111: 'Hudson' }, sessions: [],
+    lineups: [{ lineupId: 'L20270203-1', date: '2027-02-03', shift: 'Early', boatName: 'Hudson', boatClass: '8+', fromPiece: '', seats: ['A901'], seatNames: ['Fake'], cox: '' }] };
+  assert.strictEqual((await handleWater(post('/api/water/preview', athlete, { name: 'a.fit', data }), env, { fetchImpl: sheet(ctx) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleWater(post('/api/water/preview', coach, { name: 'SpeedCoach.fit', data }), env, { fetchImpl: sheet(ctx) });
+  assert.strictEqual(res.status, 200);
+  let out = await res.json();
+  assert.deepStrictEqual(calls[0], { action: 'water-context', dates: ['2027-02-03'], key: 'fake-key' });
+  assert.deepStrictEqual(out.suggest, { boatName: 'Hudson', boatClass: '8+', shift: 'Early', lineupId: 'L20270203-1' });
+  assert.strictEqual(out.file.date, '2027-02-03');
+  assert.strictEqual(out.file.clock, '3:40 PM');
+  assert.strictEqual(out.file.sessionId, 'WS-3121111-' + start);
+  assert.ok(Math.abs(out.file.movingS - 3600) < 15 && out.file.kind === 'Practice' && out.imported === null);
+  // a file already imported keeps the boat it was saved with
+  res = await handleWater(post('/api/water/preview', coach, { name: 'x.fit', data }), env, { fetchImpl: sheet({ ...ctx, sessions: [{ sessionId: out.file.sessionId, boatName: 'Severn', boatClass: '4+', shift: 'Late', lineupId: '', kind: 'Pieces', importedBy: 'Coach Pat' }] }) });
+  out = await res.json();
+  assert.deepStrictEqual([out.suggest.boatName, out.suggest.shift, out.file.kind, out.imported.by], ['Severn', 'Late', 'Pieces', 'Coach Pat']);
+  // save: the numbers come from the file read here, not from the request
+  let saved = null;
+  res = await handleWater(post('/api/water/save', coach, { name: 'SpeedCoach.fit', data, boatName: 'Hudson', boatClass: '8+', shift: 'Early', kind: 'Practice', movingS: 99999 }), env,
+    { fetchImpl: sheet((b) => { saved = b; return { status: 'ok', sessionId: b.session.sessionId, lineupId: 'L20270203-1', reimport: false, credited: [{ id: 'A901', name: 'Fake', cox: false }] }; }) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(saved.action, 'water-save');
+  assert.ok(Math.abs(saved.session.movingS - 3600) < 15, 'moving time from the file');
+  assert.strictEqual(saved.session.boatName, 'Hudson');
+  assert.strictEqual(saved.coachName, 'Pat Example');
+  assert.ok(saved.file.base64.length > 1000 && saved.session.curve.length >= 5);
+  assert.strictEqual((await res.json()).credited.length, 1);
+  // refusals
+  const bad = async (p, body, extra) => (await handleWater(post(p, coach, body, extra), env, { fetchImpl: sheet(ctx) })).status;
+  assert.strictEqual(await bad('/api/water/preview', { name: 'a.csv', data }), 422, 'CSV refused');
+  assert.strictEqual(await bad('/api/water/preview', { name: 'a.fit', data: Buffer.from('Date,Time\n').toString('base64') }), 422);
+  assert.strictEqual(await bad('/api/water/preview', { name: 'a.fit' }), 422);
+  assert.strictEqual(await bad('/api/water/preview', { name: 'a.fit', data }, { origin: 'https://evil.example' }), 400);
+  assert.strictEqual(await bad('/api/water/save', { name: 'a.fit', data, boatName: 'Hudson', boatClass: '9+', shift: 'Early', kind: 'Practice' }), 422);
+  assert.strictEqual(await bad('/api/water/save', { name: 'a.fit', data, boatName: '', boatClass: '8+', shift: 'Early', kind: 'Practice' }), 422);
+  assert.strictEqual((await handleWater(post('/api/water/save', coach, { name: 'a.fit', data, boatName: 'H', boatClass: '8+', shift: 'Early', kind: 'Practice' }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Pick the shift.' }) })).status, 422);
+  assert.strictEqual((await handleWater(post('/api/water/save', coach, { name: 'a.fit', data, boatName: 'H', boatClass: '8+', shift: 'Early', kind: 'Practice' }), env, { fetchImpl: sheet({ error: 'boom' }) })).status, 502);
+  res = await handleWater(new Request('https://x/api/water?date=2027-02-03', { headers: { cookie: coach } }), env, { fetchImpl: sheet(ctx) });
+  assert.strictEqual((await res.json()).lineups.length, 1);
+});
+
+test('Water suggestions: shift from the start time, or from the only lineup with that boat', () => {
+  const wed = (h, m) => ({ minutes: h * 60 + m, weekday: 'Wed' });
+  assert.strictEqual(suggestFor('1', wed(15, 40), { units: {} }).shift, 'Early');
+  assert.strictEqual(suggestFor('1', wed(17, 10), { units: {} }).shift, 'Late');
+  assert.strictEqual(suggestFor('1', { minutes: 600, weekday: 'Sat' }, { units: {} }).shift, 'Other');
+  const ctx = { units: { 1: 'Hudson' }, lineups: [{ lineupId: 'L2', shift: 'Late', boatName: 'hudson', boatClass: '4+', fromPiece: '' }] };
+  assert.deepStrictEqual(suggestFor('1', wed(15, 40), ctx), { boatName: 'Hudson', boatClass: '4+', shift: 'Late', lineupId: 'L2' });
+  assert.deepStrictEqual(easternDay(Date.UTC(2027, 1, 4, 3, 30) / 1000).date, '2027-02-03', '10:30 pm ET still the 3rd');
+});
+
+test('Water on the site: a water practice counts as attended, its minutes count, and its meters stand beside erg meters', () => {
+  const f = JSON.parse(JSON.stringify(feed));
+  const a = f.athletes.find((x) => x.active && x.role === 'Rower');
+  const day = f.practices.map((p) => p.date).filter((d) => d < TODAY).sort().pop();
+  f.entries = f.entries.filter((e) => !(e.athleteId === a.id && e.date === day));
+  const before = athleteView(f, a.id, TODAY);
+  f.entries.push({ id: 'WTR-X-' + a.id, date: day, athleteId: a.id, type: 'Practice', status: 'Full', activity: 'Water', workS: 5400, workM: 15245, source: 'SpeedCoach', zone: '', mainSet: 'Water: Hudson (8+)' });
+  const v = athleteView(f, a.id, TODAY);
+  assert.strictEqual(v.season.waterMeters, 15245);
+  assert.strictEqual(v.season.meters, before.season.meters, 'erg meters unchanged');
+  assert.strictEqual(v.season.trainingMin - before.season.trainingMin, 90, 'water minutes weigh 1.0');
+  assert.ok(v.recentPractices.find((r) => r.date === day).done, 'attended');
+  assert.strictEqual(before.season.waterMeters, 0);
+  assert.ok(isWater({ activity: 'Water' }) && !isWater({ activity: 'Run' }));
+  const steady = S.steadySplits(f.entries.filter((e) => e.athleteId === a.id), [S.weekStart(day)]);
+  const steadyBefore = S.steadySplits(f.entries.filter((e) => e.athleteId === a.id && e.activity !== 'Water'), [S.weekStart(day)]);
+  assert.deepStrictEqual(steady, steadyBefore, 'water never feeds the steady-state split trend');
+});
+
+test('Water page helpers: clock, the lineup a file credits, what saving does', () => {
+  assert.deepStrictEqual([clock(5397), clock(606), clock(null)], ['1:29:57', '10:06', '–']);
+  const lus = [{ lineupId: 'L1', shift: 'Early', boatName: 'Hudson', fromPiece: '', seats: ['A1', '', 'A3'], cox: 'C1' }, { lineupId: 'L2', shift: 'Early', boatName: 'Hudson', fromPiece: 3, seats: [], cox: '' }];
+  assert.strictEqual(lineupFor(lus, { boatName: ' hudson ', shift: 'Early' }).lineupId, 'L1');
+  assert.strictEqual(lineupFor(lus, { boatName: 'Hudson', shift: 'Late' }), null);
+  assert.strictEqual(creditLine(lus[0], { movingS: 5397, meters: 15245 }), '2 rowers and the cox · each rower gets 1:29:57 and 15,245 m; the cox gets attendance only');
 });
 
 for (const [name, fn] of tests) {

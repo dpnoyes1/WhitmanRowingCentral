@@ -31,6 +31,8 @@ function doPost(e) {
   if (body.action === WEIGHTS_SAVE_ACTION) return feedJson_(processWeightsSave_(body));
   if (body.action === LINEUPS_LIST_ACTION) return feedJson_(processLineupsList_(body));
   if (body.action === LINEUPS_SAVE_ACTION) return feedJson_(processLineupsSave_(body));
+  if (body.action === WATER_CONTEXT_ACTION) return feedJson_(processWaterContext_(body));
+  if (body.action === WATER_SAVE_ACTION) return feedJson_(processWaterSave_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());
   if (body.action === SETTINGS_SAVE_ACTION) return feedJson_(processSettingsSave_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));
@@ -205,7 +207,7 @@ function siteFeed(inputs, asOf) {
   };
 
   var multipliers = {};
-  ACTIVITIES.forEach(function (a) { multipliers[a[0]] = num('multiplier.' + a[0], a[1]); });
+  WEIGHTED_ACTIVITIES.forEach(function (a) { multipliers[a[0]] = num('multiplier.' + a[0], a[1]); });
   // One OYO Required and Elite for every athlete (David, 2026-10-27). The old
   // Roster columns for OYO group / required / elite were removed 2026-11-01.
   var oyoRequired = num('oyo.standard.required', 60);
@@ -257,8 +259,9 @@ function siteFeed(inputs, asOf) {
     };
   });
 
+  var waterDupes = waterDuplicateIds_(inputs.entries);   // her own log of a practice the SpeedCoach import already credited
   var entries = inputs.entries.filter(function (e) {
-    return isDate_(e.Date) && known[e['Athlete ID']] && !feedRejected_(e) && !feedPending_(e);
+    return isDate_(e.Date) && known[e['Athlete ID']] && !feedRejected_(e) && !feedPending_(e) && !waterDupes[String(e['Entry ID'])];
   }).map(function (e) {
     return {
       id: String(e['Entry ID']), date: feedDay_(e.Date), athleteId: e['Athlete ID'],
@@ -377,6 +380,7 @@ function feedWeekResults_(sessions, inputs, start) {
   sessions.forEach(function (sn) { sn.results = []; });
   inputs.entries.forEach(function (e) {
     if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
+    if (isWaterEntry_(e)) return;   // water is never checked against an erg plan
     var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
     if (!planned || planned.Date < start || planned.Date >= end) return;
     var sn = sessions.filter(function (x) {
@@ -430,7 +434,7 @@ function feedLogged_(inputs, yearStart, s) {
     var test = String(e['Benchmark ID'] || '') !== '';
     var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
       .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
-    var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
+    var planned = isWaterEntry_(e) ? null : plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);   // water: no plan check
     var pieces = planned ? workoutPieces(inputs.workouts, planned['Workout ID']) : [];
     var bases = {};
     if (planned) {
