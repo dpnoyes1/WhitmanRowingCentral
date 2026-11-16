@@ -554,6 +554,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .wg b { min-width: 64px; }
 .wg.add .muted { color: var(--muted); }
 .wg.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wglist { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; }
 .wgl { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .wgl small { color: var(--muted); }
 .wgl .a, .wgmark { color: var(--link); font-weight: 600; }
@@ -731,3 +732,12 @@ details.bal-check[open] summary { margin-bottom: 8px; }
   .bal-ctl .seg { flex: 1 1 100%; }
   .bal-ctl .seg button { flex: 1; justify-content: center; min-height: 40px; }
 }
+/* Week results on a phone: no side scroll (David, 2026-11-16). Long workout titles wrap and cells tighten. */
+@media (max-width: 480px) {
+  details.team-results th { white-space: normal; max-width: 8em; font-size: .8rem; line-height: 1.2; }
+  details.team-results th, details.team-results td { padding-left: 4px; padding-right: 4px; }
+  details.team-results .table-wrap { overflow-x: visible; }
+  details.team-results table { width: 100%; }
+}
+
+.day-tabs { margin: 8px 0 4px; flex-wrap: wrap; }

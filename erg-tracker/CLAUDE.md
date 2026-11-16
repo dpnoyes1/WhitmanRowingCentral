@@ -220,3 +220,12 @@ Log a run for athletes (David, 2026-11-12): `#/logrun` (nav "Log a run", athlete
 
 Logbook icon (David, 2026-11-12): the Athletes list shows the Concept2 icon (`site/public/icons/concept2.png`) next to each athlete connected to Logbook, coaches only (from `/api/concept2/status`, the store's `conn/` keys); athletes do not see who is connected.
 Insights additions (David, 2026-11-12): **Missing Logbook account** card and tile appear from December 1, 2026 (`LOGBOOK_MISSING_FROM`, `logbookMissingView` in `site/lib/views.mjs`; `/api/insights` reads the `conn/` keys of the Logbook store only once the date is reached): active rowers with no Logbook connection. **Missing a test** only flags a test once at least half of the active rowers have it this school year (`testsRun` in `insightsView`), so no one is flagged for a 2k until the team has tested.
+
+## To-do batch (David, 2026-11-16)
+
+- Targets: a piece with no test on its base falls back to the athlete's other test, using that zone's own % for it (`pieceTargetFromBases` in `Plan.gs`; Week, plan check and Feed). Sprint work (Anaerobic zone, the builder's Sprint category) never has a target (`pieceTargetPct`). Both need the Apps Script push and a new feed version.
+- Aerobic target text on the site is whole seconds, fast to slow ("2:20 - 2:27", `shortPace` in `app.js`). Done on the site, no push.
+- Display names (`site/lib/names.mjs`, applied in `functions/api.mjs`): first name only, plus last initial when a first name is shared, full name if that still clashes. The Weights, Athlete passwords and Coaches pages keep full names. Sign-in still uses full names.
+- Logging: the Google Form is not used. The site links to in-app Log a workout (`#/logrun` for athletes, `#/log` for coaches); `/logworkout` still redirects in `netlify.toml` for old links; Slack messages still mention the Form. In-app Log a workout is non-erg only; erg goes through ErgBot and Logbook.
+- RPE is no longer asked or shown on the site, and the Slack `/log` modal and Logbook DM no longer ask for it (old cards with an effort pick still save). Stored RPE and Sheet columns stay.
+- Week: several workouts in one day show on tabs (main workout first). Plan: a Notes field per scheduled day (Schedule `Notes`, shown to athletes and coaches), saving indicator, existing sessions listed warm up, work, cool down.

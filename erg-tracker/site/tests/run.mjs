@@ -35,6 +35,7 @@ import { handleWebhookRequest } from '../functions/concept2-webhook.mjs';
 import photoTests from './photo.mjs';
 import askTests from './ask.mjs';
 import * as PR from '../public/practice.mjs';
+import { displayNames, shortenNames } from '../lib/names.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -2248,7 +2249,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(posted[0].channel, 'U901', 'DM by member ID');
   assert.ok(/Found on Logbook/.test(posted[0].text));
   const acts = posted[0].blocks.find((b) => b.type === 'actions').elements;
-  assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_change']);
+  assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_confirm', 'lb_change']);
   assert.ok(/after about 20 hours/.test(JSON.stringify(posted[0].blocks)));
   assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'same');
   assert.strictEqual(posted.length, 1, 'an unchanged result is not DMed twice');
@@ -2263,7 +2264,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   // possible make-up and a 2k shape
   const mk = SLB.logbookMessage({ ...card, sessionType: 'Make-up', makeupFor: '2026-10-26', possibleMakeup: true, benchmark: '2000m' });
   const mkActs = mk.blocks.find((b) => b.type === 'actions').elements;
-  assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_confirm_test', 'lb_change']);
+  assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_confirm', 'lb_confirm_test', 'lb_change']);
   assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/20 hours/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
 
   // buttons
@@ -2280,6 +2281,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   const press = (action, state) => ({ type: 'block_actions', user: { id: 'U901', name: 'fake.rower' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' },
     message: { ts: '1.2', text: SLB.summaryLine(card) }, state: { values: state || {} }, actions: [action] });
   let x = world({ status: 'confirmed', benchmark: false });
+  // old DM cards (sent before 2026-11-16) still carry an effort pick and it still saves
   let out = await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' }, { lb_actions: { lb_rpe: { selected_option: { value: '7' } } } })), env2, x.deps);
   assert.deepStrictEqual(x.calls[0].body, { action: 'slack-logbook-confirm', slackUserId: 'U901', entryId: 'E77', rpe: 7, key: 'fake-key' });
   assert.ok(/Counted/.test(x.calls[1].body.text) && x.calls[1].body.replace_original && !JSON.stringify(x.calls[1].body.blocks).includes('"actions"'));
@@ -2297,8 +2299,8 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(x.calls[1].body.response_type, 'ephemeral');
 
   // Change: opens at /api/slack with the trigger id, validates, then saves in the background and updates her DM
-  const changeBtn = { action_id: 'lb_change', value: acts[2].value };
-  assert.ok(acts[2].value.length < 2000);
+  const changeBtn = { action_id: 'lb_change', value: acts[1].value };
+  assert.ok(acts[1].value.length < 2000);
   const open = [];
   const front = { nowS: NOW, fetchImpl: async (url, init) => { open.push({ url, body: JSON.parse(init.body) }); return Response.json({ ok: true }); } };
   const res = await handleSlack(signed('https://x/api/slack', { ...press(changeBtn), trigger_id: 'T9' }), env2, front);
@@ -2671,6 +2673,25 @@ test('inactive athletes are signed out of Log a run and the Concept2 connection 
   const cb = (id) => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?code=c&state=s', { headers: { cookie: cookie(id) } }), env, deps);
   assert.ok((await cb('A902')).headers.get('location').includes('logbook=error'));
   clearFeedCache();
+});
+
+
+test('display names: first name, last initial only for a shared first name (David, 2026-11-16)', () => {
+  const m = displayNames([
+    { name: 'Alexa Silvertooth' }, { name: 'Madeleine Beland' }, { name: 'Madeleine Vanderloo' },
+    { name: 'Ann Lee' }, { name: 'Ann Lopez' }, { name: 'Ann Kim' }, { name: 'Zoe  Park' }
+  ]);
+  assert.strictEqual(m.get('Alexa Silvertooth'), 'Alexa');
+  assert.strictEqual(m.get('Madeleine Beland'), 'Madeleine B.');
+  assert.strictEqual(m.get('Madeleine Vanderloo'), 'Madeleine V.');
+  assert.strictEqual(m.get('Ann Kim'), 'Ann K.');
+  assert.strictEqual(m.get('Ann Lee'), 'Ann Lee', 'same first name and initial: full name');
+  assert.strictEqual(m.get('Ann Lopez'), 'Ann Lopez');
+  assert.strictEqual(m.get('Zoe Park'), 'Zoe');
+  const out = shortenNames({ athlete: 'Madeleine Beland', rows: [{ name: 'Alexa Silvertooth', id: 'A1', note: 'Alexa Silvertooth ran' }] }, m);
+  assert.strictEqual(out.athlete, 'Madeleine B.');
+  assert.strictEqual(out.rows[0].name, 'Alexa');
+  assert.strictEqual(out.rows[0].note, 'Alexa Silvertooth ran', 'only exact names change');
 });
 
 photoTests(test);

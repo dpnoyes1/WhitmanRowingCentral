@@ -421,8 +421,22 @@ test('targets: steady state range, Threshold/Anaerobic single, overrides, erg on
   assert.strictEqual(at.highW, 172);
   assert.strictEqual(g.formatTarget(at), g.formatTime(at.fastSplit) + ' /500m (172 W)');
   assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'X1')[0], s), null, 'no erg target on a run');
-  // Anaerobic default from Settings when the piece leaves % blank
-  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'U8')[0], s).low, 95);
+  // Sprint work (Anaerobic zone) never has a target (David, 2026-11-16), even with an explicit %
+  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'U8')[0], s), null);
+  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'P1')[3], s), null);
+});
+
+test('targets: a piece with no test on its base falls back to the other test (David, 2026-11-16)', () => {
+  const s = planSettings();
+  const aero = g.workoutPieces(WORKOUTS, 'W1')[0];           // Aerobic, base 2k
+  const only20 = g.pieceTargetFromBases(aero, { "20'": 180 }, s);
+  assert.ok(only20, 'a 20-only rower still gets a target');
+  assert.strictEqual(only20.base, "20'");
+  assert.strictEqual(only20.lowPct, 70, "uses the zone's own % for the 20'");
+  assert.strictEqual(only20.highPct, 80);
+  const both = g.pieceTargetFromBases(aero, { '2k': 200, "20'": 180 }, s);
+  assert.strictEqual(both.base, '2k', 'the 2k still wins when she has one');
+  assert.strictEqual(g.pieceTargetFromBases(aero, {}, s), null, 'neither test: no target');
 });
 
 const SCHEDULE = [
@@ -481,6 +495,9 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   const t500 = 500 * Math.pow(2.8 / w, 1 / 3);
   c = g.checkAgainstPlan(Array.from({ length: 8 }, (_, i) => iv(i + 1, t500, 500)), s8, { '2k': 202.546 }, s);
   assert.strictEqual(c.matches, true);
+  assert.strictEqual(c.hit, null, 'Anaerobic (sprint) work has no target, so nothing to hit');
+  const s8t = s8.map((p) => ({ ...p, zone: 'Threshold', lowPct: 95 }));
+  c = g.checkAgainstPlan(Array.from({ length: 8 }, (_, i) => iv(i + 1, t500, 500)), s8t, { '2k': 202.546 }, s);
   assert.strictEqual(c.hit, true);
 });
 

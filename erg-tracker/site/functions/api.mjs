@@ -4,12 +4,16 @@ import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
 import * as C2 from '../lib/concept2.mjs';
+import { displayNames, shortenNames } from '../lib/names.mjs';
 
 const env = (k) => Netlify.env.get(k);
-const json = (body, status = 200) =>
+const baseJson = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handle(req, envFn, deps = {}) {
+  // First names on every page, last initial only for a shared first name (David, 2026-11-16).
+  let names = null;
+  const json = (body, status = 200) => baseJson(names ? shortenNames(body, names) : body, status);
   const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
@@ -21,6 +25,7 @@ export async function handle(req, envFn, deps = {}) {
     return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502);
   }
   const data = feed.data;
+  names = displayNames(data.athletes);
   const today = deps.today || todayIn(data.settings.timezone || 'America/New_York');
   const meta = { generatedAt: data.generatedAt, stale: feed.stale };
   // A cookie lasts a year; an athlete dropped from the Roster or set inactive is signed out of every route, not just the page.

@@ -444,8 +444,7 @@ function feedLogged_(inputs, yearStart, s) {
       workout: pieces.length ? pieces[0].name : '', rowErg: rowErg, test: test,
       matches: c ? c.matches : null, reason: c ? c.reason : '', hit: c && rowErg && !test ? c.hit : null,
       pieces: pieces.map(function (p) {
-        var pct = pieceTargetPct(p, s);
-        var t = pct ? pieceTarget(p, bases[pct.base], s) : null;
+        var t = pieceTargetFromBases(p, bases, s);
         return { label: pieceLabel(p), target: rowErg && !test && t ? formatTarget(t) : null };
       }),
       intervals: ivs.map(function (iv, i) {

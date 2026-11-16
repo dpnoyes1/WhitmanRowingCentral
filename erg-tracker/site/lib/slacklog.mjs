@@ -51,7 +51,6 @@ export function logModal(today = todayEastern()) {
         hint: 'One line per piece (max 10): work time, meters, rate, rest time, rest meters. Rate and rest can be left off.' }),
       input('cooldown', 'Cooldown time (optional)', text('e.g. 10:00'), { optional: true }),
       input('cooldown_m', 'Cooldown meters (optional)', text('e.g. 1800'), { optional: true }),
-      input('rpe', 'Session RPE (how hard was the whole session?)', select(Array.from({ length: 10 }, (_, i) => [String(i + 1), String(i + 1)]))),
       input('drag', 'Drag factor', text('105', { initial_value: '105' })),
       input('hr', 'Average heart rate (optional)', text('e.g. 150'), { optional: true }),
       input('note', 'Note for coaches (optional)', text('Only coaches see this', { multiline: true }), { optional: true })
@@ -139,7 +138,6 @@ export function validateLogForm(f, today = todayEastern()) {
   if (isTest && f.activity && f.activity !== 'Erg (RowErg)') errors.activity = "A 2k or 20' test is on the RowErg";
   if (!isTest && !f.main_set) errors.main_set = 'Describe the workout';
   if (!isTest && !f.zone) errors.zone = 'Pick a zone';
-  if (!f.rpe) errors.rpe = 'Pick an RPE';
   const pe = piecesError(f.pieces);
   if (pe) errors.pieces = pe;
   else if (isTest) {
