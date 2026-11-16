@@ -1,4 +1,5 @@
-// Lineups page (coaches only, David 2026-11-11). Nothing is saved: the lineup lives in this page and clears when you leave it.
+// Lineups page (coaches only, David 2026-11-11). The builder lives in this page; "Save for practice" (on-water plan Step 1) stores the boats
+// for one date and shift in the Sheet's Lineups tab (/api/lineups/saved), and a saved practice can be opened again and corrected.
 // Averages use each rower's best 2k and 20' this school year; GMS % is the average of her 2k and 20' GMS % (from the Sheet).
 // A rower with no GMS % (no test, or no weight on file) sits in a boat but is left out of the averages and is never in a Top boat.
 
@@ -7,8 +8,43 @@ const SPEED = { 8: 1, 4: 1.13 };             // a 4+ is 13% slower than an 8+ of
 const ROLE = { top: 'Top', even: 'Even', low: 'Lower' };
 const MAX_BOATS = 6;
 
-const boat = (n, role) => ({ n, role, s: Array(n).fill(null), pin: Array(n).fill(false) });
+const boat = (n, role) => ({ n, role, s: Array(n).fill(null), pin: Array(n).fill(false), name: '', cls: n + '+', cox: '', lid: '' });
 const fresh = () => ({ out: new Set(), boats: [boat(8, 'even'), boat(8, 'even'), boat(4, 'low')], goal: 1, pick: null, open: false, built: false });
+const SHIFTS = ['Early', 'Late', 'Other'];
+const CLASSES = { 8: ['8+'], 4: ['4+', '4x', '4-'] };
+const hasCox = (cls) => /\+$/.test(cls);
+
+/** Today in Eastern time, YYYY-MM-DD. */
+export const todayET = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
+/** The usual girls' shift for a date (Mon/Wed early, Tue/Thu late, Friday by even/odd date); weekends 'Other'. The coach can change it. */
+export function shiftFor(day) {
+  const d = new Date(day + 'T12:00:00Z'), wd = d.getUTCDay();
+  if (wd === 1 || wd === 3) return 'Early';
+  if (wd === 2 || wd === 4) return 'Late';
+  if (wd === 5) return d.getUTCDate() % 2 === 0 ? 'Early' : 'Late';
+  return 'Other';
+}
+/** The body POSTed to /api/lineups/saved for the boats on the page. Seat 1 is bow (b.s[0]). */
+export function saveBody(date, shift, boats) {
+  return { date, shift, boats: boats.map((b) => ({ lineupId: b.lid || '', boatName: (b.name || '').trim(), boatClass: b.cls || b.n + '+', seats: b.s.map((x) => x ?? ''), cox: hasCox(b.cls || b.n + '+') ? b.cox || '' : '' })) };
+}
+/** Saved lineups for one shift -> page boats (all seats pinned). Boats the builder can't show (pairs, singles, mid-practice switches) are skipped
+ *  and counted; rowers no longer active leave their seat empty. */
+export function boatsFromSaved(lineups, shift, activeIds) {
+  let skipped = 0;
+  const boats = [];
+  for (const l of lineups.filter((x) => x.shift === shift)) {
+    if (l.fromPiece !== '' || !(l.seats.length === 8 || l.seats.length === 4)) { skipped++; continue; }
+    const b = boat(l.seats.length, 'even');
+    l.seats.forEach((id, k) => { if (id && activeIds.has(id)) { b.s[k] = id; b.pin[k] = true; } });
+    Object.assign(b, { name: l.boatName, cls: l.boatClass, cox: l.cox || '', lid: l.lineupId });
+    boats.push(b);
+  }
+  return { boats, skipped };
+}
+
+// Save-for-practice state; kept across page visits in this tab so a half-typed save is not lost on a redraw.
+const SV = { date: '', shift: '', coxes: [], days: [], saved: [], msg: '', err: false, busy: false };
 let LU = fresh();
 let R = [];            // rowers from /api/lineups
 let ctx = null;        // { app, esc, fmtTime, fmtNum, redraw }
@@ -113,7 +149,7 @@ function draw() {
         <div><span class="muted small">Avg GMS %</span><b class="num acc">${s.g ? s.g.toFixed(1) + '%' : '–'}</b><small class="muted num">${s.gn < s.n ? `${s.gn} of ${s.n} counted` : s.n ? 'all counted' : ''}</small></div></div>
       ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${fast8.name}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${fast8.name}`}</small>` : ''}</div>` : ''}</div>`;
   };
-  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Not saved. Clears when you leave.</p></div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Build boats here, then save them for a practice at the bottom.</p></div><button class="btn" type="button" data-lueven="1">Make lineups</button></div>
     <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile(evI.length > 1 ? 'Gap between even boats' : 'Gap between boats', gap, 'best vs worst avg GMS %')}</div>
     <div class="card"><div class="lu-head"><h2>At practice today</h2><button type="button" class="btn ghost sm" data-luopen="1">${LU.open ? 'Hide list' : `Change (${LU.out.size} out)`}</button></div>
       ${LU.open ? `<div class="luat">${R.map((a) => `<label class="luck"><input type="checkbox" data-luout="${esc(a.id)}"${LU.out.has(a.id) ? '' : ' checked'}><span><b>${esc(a.name)}</b><small class="muted num">${tagOf(a)}</small></span></label>`).join('')}</div>` : `<p class="muted small">${LU.out.size ? 'Out today: ' + [...LU.out].map((i) => esc(byId(i).name)).join(', ') + '.' : 'Everyone here. Untick absentees.'}</p>`}</div>
@@ -122,13 +158,81 @@ function draw() {
     <div class="card"><div class="lu-head"><h2>Not in a boat</h2></div><p class="muted small">${pickA ? `Tap a seat for ${esc(pickA.name)}.` : 'Drag or tap a name, then a seat.'}</p>
       <div class="lupool" data-luseat="pool">${spare.length ? spare.sort((x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>
     <div class="lu-actions"><button class="btn ghost sm" type="button" data-luadd="8">Add an 8+</button><button class="btn ghost sm" type="button" data-luadd="4">Add a 4+</button><button class="btn ghost sm" type="button" data-luclear="1">Clear unpinned seats</button></div>
-    <div class="lugrid">${LU.boats.map(boatCard).join('')}</div>`;
+    <div class="lugrid">${LU.boats.map(boatCard).join('')}</div>
+    ${saveCard()}`;
 }
+
+function saveCard() {
+  const { esc } = ctx;
+  const savedHere = SV.saved.filter((l) => l.shift === SV.shift);
+  const row = (b, bi) => `<div class="lusv-row"><span class="muted small">${boatName(bi)}</span>
+      <input type="text" maxlength="40" placeholder="Shell name" value="${esc(b.name)}" data-luname="${bi}" aria-label="Shell name for ${boatName(bi)}">
+      ${(CLASSES[b.n] || [b.cls]).length > 1 ? `<select data-lucls="${bi}" aria-label="Boat class for ${boatName(bi)}">${CLASSES[b.n].map((c) => `<option${c === b.cls ? ' selected' : ''}>${c}</option>`).join('')}</select>` : `<span class="num">${esc(b.cls)}</span>`}
+      ${hasCox(b.cls) ? `<select data-lucox="${bi}" aria-label="Coxswain for ${boatName(bi)}"><option value="">No cox</option>${SV.coxes.map((c) => `<option value="${esc(c.id)}"${c.id === b.cox ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : '<span></span>'}</div>`;
+  return `<div class="card lusv"><div class="lu-head"><h2>Save for practice</h2></div>
+    <p class="muted small">Saves these boats for one practice, so the water import can give each rower her boat's minutes and meters. Saving the same date and shift again replaces it.</p>
+    <div class="lusv-when"><label>Date <input type="date" value="${esc(SV.date)}" data-ludate="1"></label>
+      <label>Shift <select data-lushift="1">${SHIFTS.map((x) => `<option${x === SV.shift ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
+      <button type="button" class="btn ghost sm" data-luload="1"${SV.busy ? ' disabled' : ''}>Open saved</button></div>
+    ${savedHere.length ? `<p class="small">Already saved for this practice: ${savedHere.map((l) => esc(l.boatName)).join(', ')}. Saving replaces it.</p>` : ''}
+    <div class="lusv-boats">${LU.boats.map(row).join('')}</div>
+    <div class="lu-actions"><button type="button" class="btn sm" data-lusave="1"${SV.busy ? ' disabled' : ''}>${SV.busy ? 'Saving...' : 'Save for practice'}</button></div>
+    ${SV.msg ? `<p class="small${SV.err ? ' warn' : ''}" role="status">${esc(SV.msg)}</p>` : ''}
+    ${SV.days.length ? `<p class="muted small">Recent saved practices: ${SV.days.map((d) => `<button type="button" class="btn ghost sm" data-luday="${esc(d)}">${esc(d)}</button>`).join(' ')}</p>` : ''}</div>`;
+}
+
+async function lineupsApi(method, date, body) {
+  const res = await fetch('/api/lineups/saved' + (method === 'GET' ? '?date=' + encodeURIComponent(date) : ''), method === 'GET'
+    ? { credentials: 'same-origin', headers: { accept: 'application/json' } }
+    : { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  let out = {};
+  try { out = await res.json(); } catch { out = {}; }
+  if (!res.ok) throw new Error(out.error || 'Could not reach the Sheet.');
+  return out;
+}
+
+async function refreshSaved(date) {
+  try {
+    const out = await lineupsApi('GET', date);
+    if (date !== SV.date) return;
+    Object.assign(SV, { coxes: out.coxes, days: out.days, saved: out.lineups });
+  } catch (e) { SV.msg = e.message; SV.err = true; }
+  if (on()) draw();
+}
+
+async function loadSaved() {
+  SV.busy = true; SV.msg = ''; draw();
+  try {
+    const out = await lineupsApi('GET', SV.date);
+    Object.assign(SV, { coxes: out.coxes, days: out.days, saved: out.lineups });
+    const { boats, skipped } = boatsFromSaved(out.lineups, SV.shift, new Set(R.map((a) => a.id)));
+    if (!boats.length) { SV.msg = 'Nothing saved for ' + SV.date + ', ' + SV.shift + '.'; SV.err = true; }
+    else {
+      LU.boats = boats; LU.goal = -1; LU.built = true; LU.pick = null;
+      SV.msg = 'Opened ' + boats.length + ' boat' + (boats.length === 1 ? '' : 's') + ' saved for ' + SV.date + ', ' + SV.shift + '.' + (skipped ? ' ' + skipped + ' other boat' + (skipped === 1 ? '' : 's') + ' (pairs, singles or a seat switch) stay as saved.' : '');
+      SV.err = false;
+    }
+  } catch (e) { SV.msg = e.message; SV.err = true; }
+  SV.busy = false; draw();
+}
+
+async function save() {
+  if (LU.boats.some((b) => !(b.name || '').trim())) { SV.msg = 'Name every boat (the shell) first.'; SV.err = true; draw(); return; }
+  SV.busy = true; SV.msg = ''; draw();
+  try {
+    const out = await lineupsApi('POST', null, saveBody(SV.date, SV.shift, LU.boats));
+    Object.assign(SV, { coxes: out.coxes, days: out.days, saved: out.lineups });
+    (out.saved || []).forEach((id, i) => { if (LU.boats[i]) LU.boats[i].lid = id; });
+    SV.msg = 'Saved ' + LU.boats.length + ' boat' + (LU.boats.length === 1 ? '' : 's') + ' for ' + SV.date + ', ' + SV.shift + '.'; SV.err = false;
+  } catch (e) { SV.msg = e.message; SV.err = true; }
+  SV.busy = false; draw();
+}
+
+const on = () => !!ctx && !!document.querySelector('.lugrid');
 
 let wired = false;
 function wire() {
   if (wired) return; wired = true;
-  const on = () => !!ctx && !!document.querySelector('.lugrid');
   document.addEventListener('click', (e) => {
     if (!on()) return; const q = (s) => e.target.closest(s); let hit = true;
     if (q('[data-lupin]')) { const [bi, k] = q('[data-lupin]').dataset.lupin.split(',').map(Number); LU.boats[bi].pin[k] = !LU.boats[bi].pin[k]; }
@@ -142,9 +246,20 @@ function wire() {
     else if (q('[data-lugoal]')) { setGoal(+q('[data-lugoal]').dataset.lugoal); LU.pick = null; }
     else if (q('[data-luclear]')) { LU.boats.forEach((b) => b.s.forEach((x, k) => { if (!b.pin[k]) b.s[k] = null; })); LU.built = false; }
     else if (q('[data-luopen]')) LU.open = !LU.open;
+    else if (q('[data-lusave]')) { save(); return; }
+    else if (q('[data-luload]')) { loadSaved(); return; }
+    else if (q('[data-luday]')) { SV.date = q('[data-luday]').dataset.luday; SV.shift = shiftFor(SV.date); refreshSaved(SV.date); loadSaved(); return; }
     else hit = false;
     if (hit) draw();
   });
+  // Save card fields: keep what is typed without redrawing (a redraw would drop focus), except where the choice changes the card.
+  document.addEventListener('input', (e) => { const t = on() && e.target; if (!t || !t.dataset) return;
+    if (t.dataset.luname !== undefined) LU.boats[+t.dataset.luname].name = t.value; });
+  document.addEventListener('change', (e) => { const t = on() && e.target; if (!t || !t.dataset) return;
+    if (t.dataset.lucls !== undefined) { LU.boats[+t.dataset.lucls].cls = t.value; draw(); }
+    else if (t.dataset.lucox !== undefined) LU.boats[+t.dataset.lucox].cox = t.value;
+    else if (t.dataset.ludate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { SV.date = t.value; SV.shift = shiftFor(t.value); SV.msg = ''; draw(); refreshSaved(SV.date); }
+    else if (t.dataset.lushift !== undefined) { SV.shift = t.value; SV.msg = ''; draw(); } });
   document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luout]'); if (!el) return; const id = el.dataset.luout;
     if (el.checked) LU.out.delete(id); else { LU.out.add(id); remove(id); if (LU.pick === id) LU.pick = null; } draw(); });
   document.addEventListener('keydown', (e) => { if (!on() || (e.key !== 'Enter' && e.key !== ' ')) return; const t = e.target.closest && e.target.closest('.lusr.empty'); if (t && e.target === t) { e.preventDefault(); t.click(); } });
@@ -153,7 +268,9 @@ function wire() {
   document.addEventListener('drop', (e) => { const t = on() && e.target.closest && e.target.closest('[data-luseat]'); if (!t) return; e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if (!id) return; place(id, t.dataset.luseat); LU.pick = null; draw(); });
 }
 
-/** Called each time the page opens: a fresh lineup (nothing saved), everyone ticked. */
+/** Called each time the page opens: a fresh builder, everyone ticked; the save card keeps its date and shift and checks what is saved. */
 export function openLineups(rowers, c) {
-  R = rowers; ctx = c; LU = fresh(); wire(); draw();
+  R = rowers; ctx = c; LU = fresh();
+  if (!SV.date) { SV.date = todayET(); SV.shift = shiftFor(SV.date); }
+  SV.msg = ''; wire(); draw(); refreshSaved(SV.date);
 }

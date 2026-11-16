@@ -29,6 +29,8 @@ function doPost(e) {
   if (body.action === WORKOUT_SAVE_ACTION) return feedJson_(processWorkoutSave_(body));
   if (body.action === WEIGHTS_GET_ACTION) return feedJson_(processWeightsGet_());
   if (body.action === WEIGHTS_SAVE_ACTION) return feedJson_(processWeightsSave_(body));
+  if (body.action === LINEUPS_LIST_ACTION) return feedJson_(processLineupsList_(body));
+  if (body.action === LINEUPS_SAVE_ACTION) return feedJson_(processLineupsSave_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());
   if (body.action === SETTINGS_SAVE_ACTION) return feedJson_(processSettingsSave_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));

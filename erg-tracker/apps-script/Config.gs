@@ -17,7 +17,8 @@ var TABS = {
   SCHEDULE: 'Schedule',
   SQUAD_HISTORY: 'Squad history',
   RACES: 'Races',
-  LOGBOOK_RAW: 'Logbook raw'
+  LOGBOOK_RAW: 'Logbook raw',
+  LINEUPS: 'Lineups'
 };
 
 var HEADERS = {};
@@ -78,6 +79,13 @@ HEADERS[TABS.RACES] = [
   'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'Notes'
 ];
 
+// Coach-only (on-water plan Step 1). One row per boat per practice, saved from the site's Lineups page. Seat 1 = bow; seats hold
+// Athlete IDs; a 4+ uses Seats 1-4. "From piece" is blank unless a boat changed lineup mid-practice (not built yet).
+HEADERS[TABS.LINEUPS] = [
+  'Lineup ID', 'Date', 'Shift', 'Boat name', 'Boat class',
+  'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'From piece', 'Saved by', 'Saved at'
+];
+
 /** Columns holding clock times or codes that Sheets must not auto-convert. */
 // Full Logbook result as JSON, and its stroke-by-stroke data, one row per chunk (a cell holds at most 50,000 characters).
 // Coach-only and hidden. Nothing reads it yet; it exists so no Logbook field is ever lost.
@@ -93,6 +101,7 @@ TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
 TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
 TEXT_COLUMNS[TABS.LOGBOOK_RAW] = ['Result ID', 'JSON'];
+TEXT_COLUMNS[TABS.LINEUPS] = ['Lineup ID', 'Boat name', 'Boat class'];
 
 /**
  * Columns the Sheet fills itself with one array formula in the header cell.

@@ -6,7 +6,7 @@ const assert = require('assert');
 
 const dir = path.join(__dirname, '..', 'apps-script');
 const ctx = vm.createContext({ console });
-['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs'].forEach(f =>
+['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs', 'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'Ops.gs', 'Logbook.gs', 'PlanFlags.gs', 'SlackLog.gs', 'Photos.gs', 'SlackPhoto.gs', 'SettingsPage.gs', 'Weights.gs', 'SiteLog.gs', 'WorkoutBuilder.gs', 'Lineups.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 const g = ctx;
 
@@ -1598,6 +1598,60 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.deepStrictEqual(v.upcoming.map(u => [u.day, u.published, u.name]), [['2026-11-16', true, 'Tuesday 20s']], 'only the next 28 days');
   assert.strictEqual(v.library[0].id, 'W7');
   assert.ok(/3 x 20:00/.test(v.library[0].summary));
+});
+
+test('Lineups: clean a save from the Lineups page (on-water Step 1)', () => {
+  const roster = g.lineupsRoster_([
+    { 'Athlete ID': 'A901', Name: 'Fake One', Active: 'Yes', Role: 'Rower', Squad: 'Varsity' },
+    { 'Athlete ID': 'A902', Name: 'Fake Two', Active: 'Yes', Role: 'Rower', Squad: 'Varsity' },
+    { 'Athlete ID': 'A903', Name: 'Fake Three', Active: 'Yes', Role: 'Rower', Squad: 'Novice' },
+    { 'Athlete ID': 'A904', Name: 'Fake Four', Active: 'Yes', Role: 'Rower', Squad: 'Varsity' },
+    { 'Athlete ID': 'A905', Name: 'Fake Cox', Active: 'Yes', Role: 'Coxswain', Squad: 'Varsity' },
+    { 'Athlete ID': 'A906', Name: 'Fake Gone', Active: 'No', Role: 'Rower', Squad: 'Varsity' },
+    { 'Athlete ID': 'A907', Name: 'Fake Alum', Active: 'Yes', Role: 'Rower', Squad: 'Alum' }]);
+  assert.deepStrictEqual(Object.keys(roster).sort(), ['A901', 'A902', 'A903', 'A904', 'A905']);
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.lineupsCoxes_(roster))), [{ id: 'A905', name: 'Fake Cox' }]);
+  const four = (seats, extra = {}) => ({ boatName: 'Hudson', boatClass: '4+', seats, cox: 'A905', ...extra });
+  const ok = g.lineupsClean_({ date: '2027-02-03', shift: 'Early', boats: [four(['A901', 'A902', 'A903', 'A904'])] }, roster);
+  assert.ok(!ok.error, ok.error);
+  assert.strictEqual(ok.boats[0].fromPiece, '');
+  const err = (body) => g.lineupsClean_({ date: '2027-02-03', shift: 'Early', ...body }, roster).error;
+  assert.match(err({ date: '2/3/2027', boats: [] }), /date/);
+  assert.match(err({ shift: 'Noon', boats: [] }), /shift/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904'], { boatName: ' ' })] }), /Name every boat/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903'])] }), /has 4 seats/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A906'])] }), /seat 4 is not an active athlete/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904']), four(['A901', '', '', ''], { boatName: 'Potomac', cox: '' })] }), /Fake One is in two boats/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904']), four(['', '', '', 'A903'], { cox: '' })] }), /both named Hudson/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A905'])] }), /both rowing and coxing/);
+  assert.match(err({ boats: [{ boatName: 'Quad', boatClass: '4x', seats: ['A901', '', '', ''], cox: 'A905' }] }), /has no coxswain/);
+  assert.match(err({ boats: [four(['', '', '', ''])] }), /nobody in it/);
+  assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904'], { fromPiece: 1 })] }), /From piece/);
+  // a mid-practice switch: the same boat again from piece 3, with a rower moved in
+  const sw = g.lineupsClean_({ date: '2027-02-03', shift: 'Early', boats: [four(['A901', 'A902', 'A903', 'A904']), four(['A901', 'A902', 'A903', ''], { fromPiece: 3 })] }, roster);
+  assert.ok(!sw.error, sw.error);
+  assert.deepStrictEqual(g.lineupsClean_({ date: '2027-02-03', shift: 'Late', boats: [] }, roster).boats.length, 0, 'an empty save clears that practice');
+});
+
+test('Lineups: rows keep their Lineup ID on a correction and get the next free ID otherwise', () => {
+  const existing = [
+    { 'Lineup ID': 'L20270203-1', Date: '2027-02-03', Shift: 'Early', 'Boat name': 'Hudson', 'Boat class': '4+' },
+    { 'Lineup ID': 'L20270203-2', Date: '2027-02-03', Shift: 'Late', 'Boat name': 'Potomac', 'Boat class': '8+' }];
+  const clean = { date: '2027-02-03', shift: 'Early', boats: [
+    { lineupId: 'L20270203-1', boatName: 'Hudson', boatClass: '4+', seats: ['A901', 'A902', '', 'A904'], cox: 'A905', fromPiece: '' },
+    { lineupId: 'L20270203-2', boatName: 'Severn', boatClass: '4x', seats: ['A903', '', '', ''], cox: '', fromPiece: '' }] };
+  const rows = g.lineupsBuildRows_(clean, existing, 'Coach Pat', 'now');
+  assert.deepStrictEqual(rows.map((r) => r['Lineup ID']), ['L20270203-1', 'L20270203-3'], "the Late boat's ID is not taken over");
+  assert.strictEqual(rows[0]['Seat 3'], '');
+  assert.strictEqual(rows[0]['Seat 5'], '');
+  assert.strictEqual(rows[0]['Saved by'], 'Coach Pat');
+  assert.ok(Object.keys(rows[0]).every((k) => g.HEADERS[g.TABS.LINEUPS].includes(k)), 'only real columns');
+  assert.match(g.lineupsSummary_(rows), /^Hudson \(4\+\): A901, A902, A904; cox A905 \| Severn \(4x\): A903$/);
+  const back = g.lineupsFromRows_(rows.concat(existing.slice(1)), { A901: { name: 'Fake One' } });
+  assert.deepStrictEqual(back.map((l) => l.boatName), ['Hudson', 'Severn', 'Potomac']);
+  assert.deepStrictEqual(Array.from(back[0].seats), ['A901', 'A902', '', 'A904']);
+  assert.strictEqual(back[0].seatNames[0], 'Fake One');
+  assert.strictEqual(back[2].seats.length, 8);
 });
 
 console.log(`${passed} tests passed`);

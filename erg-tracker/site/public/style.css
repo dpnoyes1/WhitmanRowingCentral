@@ -461,6 +461,15 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lu-head h2 { margin: 0; margin-right: auto; display: flex; align-items: center; gap: 8px; }
 .lu-actions, .lugoal { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .lugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; margin-bottom: 12px; }
+/* Save for practice (on-water plan Step 1) */
+.lusv-when { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 10px; }
+.lusv-when label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.lusv-boats { display: grid; gap: 8px; margin-bottom: 12px; }
+.lusv-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 72px minmax(0, 150px); gap: 8px; align-items: center; }
+.lusv input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-height: 44px; color-scheme: dark; }
+.lusv-row input, .lusv-row select, .lusv-when input, .lusv-when select { min-width: 0; }
+.lusv-when select { width: auto; }
+@media (max-width: 720px) { .lusv-row { grid-template-columns: 60px minmax(0, 1fr) 64px; } .lusv-row > :last-child { grid-column: 2 / -1; } }
 .lurole { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
 .lurole .seg button { min-height: 44px; }
 .lus { display: flex; flex-direction: column; gap: 6px; }

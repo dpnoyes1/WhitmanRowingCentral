@@ -3,6 +3,9 @@ import assert from 'node:assert';
 import { readFit, readMessages, unitFromName, fitCrc } from '../lib/fit.mjs';
 import * as W from '../lib/water.mjs';
 import { writeFit, practiceFit, piecesFit, strokesFor } from '../scripts/make-fit.mjs';
+import * as A from '../lib/auth.mjs';
+import { handleLineupsSaved, cleanLineupsBody } from '../functions/lineups-saved.mjs';
+import { shiftFor, saveBody, boatsFromSaved, todayET } from '../public/lineups.mjs';
 
 let passed = 0;
 const tests = [];
@@ -261,7 +264,55 @@ test('Adjusted rating: nothing to rate gives empty lists, not an error', () => {
   assert.deepEqual(W.adjustedRatings([]), { rowers: [], shells: [], coxes: [], together: [], pieces: 0 });
 });
 
+test('Saved lineups API: coaches only, Sheet through the feed key, only known fields sent', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const get = (cookie, q = '') => new Request('https://x/api/lineups/saved' + q, { headers: cookie ? { cookie } : {} });
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/lineups/saved', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const listed = { status: 'ok', date: '2027-02-03', lineups: [{ lineupId: 'L20270203-1', boatName: 'Hudson' }], days: ['2027-02-03'], coxes: [{ id: 'A905', name: 'Fake Cox' }] };
+  assert.strictEqual((await handleLineupsSaved(get(''), env, {})).status, 401);
+  assert.strictEqual((await handleLineupsSaved(get(athlete), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual((await handleLineupsSaved(post(athlete, {}), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  let res = await handleLineupsSaved(get(coach, '?date=2027-02-03'), env, { fetchImpl: sheet(listed) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(res.headers.get('cache-control'), 'private, no-store');
+  assert.deepStrictEqual((await res.json()).coxes, listed.coxes);
+  assert.deepStrictEqual(calls[0], { action: 'lineups-list', date: '2027-02-03', key: 'fake-key' });
+  assert.strictEqual((await handleLineupsSaved(get(coach, '?date=Feb3'), env, { fetchImpl: sheet(listed) })).status, 400);
+  const body = { date: '2027-02-03', shift: 'Early', evil: 1, boats: [{ boatName: 'Hudson', boatClass: '4+', seats: ['A901', '', 'A903', 'A904'], cox: 'A905', extra: 'x', fromPiece: '' }] };
+  res = await handleLineupsSaved(post(coach, body), env, { fetchImpl: sheet({ ...listed, saved: ['L20270203-1'] }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual((await res.json()).saved, ['L20270203-1']);
+  assert.deepStrictEqual(calls[1], { action: 'lineups-save', date: '2027-02-03', shift: 'Early', coachName: 'Pat Example', key: 'fake-key',
+    boats: [{ lineupId: '', boatName: 'Hudson', boatClass: '4+', seats: ['A901', '', 'A903', 'A904'], cox: 'A905', fromPiece: '' }] });
+  assert.strictEqual((await handleLineupsSaved(post(coach, body), env, { fetchImpl: sheet({ status: 'invalid', message: 'Name every boat.' }) })).status, 422);
+  assert.strictEqual((await handleLineupsSaved(post(coach, body, { origin: 'https://evil.example' }), env, { fetchImpl: sheet(listed) })).status, 400);
+  assert.strictEqual((await handleLineupsSaved(post(coach, { date: 'x' }), env, { fetchImpl: sheet(listed) })).status, 400);
+  assert.strictEqual((await handleLineupsSaved(post(coach, body), env, { fetchImpl: sheet({ error: 'boom' }) })).status, 502);
+  assert.strictEqual(cleanLineupsBody({ date: '2027-02-03', shift: 'Early', boats: Array(13).fill({}) }), null);
+});
+
+test('Lineups page helpers: default shift, the save body, opening a saved practice', () => {
+  assert.deepStrictEqual(['2027-02-01', '2027-02-02', '2027-02-03', '2027-02-04', '2027-02-05', '2027-02-12', '2027-02-06'].map(shiftFor), ['Early', 'Late', 'Early', 'Late', 'Late', 'Early', 'Other']);
+  assert.strictEqual(todayET(new Date('2027-02-04T03:30:00Z')), '2027-02-03', '10:30 pm ET is still the 3rd');
+  const b = { n: 4, s: ['A901', null, 'A903', 'A904'], name: ' Hudson ', cls: '4x', cox: 'A905', lid: '' };
+  assert.deepStrictEqual(saveBody('2027-02-03', 'Early', [b]).boats[0], { lineupId: '', boatName: 'Hudson', boatClass: '4x', seats: ['A901', '', 'A903', 'A904'], cox: '' }, 'a quad has no cox');
+  const saved = [
+    { lineupId: 'L1', shift: 'Early', boatName: 'Hudson', boatClass: '4+', seats: ['A901', 'A999', '', 'A904'], cox: 'A905', fromPiece: '' },
+    { lineupId: 'L2', shift: 'Early', boatName: 'Pair', boatClass: '2-', seats: ['A902', 'A903'], cox: '', fromPiece: '' },
+    { lineupId: 'L3', shift: 'Early', boatName: 'Hudson', boatClass: '4+', seats: ['A901', 'A902', '', 'A904'], cox: '', fromPiece: 3 },
+    { lineupId: 'L4', shift: 'Late', boatName: 'Potomac', boatClass: '8+', seats: Array(8).fill('A906'), cox: '', fromPiece: '' }];
+  const { boats, skipped } = boatsFromSaved(saved, 'Early', new Set(['A901', 'A902', 'A903', 'A904', 'A905']));
+  assert.strictEqual(skipped, 2);
+  assert.strictEqual(boats.length, 1);
+  assert.deepStrictEqual([boats[0].s, boats[0].pin, boats[0].name, boats[0].lid, boats[0].cox], [['A901', null, null, 'A904'], [true, false, false, true], 'Hudson', 'L1', 'A905']);
+});
+
 for (const [name, fn] of tests) {
-  try { fn(); passed++; } catch (e) { console.error('FAIL ' + name + '\n  ' + (e && e.message)); process.exitCode = 1; }
+  try { await fn(); passed++; } catch (e) { console.error('FAIL ' + name + '\n  ' + (e && e.message)); process.exitCode = 1; }
 }
 console.log(passed + '/' + tests.length + ' water tests passed');
