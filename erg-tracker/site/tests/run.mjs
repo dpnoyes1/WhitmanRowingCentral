@@ -1912,6 +1912,10 @@ test('insights: own page without flags, teammates none, coaches everything', asy
   assert.ok(!('jumpPct' in body.insights));
   body = await (await get('/api/athlete/A902', her)).json();
   assert.strictEqual(body.insights, null);
+  // Athlete page title: full name, while the rest of the page keeps the short display name (David, 2026-11-16).
+  const full = feed.athletes.find((x) => x.id === 'A902').name;
+  assert.strictEqual(body.fullName, full);
+  assert.notStrictEqual(body.athlete.name, full);
   clearFeedCache();
 });
 
