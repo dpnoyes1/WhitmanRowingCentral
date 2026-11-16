@@ -755,6 +755,14 @@ details.bal-check[open] summary { margin-bottom: 8px; }
 .st-inline { display: none; }
 
 .day-tabs { margin: 8px 0 4px; flex-wrap: wrap; }
+.title-link { color: inherit; text-decoration: none; }
+.title-link:hover, .title-link:focus-visible { text-decoration: underline; }
+.title-link .go { color: var(--accent); }
+/* Phone: workout tabs stay in one even row like desktop, labels wrap inside each tab, nothing scrolls sideways */
+@media (max-width: 480px) {
+  .day-tabs { display: flex; flex-wrap: nowrap; width: 100%; }
+  .day-tabs button { flex: 1 1 0; min-width: 0; justify-content: center; text-align: center; white-space: normal; line-height: 1.2; padding: 8px 6px; }
+}
 .gms-next p { margin: 4px 0; }
 
 /* Layout review (David, 2026-11-16): no side scrolling. Insights drops its least-used columns as the page narrows. */

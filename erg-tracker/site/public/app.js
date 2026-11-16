@@ -529,7 +529,7 @@ function teamTodayCard(wk, squad) {
   const title = !d ? 'Today' : d.day === wk.today ? 'Today' : `Next: ${fmtDay(d.day)}`;
   const body = d ? d.sessions.map((x) => sessionBlock({ ...x, results: undefined }, !!wk.athlete)).join('')
     : '<p class="muted small">Nothing scheduled for the rest of this week.</p>';
-  return `<div class="card today"><h2>${title}</h2>${body}<p class="small"><a href="#/week">The whole week</a></p></div>`;
+  return `<div class="card today"><h2>${d ? `<a class="title-link" href="#/week" aria-label="Open ${esc(title)} in Week">${title}<span class="go" aria-hidden="true"> ›</span></a>` : title}</h2>${body}<p class="small"><a href="#/week">The whole week</a></p></div>`;
 }
 
 function recentList(t) {
