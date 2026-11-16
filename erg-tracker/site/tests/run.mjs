@@ -17,6 +17,7 @@ import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
+import * as BK from '../public/backstack.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleCoaches } from '../functions/coaches.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
@@ -55,6 +56,46 @@ test('GMS page: team test run, life time list, per-rower test flags', () => {
   assert.deepEqual(teamTestsRun([{ tests: { has2k: false, has20: true } }, { tests: { has2k: false, has20: true } }]), { has2k: false, has20: true });
   assert.deepEqual(teamTestsRun([{ tests: { has2k: true, has20: false } }, { tests: { has2k: false, has20: false } }, { tests: { has2k: false, has20: false } }]), { has2k: false, has20: false });
   assert.deepEqual(teamTestsRun([]), { has2k: false, has20: false });
+});
+
+test('Back: page trail, redirects, menu resets, restore and parent pages', () => {
+  let r = BK.navStep(null, '#/athletes');
+  assert.equal(r.kind, 'reset'); assert.deepEqual(r.state, { stack: [{ hash: '#/athletes' }], pos: 0 });
+  assert.equal(BK.backTarget(r.state, '#/athletes', null), null, 'top-level page with no history: no Back');
+  let st = BK.snapshot(r.state, { y: 640, ui: { page: 'athletes', asq: 'novice', q: 'zz' }, title: 'Athletes' });
+  r = BK.navStep(st, '#/athlete/A901');
+  assert.equal(r.kind, 'new'); assert.equal(r.state.pos, 1);
+  assert.deepEqual(BK.backTarget(r.state, '#/athlete/A901', null), { history: true, hash: '#/athletes', label: 'Athletes' });
+  st = BK.snapshot(r.state, { y: 300, title: 'Test Rower' });
+  r = BK.navStep(st, '#/workout/E-1');
+  assert.equal(BK.backTarget(r.state, '#/workout/E-1', null).label, 'Test Rower', 'label is the page left behind');
+  // Browser Back (or the button) lands on entry 1 with its scroll and choices.
+  r = BK.navStep(r.state, '#/athlete/A901', { idx: 1 });
+  assert.equal(r.kind, 'restore'); assert.equal(r.entry.y, 300); assert.equal(r.state.pos, 1);
+  r = BK.navStep(r.state, '#/athletes', { idx: 0 });
+  assert.equal(r.kind, 'restore'); assert.equal(r.entry.ui.asq, 'novice'); assert.equal(r.entry.y, 640);
+  // Forward is still known.
+  assert.equal(BK.navStep(r.state, '#/athlete/A901', { idx: 1 }).kind, 'restore');
+  // A new page after going back drops the forward entries.
+  const fresh = BK.navStep(r.state, '#/week');
+  assert.deepEqual(fresh.state.stack.map((e) => e.hash), ['#/athletes', '#/week']);
+  // A redraw of the same entry (session check) keeps scroll; a redirect replaces the top.
+  assert.equal(BK.navStep(fresh.state, '#/week', { idx: 1 }).kind, 'same');
+  const red = BK.navStep(fresh.state, '#/me', { replace: true });
+  assert.deepEqual(red.state.stack.map((e) => e.hash), ['#/athletes', '#/me']);
+  // A menu or tab-bar tap starts over; an unknown history entry starts over too.
+  assert.deepEqual(BK.navStep(fresh.state, '#/boards', { reset: true }).state, { stack: [{ hash: '#/boards' }], pos: 0 });
+  assert.equal(BK.navStep(fresh.state, '#/team', { idx: 7 }).kind, 'reset');
+  // No history (deep link, relaunched app): an athlete goes up to Athletes, a workout to its athlete. Never out of the app.
+  assert.deepEqual(BK.backTarget({ stack: [{ hash: '#/athlete/A901' }], pos: 0 }, '#/athlete/A901', null), { history: false, hash: '#/athletes', label: 'Athletes' });
+  assert.deepEqual(BK.backTarget({ stack: [{ hash: '#/workout/E-1' }], pos: 0 }, '#/workout/E-1', { hash: '#/athlete/A901', label: 'Test Rower' }), { history: false, hash: '#/athlete/A901', label: 'Test Rower' });
+  assert.equal(BK.backTarget({ stack: [], pos: -1 }, '#/team', null), null);
+  // Bad storage is ignored; the trail is capped.
+  assert.equal(BK.navStep({ stack: 'x', pos: 9 }, '#/team').kind, 'reset');
+  let big = null;
+  for (let i = 0; i < BK.MAX + 10; i++) big = BK.navStep(big && big.state, '#/athlete/A' + i).state ? BK.navStep(big && big.state, '#/athlete/A' + i) : big;
+  assert.equal(big.state.stack.length, BK.MAX); assert.equal(big.state.pos, BK.MAX - 1);
+  assert.equal(BK.clampScroll(900, 500), 500); assert.equal(BK.clampScroll(-3, 500), 0); assert.equal(BK.clampScroll(40, -1), 0);
 });
 
 test('browser scripts parse as modules', async () => {

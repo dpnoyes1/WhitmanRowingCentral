@@ -8,6 +8,7 @@ import { openPlan } from './plan.mjs';
 import { openLogMine } from './logmine.mjs';
 import { shrinkPhoto } from './photo.mjs';
 import { openLineups } from './lineups.mjs';
+import { KEY as BACK_KEY, navStep, snapshot, backTarget, clampScroll } from './backstack.mjs';
 
 const app = document.getElementById('app');
 const practiceBox = document.getElementById('practice');
@@ -553,6 +554,7 @@ async function showAthletes() {
         <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   let asq = 'all';
+  pageUi = () => ({ page: 'athletes', asq, q: document.getElementById('q').value });
   const filter = () => {
     const q = document.getElementById('q').value.trim().toLowerCase();
     app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = !!q && !a.dataset.name.includes(q); });
@@ -560,6 +562,13 @@ async function showAthletes() {
   };
   document.getElementById('q').oninput = filter;
   app.querySelectorAll('[data-asq]').forEach((b) => { b.onclick = () => { asq = b.dataset.asq; app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); filter(); }; });
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'athletes' ? restoreUi.ui : null;
+  if (back) {
+    if (['all', 'varsity', 'novice'].includes(back.asq)) asq = back.asq;
+    document.getElementById('q').value = String(back.q || '');
+    app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.asq === asq)));
+    filter();
+  }
   wireFooter();
 }
 
@@ -695,9 +704,10 @@ async function showWorkout(id) {
         : `<table class="pieces"><tr><th>Interval</th><th class="r">Logged</th></tr>${d.intervals.map((x) => `<tr><td>${x.n}</td><td class="r splits">${workSplits([x], d.rowErg, isBike(w))}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No intervals logged.</td></tr>'}</table>`}
       <p class="muted small">✓ in range · ↓ under · ↑ over · * BikeErg per 1000m</p>`;
   }
+  pageParent = { hash: own ? '#/me' : '#/athlete/' + encodeURIComponent(v.athlete.id), label: own ? 'my page' : v.athlete.name };
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><div class="eyebrow">${fmtDay(w.date)}</div><h1>${esc(v.athlete.name)}</h1></div>
-      <a class="btn ghost sm" href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
+      <a class="btn ghost sm" data-back href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
     <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
       <div class="result-line">${pills}</div>
       <div class="grid">
@@ -947,7 +957,7 @@ async function loadLogbookCard(id, own) {
     off.onclick = async () => {
       off.disabled = true;
       await fetch('/api/concept2/disconnect' + (own ? '' : '?athlete=' + encodeURIComponent(id)), { method: 'POST', credentials: 'same-origin' });
-      history.replaceState(null, '', location.pathname + location.hash);
+      history.replaceState(history.state, '', location.pathname + location.hash);
       loadLogbookCard(id, own);
     };
   }
@@ -1065,6 +1075,12 @@ async function showWeek(id = null, prev = false) {
   const firstWith = v.days.find((d) => d.day >= v.today && d.sessions.length) || v.days.find((d) => d.sessions.length);
   let sel = (v.days.find((d) => d.day === v.today && d.sessions.length) || firstWith || {}).day;
   const tab = {};
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'week' ? restoreUi.ui : null;
+  if (back) {
+    if (v.days.some((d) => d.day === back.sel && d.sessions.length)) sel = back.sel;
+    Object.assign(tab, back.tab || {});
+  }
+  pageUi = () => ({ page: 'week', sel, tab: { ...tab } });
   const stat = (d) => {
     if (!d.sessions.length) return '<span class="muted small">nothing scheduled</span>';
     if (d.day > v.today) return '<span class="muted small">upcoming</span>';
@@ -1498,6 +1514,13 @@ async function showBalance() {
   setNav('balance');
   let squad = 'all', sort = 'endurance';
   const open = new Set();
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'balance' ? restoreUi.ui : null;
+  if (back) {
+    if (['all', 'varsity', 'novice'].includes(back.squad)) squad = back.squad;
+    if (['endurance', 'sprint', 'name'].includes(back.sort)) sort = back.sort;
+    (back.open || []).forEach((id) => open.add(id));
+  }
+  pageUi = () => ({ page: 'balance', squad, sort, open: [...open] });
   let focusId = null;
   const signed = (n) => `${n > 0 ? '+' : ''}${Math.abs(n) < 1 ? n.toFixed(1) : Math.round(n)}%`;
   const months = Math.round(v.windowDays / 30.4), weakMonths = Math.round((v.halfLifeDays * Math.log2(1 / v.weakBelow)) / 30.4);
@@ -1934,8 +1957,85 @@ function wireAthletePasswords() {
 const SKELETON = `<div class="skel" aria-hidden="true"><div class="skel-bar w40"></div><div class="skel-row"><div class="skel-tile"></div><div class="skel-tile"></div><div class="skel-tile"></div></div><div class="skel-card"></div></div><span class="sr-only">Loading…</span>`;
 
 let routed = false, pendingNote = '', redirected = false;
+
+// ---- Back (David, 2026-11-16) --------------------------------------------
+// backstack.mjs keeps the pages opened in this tab. Pages that have on-page choices worth
+// keeping (Week day and tab, Athletes filter, Balance squad and sort) set pageUi to report
+// them, and read restoreUi when Back returns to them.
+let pageUi = null, restoreUi = null, pageParent = null, navReset = false, navReplace = false;
+let backState = (() => { try { return JSON.parse(sessionStorage.getItem(BACK_KEY)); } catch { return null; } })();
+const saveBack = () => { try { sessionStorage.setItem(BACK_KEY, JSON.stringify(backState)); } catch { /* private window: Back still works for this page load */ } };
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+function stepBack() {
+  // Snapshot the page being left, unless this is the first draw after a reload (the page isn't on screen yet).
+  if (routed && SESSION && !app.querySelector('.login')) {
+    let ui = null;
+    try { ui = pageUi ? pageUi() : null; } catch { ui = null; }
+    const h1 = app.querySelector('h1');
+    backState = snapshot(backState, { y: window.scrollY, ui, title: h1 ? h1.textContent.trim().slice(0, 40) : '', open: [...app.querySelectorAll('details')].map((d) => d.open) });
+  }
+  const idx = history.state && Number.isInteger(history.state.wrc) ? history.state.wrc : undefined;
+  const step = navStep(backState, location.hash || '#/', { idx, replace: navReplace, reset: navReset });
+  navReplace = navReset = false;
+  backState = step.state;
+  saveBack();
+  if (idx !== backState.pos) history.replaceState({ ...(history.state || {}), wrc: backState.pos }, '');
+  restoreUi = step.kind === 'restore' || step.kind === 'same' ? step.entry : null;
+  pageUi = null; pageParent = null;
+}
+
+function finishBack() {
+  const r = restoreUi;
+  restoreUi = null;
+  if (r && Array.isArray(r.open)) {
+    const ds = [...app.querySelectorAll('details')];
+    if (ds.length === r.open.length) ds.forEach((d, i) => { d.open = !!r.open[i]; });
+  }
+  if (r && r.y) {
+    // After the final draw, and clamped so a shorter page doesn't jump past its end.
+    requestAnimationFrame(() => window.scrollTo(0, clampScroll(r.y, document.documentElement.scrollHeight - window.innerHeight)));
+  } else if (routed) window.scrollTo(0, 0);
+  drawBack();
+}
+
+function drawBack() {
+  const t = SESSION && !app.querySelector('.login') ? backTarget(backState, location.hash, pageParent) : null;
+  const label = t ? (t.label ? 'Back to ' + t.label : 'Back') : '';
+  const btn = document.getElementById('back'), bar = document.getElementById('backbar');
+  btn.hidden = bar.hidden = !t;
+  if (t) { btn.setAttribute('aria-label', label); btn.title = label; bar.querySelector('button').textContent = '‹ ' + label; }
+}
+
+function goBack() {
+  const t = backTarget(backState, location.hash, pageParent);
+  if (!t) return;
+  if (t.history) history.back();
+  else { navReset = true; location.hash = t.hash; }
+}
+document.getElementById('back').onclick = goBack;
+document.querySelector('#backbar button').onclick = goBack;
+
+document.addEventListener('click', (ev) => {
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  const a = ev.target.closest && ev.target.closest('a[href^="#"]');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  // A page's own "Back to ..." link acts like Back when it points at the page we came from.
+  if (a.hasAttribute('data-back')) {
+    const t = backTarget(backState, location.hash, pageParent);
+    const m = me();
+    const same = (x) => (m && x === '#/me' ? '#/athlete/' + encodeURIComponent(m.id) : x);
+    if (t && t.history && same(t.hash) === same(href)) { ev.preventDefault(); history.back(); }
+    return;
+  }
+  // The menu, the tab bar and the logo start a fresh trail.
+  if (a.closest('#side, #tabbar') || a.classList.contains('brand')) { if (href !== location.hash) navReset = true; }
+});
+
 async function route() {
   tip.hidden = true;
+  stepBack();
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
   // Placeholder cards if a page takes more than a moment to load; the page replaces them.
@@ -1981,13 +2081,14 @@ async function route() {
     if (page === 'me' && m) return await showAthlete(m.id);
     if (['stars', 'insights', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
+    navReplace = true;   // the redirect replaces this entry in Back, too
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
     showError(err);
   } finally {
     clearTimeout(slow);
-    // A new page opens at the top, and keyboard and screen-reader users start at its heading.
-    if (routed) window.scrollTo(0, 0);
+    // A new page opens at the top (Back returns to where you were), and keyboard and screen-reader users start at its heading.
+    finishBack();
     routed = true;
     if (redirected) { redirected = false; return; }
     if (pendingNote && SESSION && app.firstElementChild && !app.querySelector('.login')) { app.insertAdjacentHTML('afterbegin', `<p class="notice" role="status">${esc(pendingNote)}</p>`); }
