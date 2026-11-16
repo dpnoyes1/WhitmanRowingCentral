@@ -183,7 +183,7 @@ var SETTINGS_DEFAULTS = [
   ['target.Aerobic.2000m', '60-70', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
   ['target.Threshold.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
   ['target.Anaerobic.2000m', '95', 'PLACEHOLDER'],
-  ['target.Aerobic.20min', '70-80', "PLACEHOLDER: % of season-best 20' watts"],
+  ['target.Aerobic.20min', '70-80', "% of season-best 20' watts (David, 2026-11-16)"],
   ['target.Threshold.20min', '95', 'PLACEHOLDER'],
   ['target.Anaerobic.20min', '110', 'PLACEHOLDER'],
   ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
