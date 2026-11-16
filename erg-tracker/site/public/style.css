@@ -137,7 +137,7 @@ main:focus { outline: none; }
 .log-top { display: none; }
 /* Back (David, 2026-11-16): an arrow before the logo on phones, a "‹ Back to ..." above the page on desktop. */
 .back-btn { margin-right: -6px; }
-.backbar:not([hidden]) { display: block; margin: 0 0 8px; }
+.backbar:not([hidden]) { display: block; max-width: 1040px; margin: 0 auto; padding: 16px 16px 0; }
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 500px) {
   .shell { display: block; padding: 0; }
