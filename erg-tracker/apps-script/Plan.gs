@@ -110,14 +110,15 @@ function pieceLabel(p) {
 
 /**
  * Target % for a piece: the piece's own % if set, else the zone default from
- * Settings (target.<zone>.<2k|20min>, "55-65" or "80"). Returns
+ * Settings (target.<zone>.<2000m|20min>, "55-65" or "80"). Returns
  * { base, low, high } or null when the piece has no erg target.
  */
 function pieceTargetPct(p, settings) {
   if (p.activity !== 'Erg (RowErg)') return null;
   // Sprint work (the builder's Sprint category = Anaerobic zone) never gets a target (David, 2026-11-16).
   if (p.zone === 'Anaerobic') return null;
-  var base = p.base || settings['target.default_base'] || '2k';
+  // Aerobic zones work like cycling power zones off FTP: % of her 20' watts first, the 2k only when she has no 20' (David, 2026-11-16).
+  var base = p.base || (p.zone === 'Aerobic' ? "20'" : (settings['target.default_base'] || '2k'));
   if (!PLAN_BASES[base]) return null;
   var low = p.lowPct;
   var high = p.highPct;
@@ -243,7 +244,7 @@ function buildWeekPlan(opts) {
         if (!pct) return { label: pieceLabel(p), text: '' };
         var t = pieceTargetFromBases(p, bases, s);
         if (!t) {
-          flags[a['Athlete ID'] + pct.base] = { athleteId: a['Athlete ID'], athlete: a.Name, base: pct.base,
+          flags[a['Athlete ID'] + 'none'] = { athleteId: a['Athlete ID'], athlete: a.Name, base: "2k or 20'",
             message: 'No 2k or 20\' test this season or last; no target shown' };
           return { label: pieceLabel(p), text: '' };
         }

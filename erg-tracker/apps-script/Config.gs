@@ -179,7 +179,7 @@ var SETTINGS_DEFAULTS = [
   ['shift.window_pad_min', '30', 'Classification window = shift +/- this'],
   ['season.winter_start', '', 'YYYY-MM-DD. Used by "Generate practice schedule"'],
   ['season.winter_end', '', 'YYYY-MM-DD'],
-  ['target.default_base', '2k', "Base when a workout piece leaves Base blank: 2k or 20'"],
+  ['target.default_base', '2k', "Base when a non-Aerobic workout piece leaves Base blank: 2k or 20'. Aerobic pieces use the 20' first, then the 2k"],
   ['target.Aerobic.2000m', '60-70', 'PLACEHOLDER: % of season-best 2k watts. A range shows a range'],
   ['target.Threshold.2000m', '80', 'PLACEHOLDER: one number shows a single target'],
   ['target.Anaerobic.2000m', '95', 'PLACEHOLDER'],
