@@ -85,8 +85,11 @@ export async function handle(req, envFn, deps = {}) {
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
     const { todayPlan, insights, workouts, pacing, gmsSummary, starKey, ...rest } = view;
-    return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
-      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, starKey: own || coach ? starKey : null, own, coach, meta });
+    // Her own page title shows the full name (David, 2026-11-16); everything else on it stays short.
+    const full = (data.athletes.find((x) => x.id === m[1]) || {}).name || null;
+    const body = shortenNames({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
+      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, starKey: own || coach ? starKey : null, own, coach, meta }, names);
+    return baseJson({ ...body, fullName: full });
   }
   // One logged workout: her own (or any, for coaches). Splits and targets come with it (David, 2026-10-25).
   const wk = path.match(/^\/api\/workout\/([A-Za-z0-9_-]+)$/);

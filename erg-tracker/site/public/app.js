@@ -591,7 +591,7 @@ async function showAthlete(id) {
   const madeUp = v.madeUp && v.madeUp.length ? `<div class="card"><h2>Made up</h2>
       ${v.madeUp.map((m) => `<p>${fmtDay(m.date)} practice <span class="pill good">Made up ${fmtDate(m.makeupDate)} ✓</span></p>`).join('')}</div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
-    <div class="head"><div><div class="eyebrow">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${v.coach && !v.own ? ' · coach view' : ''}</div><h1>${esc(a.name)}</h1>${s.completionPct === null ? '' : `<p class="muted">Completion ${s.completionPct}% this season</p>`}</div>
+    <div class="head"><div><div class="eyebrow">${esc(a.squad)} · ${esc(a.grade)}${a.active ? '' : ' · inactive'}${v.coach && !v.own ? ' · coach view' : ''}</div><h1>${esc(v.fullName || a.name)}</h1>${s.completionPct === null ? '' : `<p class="muted">Completion ${s.completionPct}% this season</p>`}</div>
       ${v.own ? '<button class="linkish small" id="not-you">Not you? Sign out</button>' : ''}</div>
     ${v.own || v.coach ? todayCard(v.todayPlan, v.own ? null : id) : ''}
     ${v.own || v.coach ? '<div id="logbook-card"></div>' : ''}
@@ -897,7 +897,7 @@ function teamResults(s, today) {
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length && !logged.every((x) => x.result.test) ? ` · ${inRange} all in range` : ''}</summary>
     <div class="seg results-sort" role="group" aria-label="Sort results">
       <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
-    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th class="st-col">Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th class="st-col">Status</th><th class="r">Avg</th>${s.pieces.map((p, i) => `<th class="r" title="${esc(p.label)}">Target${s.pieces.length > 1 ? ' ' + (i + 1) : ''}</th>`).join('')}</tr></thead><tbody>
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
       // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
