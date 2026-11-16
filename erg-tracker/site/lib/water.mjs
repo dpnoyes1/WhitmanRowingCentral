@@ -6,7 +6,7 @@ export const WATER = {
   maxGapS: 8,            // a stroke counts toward moving time when it comes within 8 s of the one before... (David, 2026-11-13: tune on real practices)
   driftSpeed: 1.5,       // ...and the boat is above drifting speed (1.5 m/s is a 5:33/500m split)
   maxSpeed: 8,           // anything faster is a GPS jump or junk
-  durations: [30, 60, 120, 240, 360, 600, 1200, 1800, 3600],   // best split by duration (30 s to 60 min); timestamps are whole seconds, so nothing shorter
+  durations: [30, 60, 120, 240, 300, 360, 600, 1200, 1800, 3600],   // best split by duration (30 s to 60 min; 5 min as in the plan's table); timestamps are whole seconds, so nothing shorter
   minPieceS: 30,         // a lap shorter than this, or under minPieceM, or slower than a drift, is rest, not a piece
   minPieceM: 100,
   matchStartS: 60,       // pieces on two boats match when they start within a minute...
