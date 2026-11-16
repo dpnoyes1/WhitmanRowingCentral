@@ -484,7 +484,8 @@ async function showTeam() {
         const logs = `<div class="card"><h2>Latest logs</h2>${recentList(t)}</div>`;
         // Athletes have no split averages, so Weekly training and Intensity sit side by side and Latest logs spans the row (David, 2026-11-16).
         if (!t.splits) return `<div class="two">${weekly}${intensity}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${logs}`;
-        return `<div class="two">${splitsCard(t.splits)}${weekly}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}<div class="two">${intensity}${logs}</div>`;
+        // Coaches: Intensity is short, so it and Latest logs each take the full width (David, 2026-11-16).
+        return `<div class="two">${splitsCard(t.splits)}${weekly}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${intensity}${logs}`;
       })()}${footer(t.meta)}`;
     app.querySelectorAll('[data-sq]').forEach((b) => { b.onclick = () => { squad = b.dataset.sq; store.set(SQUAD_KEY, squad); render(); }; });
     wireTips(app);
