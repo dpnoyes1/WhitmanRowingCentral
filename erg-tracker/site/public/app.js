@@ -483,7 +483,8 @@ async function showTeam() {
         const intensity = `<div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>`;
         const logs = `<div class="card"><h2>Latest logs</h2>${recentList(t)}</div>`;
         // Athletes have no split averages, so Weekly training and Intensity sit side by side and Latest logs spans the row (David, 2026-11-16).
-        if (!t.splits) return `<div class="two">${weekly}${intensity}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${logs}`;
+        // Beside Weekly training the zones list one per row, so the box fills its height (layout review, 2026-11-16).
+        if (!t.splits) return `<div class="two">${weekly}${intensity.replace('<div class="card">', '<div class="card zone-card">')}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${logs}`;
         // Coaches: Intensity is short, so it and Latest logs each take the full width (David, 2026-11-16).
         return `<div class="two">${splitsCard(t.splits)}${weekly}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${intensity}${logs}`;
       })()}${footer(t.meta)}`;
@@ -496,13 +497,13 @@ async function showTeam() {
 
 /** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
 function splitsCard(s) {
+  // Split sits under the time or meters, so the table fits a phone and the half-width box without side scrolling (David, 2026-11-16).
+  const two = (main, split) => (main === null ? '–' : `${main}${split === null ? '' : `<div class="muted small">${fmtTime(split)}</div>`}`);
   return `<div class="card"><h2>Average season-best results</h2>
-    <div class="table-wrap"><table><tr><th>Group</th><th class="r">2k Time</th><th class="r">2k Split</th><th class="r">20' Meters</th><th class="r">20' Split</th><th class="r">Average Stars</th></tr>
+    <div class="table-wrap"><table class="avg-results"><tr><th>Group</th><th class="r">2k<div class="small">time / split</div></th><th class="r">20'<div class="small">meters / split</div></th><th class="r">Avg stars</th></tr>
     ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td>
-      <td class="r">${g.twoK.avgTime === null ? '–' : fmtTime(g.twoK.avgTime)}</td>
-      <td class="r">${g.twoK.avgSplit === null ? '–' : fmtTime(g.twoK.avgSplit)}</td>
-      <td class="r">${g.twenty.avgMeters === null ? '–' : fmtNum(g.twenty.avgMeters)}</td>
-      <td class="r">${g.twenty.avgSplit === null ? '–' : fmtTime(g.twenty.avgSplit)}</td>
+      <td class="r">${two(g.twoK.avgTime === null ? null : fmtTime(g.twoK.avgTime), g.twoK.avgSplit)}</td>
+      <td class="r">${two(g.twenty.avgMeters === null ? null : fmtNum(g.twenty.avgMeters), g.twenty.avgSplit)}</td>
       <td class="r">${g.avgStars === null ? '–' : g.avgStars.toFixed(1)}</td></tr>`).join('')}
     </table></div></div>`;
 }
@@ -535,10 +536,11 @@ function recentList(t) {
   const names = Object.fromEntries(t.athletes.map((a) => [a.id, a.name]));
   if (!t.recent.length) return '<p class="empty">Nothing logged yet.</p>';
   // Activity sits under the name so the table fits a phone (David, 2026-10-28).
-  return `<div class="table-wrap"><table>${t.recent.map((r) => `<tr>
-    <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
-    <div class="muted small">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}${r.drag ? ' · drag ' + r.drag : ''}</div></td>
-    <td class="r">${fmtMin(r.minutes)}</td></tr>`).join('')}</table></div>`;
+  // Full width on desktop: two columns of logs, so date, name and time stay close together (layout review, 2026-11-16).
+  return `<div class="recent-list">${t.recent.map((r) => `<div class="recent-row">
+    <span class="muted">${fmtDate(r.date)}</span><span><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
+    <span class="muted small" style="display:block">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}${r.drag ? ' · drag ' + r.drag : ''}</span></span>
+    <span class="r num">${fmtMin(r.minutes)}</span></div>`).join('')}</div>`;
 }
 
 async function showAthletes() {
@@ -660,11 +662,17 @@ function workoutList(rows, yearStart) {
   if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
   // Activity, zone and drag sit under the type so the table fits a phone (David, 2026-10-28).
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Workout</th><th class="r">Min</th><th class="r">Meters</th></tr>
-    ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
+    ${shown.map((r) => `<tr><td class="nowrap"><a href="#/workout/${encodeURIComponent(r.id)}">${shortDay(r.date)}</a></td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}
         <div class="muted small">${[r.activity, r.zone, r.drag && `drag ${r.drag}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
       <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td></tr>`).join('')}
   </table></div>`;
+}
+
+/** Short date for list rows: "Oct 23", with "'25" added for another year, so it stays on one line on a phone. */
+function shortDay(d) {
+  const sameYear = String(d).slice(0, 4) === new Date().toISOString().slice(0, 4);
+  return fmtDate(d, { month: 'short', day: 'numeric' }) + (sameYear ? '' : ` '${String(d).slice(2, 4)}`);
 }
 
 function wireWorkouts(rows, yearStart) {
@@ -889,11 +897,13 @@ function teamResults(s, today) {
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length && !logged.every((x) => x.result.test) ? ` · ${inRange} all in range` : ''}</summary>
     <div class="seg results-sort" role="group" aria-label="Sort results">
       <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
-    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th>Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th class="st-col">Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
-      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
-      <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
+      // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
+      const st = x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
+      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
+      <td class="st-col">${st}</td>
       <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
       ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(shortPace(x.targets[i].replace(/\s*\([^)]*\)$/, '')))}</div>` : ''}</td>`).join('')}</tr>`;
     }).join('')}
@@ -1136,10 +1146,11 @@ async function showBoards() {
     const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
     const yr = Number(String(v.yearStart).slice(0, 4));
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
-      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div>
-      <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
-      <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
+      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div></div>
+      <div class="board-filters">
+        <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
+        <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
+          ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
         <tr><th class="r">#</th><th>Athlete</th><th class="r">${isMeters ? 'Distance' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th>${gmsCol ? '<th class="r gms">GMS %</th>' : ''}<th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r rk">${i + 1}</td>
@@ -1187,11 +1198,11 @@ async function showStars() {
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
         <div class="gms-keys">${[5, 4, 3, 2, 1].map((n) => star(n, esc(v.starLabels[n] || ''))).join('')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
-      <div class="card"><div class="gms-all"><button type="button" class="btn ghost sm" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></div><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r">Details</th></tr>
+      <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r"><button type="button" class="linkish small" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></th></tr>
         ${tested.map((r, i) => `<tr class="gms-row"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
           <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
           <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
-          <td class="muted">${nextTxt(r)}</td>
+          <td class="muted next-star">${nextTxt(r)}</td>
           <td class="r"><button type="button" class="gms-toggle" data-r="${esc(r.id)}" aria-expanded="${open.has(r.id)}" aria-label="Show results for ${esc(r.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></td></tr>${open.has(r.id) ? `<tr class="gms-detail"><td></td><td colspan="7">${r.used.map((u) => `<div class="gms-used"><b>${TEST_LABELS[u.test]}</b> ${fmtResult(u)} <span class="muted">${split(u)} /500m · ${fmtDate(u.date, { month: 'short', day: 'numeric', year: 'numeric' })} · ${pct(u.gmsPct)} · ${starText(u.stars)}</span></div>`).join('')}</td></tr>` : ''}`).join('')}
       </table></div></div>
       ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
@@ -1223,7 +1234,7 @@ async function showInsights() {
   const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
     : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
       : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
-  const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${jump(w)}</td>`;
+  const loadCell = (w, c = '') => `<td class="r${c}">${fmtMin(w.total)}</td><td class="r${c}">${jump(w)}</td>`;
   let which = 'season';
   const draw = () => {
   const over = v.rowers.filter((r) => r.oyo.pct !== null && r.oyo.pct >= v.overreachPct).sort((x, y) => y.oyo.pct - x.oyo.pct);
@@ -1236,26 +1247,28 @@ async function showInsights() {
   const lb = v.logbook && v.logbook.active ? v.logbook : null;
   const lbTile = lb ? tile('Missing Logbook account', lb.missing ? lb.missing.length : '–', lb.missing ? 'not connected to Concept2' : 'could not check') : '';
   const alerts = `<div class="grid">${tile('Overreaching on OYO', over.length, `${v.overreachPct}% or more of Standard`)}${tile('Attendance under 80%', low.length, which === 'recent' ? `last ${v.attendanceRecent} practices` : 'this season')}${tile("Missing a test", noTest.length, "2k or 20' this school year")}${lbTile}</div>
-    <div class="cols">
-      <div class="card"><h2>Overreaching on OYO</h2><p class="muted small">OYO at ${v.overreachPct}%+ of Standard, this week.</p>${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div>
+    <!-- Layout review (David, 2026-11-16): the short lists side by side, sized to their content; the long one full width below. -->
+    <div class="cols ins-cols">
       <div class="card"><div class="ins-head"><h2>Attendance under 80%</h2><div class="seg" role="group" aria-label="Attendance period"><button type="button" data-att="season" aria-pressed="${which === 'season'}">Season</button><button type="button" data-att="recent" aria-pressed="${which === 'recent'}">Past 2 weeks</button></div></div>
         <p class="muted small">${which === 'recent' ? `Last ${v.attendanceRecent} practices.` : 'This school year.'} Make-ups count.</p>${low.length ? low.map((r) => rowLink(r, `<b class="num">${pc(r)}%</b>`)).join('') : '<p class="muted">Nobody.</p>'}</div>
       <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or 20' this school year${!run.has2k ? " (no team 2k yet)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
       ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Logbook.</p>${!lb.missing ? '<p class="muted">Could not load list. Reload.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
-    </div>`;
+    </div>
+      <div class="card ins-wide"><h2>Overreaching on OYO</h2><p class="muted small">OYO at ${v.overreachPct}%+ of Standard, this week.</p><div class="ins-list">${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div></div>
+`;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
     <p class="muted small">${missedFlagged ? `<b>${missedFlagged} missing ${v.missedFlagAt}+ practices</b>` : 'No one flagged.'}
       Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
-      <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th>
-        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
-      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+      <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r c-last" colspan="2">Last week</th>
+        <th class="r c-split">Steady split</th><th class="r c-est">Est. 2k</th><th class="r c-month">${fmtDate(v.today, { month: 'long' })}</th><th class="r c-streak">Streak</th></tr>
+      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small sq">${esc(r.squad)}</span></td>
         <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td>
-        ${loadCell(r.thisWeek)}${loadCell(r.lastWeek)}
-        <td class="r">${trend(r.splitTrend)}</td><td class="r">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
-        <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
-        <td class="r">${r.month.streak}</td></tr>`).join('')}
+        ${loadCell(r.thisWeek)}${loadCell(r.lastWeek, ' c-last')}
+        <td class="r c-split">${trend(r.splitTrend)}</td><td class="r c-est">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
+        <td class="r c-month">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
+        <td class="r c-streak">${r.month.streak}</td></tr>`).join('')}
     </table></div>
     <p class="muted small">Missed: last ${v.missedWindowDays} days, open vs overdue; ${v.missedFlagAt}+ flagged. Steady split: recent Aerobic vs prior (▲ faster). Est. 2k: from newer 20'.</p></div>
     ${footer(v.meta)}`;
@@ -1564,7 +1577,7 @@ async function showBalance() {
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Balance</h1></div>
       <div class="bal-ctl">${seg('squad', squad, [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}${seg('sort', sort, [['endurance', 'Endurance'], ['sprint', 'Sprint'], ['name', 'Name']])}</div></div>
       <div class="tiles">${tile('All three tests', `${v.team.allThree}/${v.team.rowers}`, `last ${months} months`)}${tile("Team 20'", chg('20min'), chgSub('20min'))}${tile('Team 2k', chg('2000m'), chgSub('2000m'))}${tile('Team 100m', chg('100m'), chgSub('100m'))}</div>
-      <div class="card bal-list"><div class="bal-row bal-headrow"><span>Rower</span><span>Watts <span class="muted small">100m / 2k / 20'</span></span><span>Sprint lean</span><span>Endurance lean</span><span></span></div>
+      <div class="card bal-list${shown.some((r) => r.sprint) ? '' : ' no-sprint'}"><div class="bal-row bal-headrow"><span>Rower</span><span>Watts <span class="muted small">100m / 2k / 20'</span></span><span>Sprint lean</span><span>Endurance lean</span><span></span></div>
         ${shown.map((r) => `<div class="bal-row"><div class="bal-who"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a>
             <div class="sub muted small">${esc(r.squad)}${[r.sprint && r.sprint.tag, r.endurance && r.endurance.tag].filter(Boolean).map((t) => ` <span class="pill a">${t}</span>`).join('')}</div></div>
           <span class="bal-watts num">${wattsOf(r, '100m')} / ${wattsOf(r, '2000m')} / ${wattsOf(r, '20min')}</span>
@@ -1637,7 +1650,7 @@ async function showOyo() {
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
-          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
+          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}</div>${which === 'now' && r.streak > 1 ? `<div class="sub">${r.streak} wk streak</div>` : ''}</div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
