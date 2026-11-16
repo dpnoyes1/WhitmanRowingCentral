@@ -17,6 +17,7 @@ import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
+import * as BK from '../public/backstack.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleCoaches } from '../functions/coaches.mjs';
 import { handleAthletePasswords } from '../functions/athlete-passwords.mjs';
@@ -35,6 +36,7 @@ import { handleWebhookRequest } from '../functions/concept2-webhook.mjs';
 import photoTests from './photo.mjs';
 import askTests from './ask.mjs';
 import * as PR from '../public/practice.mjs';
+import { displayNames, shortenNames } from '../lib/names.mjs';
 
 const require = createRequire(import.meta.url);
 const { dummyFeed, dummyBirthday } = require('../scripts/dummy-feed.js');
@@ -54,6 +56,46 @@ test('GMS page: team test run, life time list, per-rower test flags', () => {
   assert.deepEqual(teamTestsRun([{ tests: { has2k: false, has20: true } }, { tests: { has2k: false, has20: true } }]), { has2k: false, has20: true });
   assert.deepEqual(teamTestsRun([{ tests: { has2k: true, has20: false } }, { tests: { has2k: false, has20: false } }, { tests: { has2k: false, has20: false } }]), { has2k: false, has20: false });
   assert.deepEqual(teamTestsRun([]), { has2k: false, has20: false });
+});
+
+test('Back: page trail, redirects, menu resets, restore and parent pages', () => {
+  let r = BK.navStep(null, '#/athletes');
+  assert.equal(r.kind, 'reset'); assert.deepEqual(r.state, { stack: [{ hash: '#/athletes' }], pos: 0 });
+  assert.equal(BK.backTarget(r.state, '#/athletes', null), null, 'top-level page with no history: no Back');
+  let st = BK.snapshot(r.state, { y: 640, ui: { page: 'athletes', asq: 'novice', q: 'zz' }, title: 'Athletes' });
+  r = BK.navStep(st, '#/athlete/A901');
+  assert.equal(r.kind, 'new'); assert.equal(r.state.pos, 1);
+  assert.deepEqual(BK.backTarget(r.state, '#/athlete/A901', null), { history: true, hash: '#/athletes', label: 'Athletes' });
+  st = BK.snapshot(r.state, { y: 300, title: 'Test Rower' });
+  r = BK.navStep(st, '#/workout/E-1');
+  assert.equal(BK.backTarget(r.state, '#/workout/E-1', null).label, 'Test Rower', 'label is the page left behind');
+  // Browser Back (or the button) lands on entry 1 with its scroll and choices.
+  r = BK.navStep(r.state, '#/athlete/A901', { idx: 1 });
+  assert.equal(r.kind, 'restore'); assert.equal(r.entry.y, 300); assert.equal(r.state.pos, 1);
+  r = BK.navStep(r.state, '#/athletes', { idx: 0 });
+  assert.equal(r.kind, 'restore'); assert.equal(r.entry.ui.asq, 'novice'); assert.equal(r.entry.y, 640);
+  // Forward is still known.
+  assert.equal(BK.navStep(r.state, '#/athlete/A901', { idx: 1 }).kind, 'restore');
+  // A new page after going back drops the forward entries.
+  const fresh = BK.navStep(r.state, '#/week');
+  assert.deepEqual(fresh.state.stack.map((e) => e.hash), ['#/athletes', '#/week']);
+  // A redraw of the same entry (session check) keeps scroll; a redirect replaces the top.
+  assert.equal(BK.navStep(fresh.state, '#/week', { idx: 1 }).kind, 'same');
+  const red = BK.navStep(fresh.state, '#/me', { replace: true });
+  assert.deepEqual(red.state.stack.map((e) => e.hash), ['#/athletes', '#/me']);
+  // A menu or tab-bar tap starts over; an unknown history entry starts over too.
+  assert.deepEqual(BK.navStep(fresh.state, '#/boards', { reset: true }).state, { stack: [{ hash: '#/boards' }], pos: 0 });
+  assert.equal(BK.navStep(fresh.state, '#/team', { idx: 7 }).kind, 'reset');
+  // No history (deep link, relaunched app): an athlete goes up to Athletes, a workout to its athlete. Never out of the app.
+  assert.deepEqual(BK.backTarget({ stack: [{ hash: '#/athlete/A901' }], pos: 0 }, '#/athlete/A901', null), { history: false, hash: '#/athletes', label: 'Athletes' });
+  assert.deepEqual(BK.backTarget({ stack: [{ hash: '#/workout/E-1' }], pos: 0 }, '#/workout/E-1', { hash: '#/athlete/A901', label: 'Test Rower' }), { history: false, hash: '#/athlete/A901', label: 'Test Rower' });
+  assert.equal(BK.backTarget({ stack: [], pos: -1 }, '#/team', null), null);
+  // Bad storage is ignored; the trail is capped.
+  assert.equal(BK.navStep({ stack: 'x', pos: 9 }, '#/team').kind, 'reset');
+  let big = null;
+  for (let i = 0; i < BK.MAX + 10; i++) big = BK.navStep(big && big.state, '#/athlete/A' + i).state ? BK.navStep(big && big.state, '#/athlete/A' + i) : big;
+  assert.equal(big.state.stack.length, BK.MAX); assert.equal(big.state.pos, BK.MAX - 1);
+  assert.equal(BK.clampScroll(900, 500), 500); assert.equal(BK.clampScroll(-3, 500), 0); assert.equal(BK.clampScroll(40, -1), 0);
 });
 
 test('browser scripts parse as modules', async () => {
@@ -300,7 +342,7 @@ test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => 
       const best = /min|30r20/.test(b.test) ? Math.max(...all) : Math.min(...all);
       assert.strictEqual(b.allTime.result, best);
     });
-    const { gms, gmsSummary, pacing, ...rest } = v;
+    const { gms, gmsSummary, pacing, starKey, ...rest } = v;
     assert.ok(!/gms|"weight(lb|s)?"|weight lb|birthday|stars|nextStar/i.test(JSON.stringify(rest)), a.name);
     assert.ok(!/"weight(lb|s)?"|weight lb|birthday/i.test(JSON.stringify(gms)), a.name);
   });
@@ -464,13 +506,18 @@ test('GMS summary: strongest and weakest test, none with fewer than two', () => 
   assert.match(S.gmsSummary([{ test: '2000m', gmsPct: 99.5 }, { test: '20min', gmsPct: 99.1 }]), /close to the same level/);
 });
 
+// A session's who and kind, without the password stamp and issue time (review 2026-11-16).
+const core = (t) => (t ? (({ cred, iat, ...r }) => r)(t) : t);
+// An empty password store (coach or athlete) for sign-in tests.
+const pwStore = () => { const m = new Map(); return { m, get: async (k) => m.get(k) || null, set: async (k, v) => { m.set(k, JSON.parse(JSON.stringify(v))); }, keys: async () => [...m.keys()], remove: async (k) => { m.delete(k); } }; };
+
 test('auth: tokens, cookies, password', () => {
   const env = (k) => ({ FEED_KEY: 'fake-key' })[k];
   const secret = A.sessionSecret(env);
   const tok = A.makeToken(secret, 'team', 0, 'Pat Example');
-  assert.deepStrictEqual(A.readToken(secret, tok, 1000), { kind: 'team', name: 'Pat Example' });
+  assert.deepStrictEqual(core(A.readToken(secret, tok, 1000)), { kind: 'team', name: 'Pat Example' });
   assert.throws(() => A.makeToken(secret, 'team', 0), 'a coach token needs a name');
-  assert.deepStrictEqual(A.readToken(secret, A.makeToken(secret, 'A901', 0), 1000), { kind: 'athlete', id: 'A901' });
+  assert.deepStrictEqual(core(A.readToken(secret, A.makeToken(secret, 'A901', 0), 1000)), { kind: 'athlete', id: 'A901' });
   const forged = A.makeToken(secret, 'A901', 0).replace('ath:A901', 'ath:A902');
   assert.strictEqual(A.readToken(secret, forged, 1000), null, 'cannot swap the athlete');
   assert.ok(A.tokenValid(secret, tok, 1000));
@@ -730,16 +777,17 @@ test('login: wrong password 401, right one sets the cookie, logout clears it', a
 test('login: athletes sign in with name and birthday, typed any common way', async () => {
   clearFeedCache();
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
-  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0, coachStore: null };
+  // Since 2026-11-16 a birthday only ever leads to choosing a password, and sign-in needs the password stores.
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(feed)), failDelayMs: 0, coachStore: pwStore(), athleteStore: pwStore() };
   const a = feed.athletes.find((x) => x.active);
   const day = dummyBirthday(a.id);
   const [y, m, d] = day.split('-');
   const post = (body) => new Request('https://x/api/login', { method: 'POST', body: JSON.stringify(body) });
-  const who = (res) => A.readToken(A.sessionSecret(env), res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1]);
+  const who = (res) => core(A.readToken(A.sessionSecret(env), res.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1]));
   for (const pw of [`${m}/${d}/${y}`, `${Number(m)}/${Number(d)}/${y}`, `${m}${d}${y}`, `${m}${d}${y.slice(2)}`, day]) {
     const res = await handleLogin(post({ name: '  ' + a.name.toUpperCase() + ' ', password: pw }), env, deps);
     assert.strictEqual(res.status, 200, pw);
-    assert.deepStrictEqual(who(res), { kind: 'athlete', id: a.id });
+    assert.deepStrictEqual(await res.json(), { mustChange: true }, 'her birthday matched; next she picks a password');
   }
   const wrongDay = `${m}/${String(Number(d) % 28 + 1).padStart(2, '0')}/${y}`;
   for (const body of [{ name: a.name, password: wrongDay }, { name: 'Nobody Here', password: day }, { name: a.name, password: 'fake-team-p' }, { password: day }]) {
@@ -761,8 +809,8 @@ test('login: athletes sign in with name and birthday, typed any common way', asy
   const two = { ...feed, logins: [...feed.logins, { id: a.id, code: sign(a.id, '2010-01-01') }] };
   const tdeps = { ...deps, fetchImpl: async () => new Response(JSON.stringify(two)) };
   clearFeedCache();
-  assert.strictEqual(who(await handleLogin(post({ name: a.name, password: '1/1/2010' }), env, tdeps)).id, a.id);
-  assert.strictEqual(who(await handleLogin(post({ name: a.name, password: day }), env, tdeps)).id, a.id);
+  assert.strictEqual((await (await handleLogin(post({ name: a.name, password: '1/1/2010' }), env, tdeps)).json()).mustChange, true);
+  assert.strictEqual((await (await handleLogin(post({ name: a.name, password: day }), env, tdeps)).json()).mustChange, true);
   // No shared password: a nameless sign-in is refused.
   assert.strictEqual((await handleLogin(post({ password: 'fake-team-pw' }), env, deps)).status, 401);
   clearFeedCache();
@@ -798,8 +846,13 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   assert.strictEqual((await change({ current: '2/4/1980', next: 'a long enough one' }, patCookie)).status, 403, 'wrong current password');
   assert.strictEqual((await change({ current: '2/3/1980', next: '' }, patCookie)).status, 400);
   assert.strictEqual(mem.size, 0, 'nothing saved yet');
-  // First change: the current password is her birthday.
-  assert.strictEqual((await change({ current: '2/3/1980', next: 'a long enough one' }, patCookie)).status, 200);
+  // First change: the current password is her birthday. Her other sessions end; this one gets a fresh cookie (review 2026-11-16).
+  const changed = await change({ current: '2/3/1980', next: 'a long enough one' }, patCookie);
+  assert.strictEqual(changed.status, 200);
+  const patCookie2 = as(cookieOf(changed));
+  assert.ok(cookieOf(changed), 'the changing session is renewed');
+  assert.strictEqual((await handle(new Request('https://x/api/session', { headers: { cookie: patCookie } }), env2, deps)).status, 401, 'the old session ended');
+  assert.strictEqual((await handle(new Request('https://x/api/session', { headers: { cookie: patCookie2 } }), env2, deps)).status, 200);
   const rec = mem.get('pat example');
   assert.ok(rec && rec.hash && rec.salt && !JSON.stringify(rec).includes('a long enough one'), 'stored as a salted hash');
   assert.strictEqual(await checkCoachPassword(coachStore, 'pat example', 'a long enough one'), true);
@@ -810,8 +863,8 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   sess = await (await handle(new Request('https://x/api/session', { headers: { cookie: as(cookieOf(res)) } }), env2, deps)).json();
   assert.strictEqual(sess.coachName, 'Pat Example');
   // A second change needs the personal password, not the birthday.
-  assert.strictEqual((await change({ current: '2/3/1980', next: 'another long one!' }, patCookie)).status, 403);
-  assert.strictEqual((await change({ current: 'a long enough one', next: 'another long one!' }, patCookie)).status, 200);
+  assert.strictEqual((await change({ current: '2/3/1980', next: 'another long one!' }, patCookie2)).status, 403);
+  assert.strictEqual((await change({ current: 'a long enough one', next: 'another long one!' }, patCookie2)).status, 200);
   assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: 'another long one!' }), env2, deps)).status, 200);
   // A store that fails closes the door rather than falling back to the birthday.
   const broken = { ...deps, coachStore: { get: async () => { throw new Error('blobs down'); }, set: async () => {} } };
@@ -819,7 +872,9 @@ test('coach password: set from the menu, replaces the birthday, hashed, coaches 
   // Athletes never touch the coach store.
   const a = feed.athletes.find((x) => x.active);
   const [y, m, d] = dummyBirthday(a.id).split('-');
-  assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, broken)).status, 200);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: `${m}/${d}/${y}` }), env2, { ...broken, athleteStore: pwStore() })).status, 200);
+  // No coach store at all: a temporary error, never a birthday sign-in past a saved password (review 2026-11-16).
+  assert.strictEqual((await handleLogin(post('/api/login', { name: 'Pat Example', password: '2/3/1980' }), env2, { ...deps, coachStore: null })).status, 503);
   clearFeedCache();
 });
 
@@ -830,7 +885,7 @@ test('athlete password: birthday once, then she must choose 6+ characters; a coa
   const mem = new Map();
   const athleteStore = { get: async (k) => mem.get(k) || null, set: async (k, v) => { mem.set(k, JSON.parse(JSON.stringify(v))); }, keys: async () => [...mem.keys()], remove: async (k) => { mem.delete(k); } };
   const withCoach = { ...feed, logins: [...feed.logins, { coach: true, code: A.loginCode(env2, 'coach:pat example', '1980-02-03') }] };
-  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore: null, athleteStore, shared: null, today: TODAY };
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(withCoach)), failDelayMs: 0, coachStore: pwStore(), athleteStore, shared: null, today: TODAY };
   const post = (path, body, cookie) => new Request('https://x' + path, { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}) }, body: JSON.stringify(body) });
   const get = (path, cookie) => new Request('https://x' + path, { headers: cookie ? { cookie } : {} });
   const login = (body) => handleLogin(post('/api/login', body), env2, deps);
@@ -859,18 +914,21 @@ test('athlete password: birthday once, then she must choose 6+ characters; a coa
   assert.strictEqual(mem.size, 0);
   res = await login({ name: a.name, password: bday, newPassword: ' rowing2026 ' });
   assert.strictEqual(res.status, 200);
-  assert.deepStrictEqual(A.readToken(A.sessionSecret(env2), tokenOf(res)), { kind: 'athlete', id: a.id });
+  assert.deepStrictEqual(core(A.readToken(A.sessionSecret(env2), tokenOf(res))), { kind: 'athlete', id: a.id });
   assert.ok(!JSON.stringify([...mem.values()]).includes('rowing2026'), 'only a hash is stored');
   // After that the birthday is refused and the password works (spaces at the ends do not matter).
   assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
   res = await login({ name: a.name.toUpperCase(), password: 'rowing2026' });
   assert.strictEqual(res.status, 200);
   assert.ok(tokenOf(res), 'signed in, no further change asked');
+  const athTok = A.COOKIE + '=' + tokenOf(res);
+  const sessionOk = async (cookie) => (await handle(new Request('https://x/api/session', { headers: { cookie } }), env2, deps)).status;
+  assert.strictEqual(await sessionOk(athTok), 200);
+  assert.strictEqual(await sessionOk(A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), a.id)), 401, 'a birthday-era session ends once she has a password');
   assert.strictEqual((await res.json()).mustChange, undefined);
   assert.strictEqual((await login({ name: a.name, password: 'rowing2027' })).status, 401);
   // Coach reset: coaches only, athletes on the roster only, password shown once.
   const coachTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), 'team', Date.now(), 'Pat Example');
-  const athTok = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env2), a.id);
   const reset = (id, cookie, extra = {}) => handleAthletePasswords(new Request('https://x/api/athlete-passwords', { method: 'POST', headers: { 'content-type': 'application/json', ...(cookie ? { cookie } : {}), ...extra }, body: JSON.stringify({ reset: id }) }), env2, deps);
   assert.strictEqual((await reset(a.id, '')).status, 401);
   assert.strictEqual((await reset(a.id, athTok)).status, 403, 'athletes cannot reset');
@@ -885,6 +943,7 @@ test('athlete password: birthday once, then she must choose 6+ characters; a coa
   assert.match(out.password, /^[a-z2-9]{8}$/);
   assert.strictEqual((await handleAthletePasswords(get('/api/athlete-passwords', coachTok), env2, deps).then((r) => r.json())).athletes.find((x) => x.id === a.id).status, 'temporary');
   assert.ok(!JSON.stringify([...mem.values()]).includes(out.password), 'the temporary password is not stored in the clear');
+  assert.strictEqual(await sessionOk(athTok), 401, 'a reset signs her out everywhere (review 2026-11-16)');
   // Her old password and her birthday stop working; the temporary one works once, then she must choose again.
   assert.strictEqual((await login({ name: a.name, password: 'rowing2026' })).status, 401);
   assert.strictEqual((await login({ name: a.name, password: bday })).status, 401);
@@ -896,13 +955,56 @@ test('athlete password: birthday once, then she must choose 6+ characters; a coa
   assert.ok(tokenOf(res));
   assert.strictEqual((await login({ name: a.name, password: out.password })).status, 401, 'temporary password is used up');
   assert.strictEqual((await login({ name: a.name, password: 'newone99' })).status, 200);
-  // Coaches still sign in as before; a store that cannot save never traps an athlete behind a password she cannot set.
+  // Coaches still sign in as before. With no password store, sign-in is a temporary error, never a birthday
+  // sign-in that skips her password (review 2026-11-16).
   assert.strictEqual((await login({ name: 'Pat Example', password: '2/3/1980' })).status, 200);
   const nodeps = { ...deps, athleteStore: null };
   const b = feed.athletes.find((x) => x.active && x.id !== a.id);
   const [by, bm, bd] = dummyBirthday(b.id).split('-');
   res = await handleLogin(post('/api/login', { name: b.name, password: `${bm}/${bd}/${by}` }), env2, nodeps);
-  assert.ok(tokenOf(res), 'no store: birthday signs in as before');
+  assert.strictEqual(res.status, 503);
+  assert.strictEqual(tokenOf(res), undefined);
+  assert.strictEqual((await handleLogin(post('/api/login', { name: a.name, password: bday }), env2, nodeps)).status, 503, 'not even for one who has a password');
+  clearFeedCache();
+});
+
+test('sign-in, review 2026-11-16: two athletes with one name each keep their own password; revoked and old sessions', async () => {
+  const env2 = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const [x, y] = feed.athletes.filter((a) => a.active && dummyBirthday(a.id) !== undefined).slice(0, 2);
+  assert.notStrictEqual(dummyBirthday(x.id), dummyBirthday(y.id));
+  const twin = { ...feed, athletes: feed.athletes.map((a) => (a.id === y.id ? { ...a, name: x.name } : a)) };
+  const athleteStore = pwStore();
+  const deps = { fetchImpl: async () => new Response(JSON.stringify(twin)), failDelayMs: 0, coachStore: pwStore(), athleteStore, shared: null, today: TODAY };
+  const login = (body) => handleLogin(new Request('https://x/api/login', { method: 'POST', body: JSON.stringify(body) }), env2, deps);
+  const idOf = (res) => core(A.readToken(A.sessionSecret(env2), (res.headers.get('set-cookie') || '').match(new RegExp(A.COOKIE + '=([^;]+)'))?.[1]))?.id;
+  const us = (id) => { const [yy, mm, dd] = dummyBirthday(id).split('-'); return `${mm}/${dd}/${yy}`; };
+  clearFeedCache();
+  // The first one on the Roster sets a password.
+  let res = await login({ name: x.name, password: us(x.id), newPassword: 'first-one' });
+  assert.strictEqual(idOf(res), x.id);
+  assert.ok(athleteStore.m.has(x.id) && !athleteStore.m.has(y.id));
+  // The second one, same name, signs in with her own birthday: her password is saved under her ID, not the first one's.
+  res = await login({ name: x.name, password: us(y.id), newPassword: 'second-one' });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(idOf(res), y.id, 'session for the athlete whose birthday it is');
+  assert.ok(athleteStore.m.has(y.id), 'saved under her own ID');
+  assert.strictEqual(idOf(await login({ name: x.name, password: 'first-one' })), x.id);
+  assert.strictEqual(idOf(await login({ name: x.name, password: 'second-one' })), y.id);
+  // Neither birthday works any more once each has a password.
+  assert.strictEqual((await login({ name: x.name, password: us(x.id) })).status, 401);
+  assert.strictEqual((await login({ name: x.name, password: us(y.id) })).status, 401);
+  // A token made before stamps (legacy) stays good until her password is saved again.
+  const legacy = (id, iatMs) => { const exp = Math.floor(iatMs / 1000) + A.SESSION_DAYS * 86400; const p = 'ath:' + id + '.' + exp; return { kind: 'athlete', id, cred: null, iat: exp - A.SESSION_DAYS * 86400, p }; };
+  const rec = athleteStore.m.get(x.id);
+  assert.ok(A.credStillGood(legacy(x.id, Date.parse(rec.updatedAt) + 5000), rec), 'signed in after her password was saved');
+  assert.ok(!A.credStillGood(legacy(x.id, Date.parse(rec.updatedAt) - 60000), rec), 'signed in before a later save or reset');
+  assert.ok(A.credStillGood(legacy(x.id, 0), null), 'no password at all: birthday-era token stays');
+  // A stamped session ends on any new save, and a removed record ends it too.
+  const tok = (await login({ name: x.name, password: 'first-one' })).headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  const who = A.readToken(A.sessionSecret(env2), tok);
+  assert.ok(who.cred && A.credStillGood(who, rec));
+  assert.ok(!A.credStillGood(who, null), 'record removed');
+  assert.ok(!A.credStillGood(who, { ...rec, salt: 'other' }), 'password saved again');
   clearFeedCache();
 });
 
@@ -953,13 +1055,18 @@ test('coach password: spaces at the ends never lock a coach out; any coach can r
   list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
   assert.deepStrictEqual(list.coaches, []);
   // A coach can reset her own too, and it is marked as hers.
-  await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars123' }, sam), env2, deps);
-  list = await (await handlePassword(get('/api/coach-passwords', sam), env2, deps)).json();
+  const samNew = await handlePassword(post('/api/password', { current: '12/31/1975', next: 'oars123' }, sam), env2, deps);
+  const sam2 = A.COOKIE + '=' + samNew.headers.get('set-cookie').match(new RegExp(A.COOKIE + '=([^;]+)'))[1];
+  assert.strictEqual((await handlePassword(get('/api/coach-passwords', sam), env2, deps)).status, 401, 'her older session ended');
+  list = await (await handlePassword(get('/api/coach-passwords', sam2), env2, deps)).json();
   assert.deepStrictEqual(list.coaches.map((c) => [c.name, c.you]), [['Sam Tester', true]]);
-  // No store (local dev): an empty list, and a reset says it cannot.
+  // Pat signs in with her birthday again after the reset (no password of her own).
+  const pat2 = await cookieOf('Pat Example', '2/3/1980');
+  // No store (local dev): an empty list, and a reset says it cannot. A session that signed in with a password cannot be checked, so it is refused.
   const none = { ...deps, coachStore: null };
-  assert.deepStrictEqual((await (await handlePassword(get('/api/coach-passwords', sam), env2, none)).json()).coaches, []);
-  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'sam tester' }, sam), env2, none)).status, 503);
+  assert.strictEqual((await handlePassword(get('/api/coach-passwords', sam2), env2, none)).status, 401);
+  assert.deepStrictEqual((await (await handlePassword(get('/api/coach-passwords', pat2), env2, none)).json()).coaches, []);
+  assert.strictEqual((await handlePassword(post('/api/coach-passwords', { reset: 'sam tester' }, pat2), env2, none)).status, 503);
   clearFeedCache();
 });
 
@@ -1862,11 +1969,12 @@ test('workout photo: any signed-in person gets the kept copy, only when the work
   assert.strictEqual(res.headers.get('content-type'), 'image/jpeg');
   assert.strictEqual(Buffer.from(await res.arrayBuffer()).toString(), 'JPEGBYTES');
   assert.deepStrictEqual(calls[0], { action: 'photo-get', entryId: mine.id, key: 'fake-key' });
-  assert.strictEqual((await get('/api/photo/' + other.id, her)).status, 200, 'photos are team-visible');
+  assert.strictEqual((await get('/api/photo/' + other.id, her)).status, 404, "a teammate's photo is hers and the coaches' only (David, 2026-11-16)");
+  assert.strictEqual(calls.length, 1, 'refused before asking the Sheet');
   assert.strictEqual((await get('/api/photo/' + other.id, coach)).status, 200);
   const noPhoto = feed.entries.find((e) => e.athleteId === 'A901' && e.id !== mine.id && e.status !== 'Out');
   assert.strictEqual((await get('/api/photo/' + noPhoto.id, her)).status, 404, 'no photo, no call to the Sheet');
-  assert.strictEqual(calls.length, 3);
+  assert.strictEqual(calls.length, 2);
   assert.strictEqual((await get('/api/photo/' + mine.id, '')).status, 401, 'sign-in needed');
   // the workout page is told a photo exists (and nothing else about it)
   const wv = await (await get('/api/workout/' + mine.id, her)).json();
@@ -2248,7 +2356,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(posted[0].channel, 'U901', 'DM by member ID');
   assert.ok(/Found on Logbook/.test(posted[0].text));
   const acts = posted[0].blocks.find((b) => b.type === 'actions').elements;
-  assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_change']);
+  assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_confirm', 'lb_change']);
   assert.ok(/after about 20 hours/.test(JSON.stringify(posted[0].blocks)));
   assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'same');
   assert.strictEqual(posted.length, 1, 'an unchanged result is not DMed twice');
@@ -2263,7 +2371,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   // possible make-up and a 2k shape
   const mk = SLB.logbookMessage({ ...card, sessionType: 'Make-up', makeupFor: '2026-10-26', possibleMakeup: true, benchmark: '2000m' });
   const mkActs = mk.blocks.find((b) => b.type === 'actions').elements;
-  assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_rpe', 'lb_confirm', 'lb_confirm_test', 'lb_change']);
+  assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_confirm', 'lb_confirm_test', 'lb_change']);
   assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/20 hours/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
 
   // buttons
@@ -2280,6 +2388,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   const press = (action, state) => ({ type: 'block_actions', user: { id: 'U901', name: 'fake.rower' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' },
     message: { ts: '1.2', text: SLB.summaryLine(card) }, state: { values: state || {} }, actions: [action] });
   let x = world({ status: 'confirmed', benchmark: false });
+  // old DM cards (sent before 2026-11-16) still carry an effort pick and it still saves
   let out = await handleSlackAction(signed('https://x/bg', press({ action_id: 'lb_confirm', value: 'E77' }, { lb_actions: { lb_rpe: { selected_option: { value: '7' } } } })), env2, x.deps);
   assert.deepStrictEqual(x.calls[0].body, { action: 'slack-logbook-confirm', slackUserId: 'U901', entryId: 'E77', rpe: 7, key: 'fake-key' });
   assert.ok(/Counted/.test(x.calls[1].body.text) && x.calls[1].body.replace_original && !JSON.stringify(x.calls[1].body.blocks).includes('"actions"'));
@@ -2297,8 +2406,8 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.strictEqual(x.calls[1].body.response_type, 'ephemeral');
 
   // Change: opens at /api/slack with the trigger id, validates, then saves in the background and updates her DM
-  const changeBtn = { action_id: 'lb_change', value: acts[2].value };
-  assert.ok(acts[2].value.length < 2000);
+  const changeBtn = { action_id: 'lb_change', value: acts[1].value };
+  assert.ok(acts[1].value.length < 2000);
   const open = [];
   const front = { nowS: NOW, fetchImpl: async (url, init) => { open.push({ url, body: JSON.parse(init.body) }); return Response.json({ ok: true }); } };
   const res = await handleSlack(signed('https://x/api/slack', { ...press(changeBtn), trigger_id: 'T9' }), env2, front);
@@ -2671,6 +2780,25 @@ test('inactive athletes are signed out of Log a run and the Concept2 connection 
   const cb = (id) => handleCallback(new Request('https://x/.netlify/functions/concept2-callback?code=c&state=s', { headers: { cookie: cookie(id) } }), env, deps);
   assert.ok((await cb('A902')).headers.get('location').includes('logbook=error'));
   clearFeedCache();
+});
+
+
+test('display names: first name, last initial only for a shared first name (David, 2026-11-16)', () => {
+  const m = displayNames([
+    { name: 'Alexa Silvertooth' }, { name: 'Madeleine Beland' }, { name: 'Madeleine Vanderloo' },
+    { name: 'Ann Lee' }, { name: 'Ann Lopez' }, { name: 'Ann Kim' }, { name: 'Zoe  Park' }
+  ]);
+  assert.strictEqual(m.get('Alexa Silvertooth'), 'Alexa');
+  assert.strictEqual(m.get('Madeleine Beland'), 'Madeleine B.');
+  assert.strictEqual(m.get('Madeleine Vanderloo'), 'Madeleine V.');
+  assert.strictEqual(m.get('Ann Kim'), 'Ann K.');
+  assert.strictEqual(m.get('Ann Lee'), 'Ann Lee', 'same first name and initial: full name');
+  assert.strictEqual(m.get('Ann Lopez'), 'Ann Lopez');
+  assert.strictEqual(m.get('Zoe Park'), 'Zoe');
+  const out = shortenNames({ athlete: 'Madeleine Beland', rows: [{ name: 'Alexa Silvertooth', id: 'A1', note: 'Alexa Silvertooth ran' }] }, m);
+  assert.strictEqual(out.athlete, 'Madeleine B.');
+  assert.strictEqual(out.rows[0].name, 'Alexa');
+  assert.strictEqual(out.rows[0].note, 'Alexa Silvertooth ran', 'only exact names change');
 });
 
 photoTests(test);

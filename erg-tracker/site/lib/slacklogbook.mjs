@@ -58,8 +58,6 @@ export function logbookMessage(card) {
       ...(pieces ? [{ type: 'context', elements: [{ type: 'mrkdwn', text: pieces }] }] : []),
       { type: 'section', text: { type: 'mrkdwn', text: counts } },
       { type: 'actions', block_id: 'lb_actions', elements: [
-        { type: 'static_select', action_id: 'lb_rpe', placeholder: label('Effort 1-10 (optional)'),
-          options: Array.from({ length: 10 }, (_, i) => opt(String(i + 1), String(i + 1))) },
         ...buttons
       ] }
     ]
@@ -90,7 +88,6 @@ export function confirmRequest(payload, action) {
 export function changeModal(info, message) {
   const meta = { e: info.e, c: message.channel, t: message.ts, d: info.d, x: info.x, b: info.b };
   const input = (id, text, element, optional = true) => ({ type: 'input', block_id: id, optional, label: label(text), element: { action_id: 'v', ...element } });
-  const rpe = Array.from({ length: 10 }, (_, i) => opt(String(i + 1), String(i + 1)));
   const now = TYPES.includes(info.s) ? info.s : 'OYO';
   return {
     type: 'modal', callback_id: 'lb_change_modal', private_metadata: JSON.stringify(meta),
@@ -99,7 +96,6 @@ export function changeModal(info, message) {
       { type: 'section', text: { type: 'mrkdwn', text: info.x } },
       input('type', 'Counts as', { type: 'static_select', options: TYPES.map((t) => opt(t, t)), initial_option: opt(now, now) }, false),
       input('makeup_for', 'Make-up only: date of the practice you missed', { type: 'datepicker', ...(info.m ? { initial_date: info.m } : {}) }),
-      input('rpe', 'Effort (1 easy, 10 max)', { type: 'static_select', options: rpe }),
       ...(info.b && BENCH[info.b] ? [input('bench', 'Was this a test?', { type: 'checkboxes', options: [opt(info.b, `Yes, this was my ${BENCH[info.b]} test`)] })] : [])
     ]
   };

@@ -68,7 +68,7 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
   background: var(--panel); border: 1px solid var(--border); border-radius: 24px; padding: 14px;
   display: flex; flex-direction: column; box-shadow: 0 1px 2px rgba(0, 0, 0, .04), 0 8px 24px rgba(0, 0, 0, .04); z-index: 20;
 }
-.side [hidden], .tabbar [hidden] { display: none !important; }
+.side [hidden], .tabbar [hidden], .top [hidden] { display: none !important; }
 .side a { color: var(--text-2); text-decoration: none; }
 .side-head { display: flex; align-items: center; gap: 8px; padding: 2px 4px 12px; }
 .brand { font-weight: 700; letter-spacing: .01em; display: flex; align-items: center; gap: 10px; margin-right: auto; color: var(--text); text-decoration: none; }
@@ -135,11 +135,15 @@ main:focus { outline: none; }
 .menu-toggle:hover { background: rgba(255, 255, 255, .35); }
 .menu-toggle svg { width: 24px; height: 24px; }
 .log-top { display: none; }
+/* Back (David, 2026-11-16): an arrow before the logo on phones, a "‹ Back to ..." above the page on desktop. */
+.back-btn { margin-right: -6px; }
+.backbar:not([hidden]) { display: block; max-width: 1040px; margin: 0 auto; padding: 16px 16px 0; }
 
 @media (max-width: 720px), (pointer: coarse) and (max-height: 500px) {
   .shell { display: block; padding: 0; }
   .top { display: flex; position: sticky; top: 0; z-index: 15; }
   .top .brand { margin-right: auto; }
+  .backbar:not([hidden]) { display: none; }
   body.authed .log-top:not([hidden]) { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; background: rgba(255, 255, 255, .45); font-weight: 600; font-size: .95rem; }
   .side { position: fixed; left: 10px; top: 10px; bottom: 10px; height: auto; width: min(300px, 84vw); transform: translateX(-110%); visibility: hidden; transition: transform .25s, visibility .25s; z-index: 30; }
   .collapse-toggle { display: none; }
@@ -196,9 +200,12 @@ main { max-width: 1040px; margin: 0 auto; padding: 8px 16px 48px; }
 /* Tiles are always 4 across, 2 x 2, or 3 across for exactly three, never 3 and 1 (David, 2026-11-11) */
 .grid:has(> :nth-child(3):last-child), .tiles:has(> :nth-child(3):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 .grid:has(> :nth-child(2):last-child), .tiles:has(> :nth-child(2):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+/* Six tiles: 3 + 3 rather than 4 + 2 with two empty slots (layout review, 2026-11-16). */
+.grid:has(> :nth-child(6):last-child), .tiles:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @container (max-width: 760px) {
   .grid, .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .grid:has(> :nth-child(3):last-child), .tiles:has(> :nth-child(3):last-child) { grid-template-columns: minmax(0, 1fr); }
+  .grid:has(> :nth-child(6):last-child), .tiles:has(> :nth-child(6):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: stretch; margin-bottom: 16px; }
 .ins-row { display: flex; align-items: baseline; gap: 8px; padding: 8px 0; border-top: 1px solid var(--border); min-width: 0; flex-wrap: wrap; }
@@ -349,8 +356,10 @@ a.btn.log-btn { text-decoration: none; }
 @media (max-width: 560px) {
   table { font-size: .85rem; }
   th, td { padding: 6px 4px; white-space: normal; }
-  td.r, th.r { white-space: nowrap; }
+  td.r { white-space: nowrap; }
+  th.r { white-space: normal; }   /* headers wrap so tables fit (layout review, 2026-11-16) */
   td.r .small, td.r .muted.small { white-space: normal; }
+  .bal-check td.r { white-space: normal; }
   .board .rate { display: none; }
   .athletes { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .athletes a { flex-direction: column; align-items: flex-start; justify-content: center; gap: 4px; }
@@ -554,6 +563,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .wg b { min-width: 64px; }
 .wg.add .muted { color: var(--muted); }
 .wg.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.wglist { display: flex; flex-direction: column; gap: 10px; flex: 1; min-width: 0; }
 .wgl { display: flex; flex-direction: column; gap: 2px; align-items: flex-start; }
 .wgl small { color: var(--muted); }
 .wgl .a, .wgmark { color: var(--link); font-weight: 600; }
@@ -731,3 +741,83 @@ details.bal-check[open] summary { margin-bottom: 8px; }
   .bal-ctl .seg { flex: 1 1 100%; }
   .bal-ctl .seg button { flex: 1; justify-content: center; min-height: 40px; }
 }
+/* Week results on a phone: no side scroll (David, 2026-11-16). Long workout titles wrap and cells tighten. */
+@media (max-width: 480px) {
+  details.team-results th { white-space: normal; max-width: 8em; font-size: .8rem; line-height: 1.2; }
+  details.team-results th, details.team-results td { padding-left: 4px; padding-right: 4px; }
+  details.team-results .table-wrap { overflow-x: visible; }
+  details.team-results table { width: 100%; }
+  details.team-results .st-col { display: none; }
+  details.team-results .st-inline { display: block; margin-top: 2px; }
+  details.team-results .st-inline .pill { font-size: .7rem; }
+  details.team-results .splits .sp { display: block; margin-left: 0; }
+}
+.st-inline { display: none; }
+
+.day-tabs { margin: 8px 0 4px; flex-wrap: wrap; }
+.gms-next p { margin: 4px 0; }
+
+/* Layout review (David, 2026-11-16): no side scrolling. Insights drops its least-used columns as the page narrows. */
+table.insights td .muted.small { white-space: normal; }
+@container (max-width: 900px) { table.insights .c-est, table.insights .c-streak { display: none; } table.insights th, table.insights td { padding-left: 6px; padding-right: 6px; } }
+@container (max-width: 760px) { table.insights .c-last, table.insights .c-split { display: none; } }
+@container (max-width: 560px) {
+  table.insights .c-month { display: none; }
+  table.insights .sq { display: block; }
+  table.insights th, table.insights td { padding-left: 4px; padding-right: 4px; }
+  table.insights th:first-child, table.insights td:first-child { position: static; box-shadow: none; }
+}
+td.next-star { white-space: normal; min-width: 9em; }
+table.avg-results th, table.avg-results td { padding-left: 6px; padding-right: 6px; }
+@media (max-width: 480px) { .board th, .board td { padding-left: 4px; padding-right: 4px; } .board .sub { white-space: normal; } }
+.zone-card { display: flex; flex-direction: column; }
+.zone-card .zones-key { flex: 1; grid-template-columns: minmax(0, 1fr); align-content: space-evenly; gap: 6px; margin-top: 12px; }
+.zone-card .zones-key > div { display: grid; grid-template-columns: minmax(0, 1fr) 4em 6em; align-items: center; }
+.zone-card .zones-key b { text-align: right; }
+.zone-card .zones-key .muted { text-align: right; }
+.recent-list { column-gap: 32px; }
+@container (min-width: 700px) { .recent-list { columns: 2; } }
+.recent-row { display: grid; grid-template-columns: 7.5em minmax(0, 1fr) auto; gap: 8px; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); break-inside: avoid; }
+.recent-row .r { text-align: right; font-variant-numeric: tabular-nums; }
+.recent-row a { color: var(--text); text-decoration: none; font-weight: 600; }
+.recent-row a:hover { color: var(--link); }
+@container (min-width: 700px) { .ins-list { columns: 2; column-gap: 32px; } }
+.ins-list .ins-row { break-inside: avoid; flex-wrap: nowrap; }
+.ins-list .ins-row .r { white-space: nowrap; }
+/* Star keys line up in a grid instead of wrapping with one left over (layout review, 2026-11-16). */
+.gms-keys { display: grid; grid-template-columns: repeat(2, max-content); gap: 8px 32px; }
+@container (min-width: 900px) { .gms-std .gms-keys { grid-template-columns: repeat(5, max-content); } }
+@container (max-width: 899px) { .gms-std .gms-keys { gap: 8px 20px; } .gms-std .gms-keys > :last-child { grid-column: 1 / -1; } }
+@media (max-width: 420px) { .gms-keys { grid-template-columns: minmax(0, 1fr); } }
+/* OYO: fixed name and label columns, so every bar starts and ends in the same place and the ticks line up (layout review, 2026-11-16). */
+@media (min-width: 561px) {
+  .oyo-row { grid-template-columns: 17.5em minmax(0, 1fr) 6.5em; }
+  .oyo-row > .pill { justify-self: end; }
+  .oyo-who .sub { white-space: nowrap; }
+}
+/* Plan: "+ Add" sits at the right on every day, empty or not (layout review, 2026-11-16). */
+.wg.add .muted { margin-left: auto; color: var(--link); font-weight: 600; }
+/* Boards: all filters on one line under the title, tests left and period/group right (layout review, 2026-11-16). */
+.board-filters { display: flex; justify-content: space-between; align-items: center; gap: 8px 16px; flex-wrap: wrap; margin-bottom: 16px; }
+.board-filters .filters { margin: 0; }
+
+/* Layout review fixes, part 3 (2026-11-16) */
+td.nowrap { white-space: nowrap; }
+/* U10: Log for an athlete fills the content width like other pages; Save spans the form */
+.logfor { max-width: none; }
+.logfor .actions { grid-template-columns: minmax(0, 1fr); }
+/* U11: two boats a row; an odd last boat takes the full row with its seats in two columns */
+@container (min-width: 561px) {
+  .lugrid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .lugrid > .lub:last-child:nth-child(odd) { grid-column: 1 / -1; }
+  .lugrid > .lub:last-child:nth-child(odd) .lus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+/* U12: practice dots spread across their column, so they meet the bar on both sides */
+.att-dots { justify-content: space-between; }
+/* U13: zone filter fits one row on a phone */
+@media (max-width: 480px) {
+  .workout-tools .seg { display: flex; }
+  .workout-tools .seg button { flex: 1 1 auto; padding-left: 6px; padding-right: 6px; justify-content: center; font-size: .8125rem; }
+}
+/* U14: when nobody has a 100m test, the Sprint column shrinks to its note */
+@media (min-width: 561px) { .bal-list.no-sprint .bal-row { grid-template-columns: minmax(150px, 1.2fr) 9.5em 8em minmax(0, 2.5fr) 44px; } }

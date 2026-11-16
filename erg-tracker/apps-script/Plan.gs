@@ -110,12 +110,15 @@ function pieceLabel(p) {
 
 /**
  * Target % for a piece: the piece's own % if set, else the zone default from
- * Settings (target.<zone>.<2k|20min>, "55-65" or "80"). Returns
+ * Settings (target.<zone>.<2000m|20min>, "55-65" or "80"). Returns
  * { base, low, high } or null when the piece has no erg target.
  */
 function pieceTargetPct(p, settings) {
   if (p.activity !== 'Erg (RowErg)') return null;
-  var base = p.base || settings['target.default_base'] || '2k';
+  // Sprint work (the builder's Sprint category = Anaerobic zone) never gets a target (David, 2026-11-16).
+  if (p.zone === 'Anaerobic') return null;
+  // Aerobic zones work like cycling power zones off FTP: % of her 20' watts first, the 2k only when she has no 20' (David, 2026-11-16).
+  var base = p.base || (p.zone === 'Aerobic' ? "20'" : (settings['target.default_base'] || '2k'));
   if (!PLAN_BASES[base]) return null;
   var low = p.lowPct;
   var high = p.highPct;
@@ -153,6 +156,21 @@ function pieceTarget(p, baseWatts, settings) {
     slowSplit: roundTenths_(splitFromWatts(lowW)),
     fastSplit: roundTenths_(splitFromWatts(highW))
   };
+}
+
+/**
+ * Target for a piece from an athlete's season-best watts per base ({ '2k': w, "20'": w }).
+ * Uses the piece's own base; with no test on that base it falls back to the other one,
+ * using that zone's own % for the other test (David, 2026-11-16), so a rower with only a 20'
+ * still gets an aerobic target. Null when she has neither, or the piece has no erg target.
+ */
+function pieceTargetFromBases(p, baseWatts, settings) {
+  var pct = pieceTargetPct(p, settings);
+  if (!pct) return null;
+  if (baseWatts[pct.base]) return pieceTarget(p, baseWatts[pct.base], settings);
+  var other = pct.base === '2k' ? "20'" : '2k';
+  if (!baseWatts[other]) return null;
+  return pieceTarget(Object.assign({}, p, { base: other }), baseWatts[other], settings);
 }
 
 /** "2:05.3 to 2:00.1 /500m (150-170 W)" or "1:48.2 /500m (220 W)". */
@@ -217,17 +235,20 @@ function buildWeekPlan(opts) {
         message: 'Workout ' + r['Workout ID'] + ' on ' + dayKey_(r.Date) + ' is not on the Workouts tab' };
     }
     var athletes = opts.roster.filter(function (a) { return squadMatches_(r.Squad, a.Squad) || noviceDoesVarsity_(r.Squad, a.Squad, hasNovice); }).map(function (a) {
+      var bests = {};
+      Object.keys(PLAN_BASES).forEach(function (b) { bests[b] = seasonBestWatts(opts.benchmarks, a['Athlete ID'], b, r.Date, s.school_year_start); });
+      var bases = {};
+      Object.keys(bests).forEach(function (b) { if (bests[b]) bases[b] = bests[b].watts; });
       var targets = pieces.map(function (p) {
         var pct = pieceTargetPct(p, s);
         if (!pct) return { label: pieceLabel(p), text: '' };
-        var best = seasonBestWatts(opts.benchmarks, a['Athlete ID'], pct.base, r.Date, s.school_year_start);
-        if (!best) {
-          flags[a['Athlete ID'] + pct.base] = { athleteId: a['Athlete ID'], athlete: a.Name, base: pct.base,
-            message: 'No ' + pct.base + ' test this season or last; no target shown' };
+        var t = pieceTargetFromBases(p, bases, s);
+        if (!t) {
+          flags[a['Athlete ID'] + 'none'] = { athleteId: a['Athlete ID'], athlete: a.Name, base: "2k or 20'",
+            message: 'No 2k or 20\' test this season or last; no target shown' };
           return { label: pieceLabel(p), text: '' };
         }
-        var t = pieceTarget(p, best.watts, s);
-        return { label: pieceLabel(p), text: formatTarget(t), target: t, from: best };
+        return { label: pieceLabel(p), text: formatTarget(t), target: t, from: bests[t.base] };
       });
       return { athleteId: a['Athlete ID'], athlete: a.Name, squad: a.Squad, targets: targets };
     });
@@ -308,8 +329,7 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
         out.matches = false;
         out.reason = 'Interval ' + (i + 1) + ' is not ' + pieceLabel(Object.assign({}, p, { reps: 1 }));
       }
-      var pct = pieceTargetPct(p, settings);
-      var t = pct && pieceTarget(p, baseWatts[pct.base], settings);
+      var t = pieceTargetFromBases(p, baseWatts, settings);
       if (t && watts) {
         anyTarget = true;
         var lo = t.range ? t.lowW : t.lowW * (1 - tol);

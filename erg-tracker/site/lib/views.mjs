@@ -169,6 +169,8 @@ export function athleteView(feed, id, today) {
     tests,
     gms,
     gmsSummary: gmsSummary(gms),
+    // What the stars mean: GMS % for each star and its boat label, from the live Settings (David, 2026-11-16).
+    starKey: feed.settings.starPcts ? [5, 4, 3, 2].map((n) => ({ stars: n, pct: feed.settings.starPcts[n], label: (feed.settings.starLabels || {})[n] || '' })) : null,
     pacing,
     madeUp: record.filter((r) => r.how === 'Make-up').slice(-3).reverse().map((r) => ({ date: r.date, makeupDate: r.makeupDate })),
     insights: athleteInsights(feed, a, mine, record, weeks, yearStart, today),   // her own page and coaches only (api.mjs)

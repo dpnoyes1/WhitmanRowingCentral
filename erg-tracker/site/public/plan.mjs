@@ -92,11 +92,11 @@ const mondayOf = (d) => addDays(d, -((toDate(d).getUTCDay() + 6) % 7));
 
 export function openPlan(v, ctx) {
   const { app, esc, fmtDate } = ctx;
-  let data = v, msg = '', err = '', nlMsg = null, busy = false;
+  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '';
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
-    mode: 'new', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
+    mode: 'new', notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
     rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice',
     week: startWeek(), days: [], workoutId: data.library[0] ? data.library[0].id : ''
   };
@@ -137,8 +137,9 @@ export function openPlan(v, ctx) {
     return days.map((d) => {
       const past = d < data.today, picked = B.days.includes(d);
       const there = data.upcoming.filter((u) => u.day === d);
-      const lines = there.map((u) => `<span class="wgl"><span class="a num">${esc(u.name || u.workoutId)}</span><span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span><small>${esc(u.squad)} · ${esc(u.session)}</small></span>`).join('');
-      return `<button type="button" class="wg${picked ? ' pick' : ''}${lines ? '' : ' add'}" data-day="${d}"${past ? ' disabled' : ''} aria-pressed="${picked}"><b>${esc(dayLabel(d))}</b>${lines || ''}<span class="${lines ? 'wgmark' : 'muted'}">${picked ? '✓ This workout' : past ? '' : '+ Add'}</span></button>`;
+      const rank = (u) => (/warm/i.test(u.name) ? 0 : /cool/i.test(u.name) ? 2 : 1);   // warm up, the work, cool down
+      const lines = there.slice().sort((a, b) => rank(a) - rank(b)).map((u) => `<span class="wgl"><span class="a num">${esc(u.name || u.workoutId)}</span><span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span><small>${esc(u.squad)} · ${esc(u.session)}</small></span>`).join('');
+      return `<button type="button" class="wg${picked ? ' pick' : ''}${lines ? '' : ' add'}" data-day="${d}"${past ? ' disabled' : ''} aria-pressed="${picked}"><b>${esc(dayLabel(d))}</b>${lines ? `<span class="wglist">${lines}</span>` : ''}<span class="${lines ? 'wgmark' : 'muted'}">${picked ? '✓ This workout' : past ? '' : '+ Add'}</span></button>`;
     }).join('');
   };
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
@@ -158,7 +159,9 @@ export function openPlan(v, ctx) {
       ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}
       <div class="cols w"><div class="pstack">${builder}
         <div class="fgrid"><label class="f">Squad<select class="in" data-k="squad">${opt(['All', 'Varsity', 'Novice'], B.squad)}</select></label><label class="f">Session<select class="in" data-k="session">${opt(['Practice', 'OYO'], B.session)}</select></label></div>
-        <div class="actions"><button class="btn ghost" type="button" data-save="draft"${busy ? ' disabled' : ''}>Save draft</button><button class="btn" type="button" data-save="publish"${busy ? ' disabled' : ''}>Save and publish</button></div>
+        ${fld('Notes for the day (athletes and coaches see this)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
+        <div class="actions"><button class="btn ghost${busy && busyKind === 'draft' ? ' busy' : ''}" type="button" data-save="draft"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'draft' ? 'Saving…' : 'Save draft'}</span></button><button class="btn${busy && busyKind === 'publish' ? ' busy' : ''}" type="button" data-save="publish"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'publish' ? 'Publishing…' : 'Save and publish'}</span></button></div>
+        ${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}
       </div><div class="pstack"><div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">Week of ${esc(weekLabel())} · tap a day to put this workout on it</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div>
         <div class="weekgrid">${weekGrid()}</div>
         <p class="note">Drafts hidden until published. No days highlighted: saved to library only.</p></div></div>`;
@@ -217,7 +220,7 @@ export function openPlan(v, ctx) {
 
   const save = async (publish) => {
     err = msg = '';
-    const body = { dates: B.days, squad: B.squad, session: B.session, publish };
+    const body = { dates: B.days, squad: B.squad, session: B.session, publish, notes: B.notes.trim() };
     if (B.mode === 'new') {
       const built = buildPieces(B);
       if (!B.name.trim()) { err = 'Give the workout a name.'; draw(); return; }
@@ -227,7 +230,7 @@ export function openPlan(v, ctx) {
       body.workoutId = B.workoutId;
       if (!B.days.length) { err = 'Tap at least one day.'; draw(); return; }
     }
-    busy = true; draw();
+    busy = true; busyKind = publish ? 'publish' : 'draft'; draw();
     try {
       const res = await fetch('/api/workouts', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const out = await res.json().catch(() => ({}));
@@ -238,7 +241,7 @@ export function openPlan(v, ctx) {
       msg = B.mode === 'new'
         ? `Saved as ${out.savedId}${n ? ` and put on ${n} day${n > 1 ? 's' : ''}${publish ? ', published' : ' as a draft'}` : ' in the library'}.`
         : `Scheduled${publish ? ' and published' : ' as a draft'}.`;
-      B.days = [];
+      B.days = []; B.notes = '';
       if (B.mode === 'new') { B.name = ''; nameTouched = false; B.nl = ''; nlMsg = null; B.workoutId = out.savedId || B.workoutId; }
     } catch { err = 'Could not reach the site. Check the week before saving again.'; }
     busy = false;

@@ -4,12 +4,16 @@ import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
 import * as C2 from '../lib/concept2.mjs';
+import { displayNames, shortenNames } from '../lib/names.mjs';
 
 const env = (k) => Netlify.env.get(k);
-const json = (body, status = 200) =>
+const baseJson = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 export async function handle(req, envFn, deps = {}) {
+  // First names on every page, last initial only for a shared first name (David, 2026-11-16).
+  let names = null;
+  const json = (body, status = 200) => baseJson(names ? shortenNames(body, names) : body, status);
   const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
   const path = new URL(req.url).pathname.replace(/\/+$/, '');
@@ -21,6 +25,7 @@ export async function handle(req, envFn, deps = {}) {
     return json({ error: 'The team data could not be loaded. Try again in a minute.' }, 502);
   }
   const data = feed.data;
+  names = displayNames(data.athletes);
   const today = deps.today || todayIn(data.settings.timezone || 'America/New_York');
   const meta = { generatedAt: data.generatedAt, stale: feed.stale };
   // A cookie lasts a year; an athlete dropped from the Roster or set inactive is signed out of every route, not just the page.
@@ -79,9 +84,9 @@ export async function handle(req, envFn, deps = {}) {
     if (!view) return json({ error: 'No athlete with that ID.' }, 404);
     // GMS % to the athlete herself and to coaches (they see everything); teammates see stars only.
     const own = who.kind === 'athlete' && who.id === m[1];
-    const { todayPlan, insights, workouts, pacing, gmsSummary, ...rest } = view;
+    const { todayPlan, insights, workouts, pacing, gmsSummary, starKey, ...rest } = view;
     return json({ ...rest, gms: own || coach ? view.gms : view.gms.map((g) => ({ test: g.test, stars: g.stars })), todayPlan: own || coach ? todayPlan : [],
-      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, own, coach, meta });
+      insights: coach ? insights : own ? ownInsights(insights) : null, workouts: own || coach ? workouts : [], pacing: own || coach ? pacing : [], gmsSummary: own || coach ? gmsSummary : null, starKey: own || coach ? starKey : null, own, coach, meta });
   }
   // One logged workout: her own (or any, for coaches). Splits and targets come with it (David, 2026-10-25).
   const wk = path.match(/^\/api\/workout\/([A-Za-z0-9_-]+)$/);
@@ -90,12 +95,13 @@ export async function handle(req, envFn, deps = {}) {
     if (!entry || !(coach || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No workout with that ID.' }, 404);
     return json({ ...workoutView(data, wk[1], today), meta });
   }
-  // The kept copy of the erg-screen photo for one workout, visible to everyone signed in (David, 2026-10-28: all photos are team-visible). The Drive folder is private; the
-  // Sheet's script hands the file to this function, which passes it on to a signed-in person. It is only asked for when a workout is opened.
+  // The kept copy of the photo for one workout: only the athlete who logged it and coaches (David, 2026-11-16; was team-visible
+  // since 2026-10-28), the same rule as the workout page. The Drive folder is private; the Sheet's script hands the file to
+  // this function, which passes it on. It is only asked for when a workout is opened.
   const ph = path.match(/^\/api\/photo\/([A-Za-z0-9_-]+)$/);
   if (ph) {
     const entry = data.entries.find((x) => x.id === ph[1]);
-    if (!entry || !entry.hasPhoto) return json({ error: 'No photo for that workout.' }, 404);
+    if (!entry || !entry.hasPhoto || !(who.kind === 'team' || (who.kind === 'athlete' && who.id === entry.athleteId))) return json({ error: 'No photo for that workout.' }, 404);
     let out;
     try { out = await callSheet(envFn, deps.fetchImpl || fetch, { action: 'photo-get', entryId: entry.id }); } catch (err) {
       console.error('photo error:', err.message);

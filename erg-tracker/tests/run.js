@@ -409,20 +409,39 @@ test('workout pieces: variable intervals, start-every, undefined rest', () => {
 test('targets: steady state range, Threshold/Anaerobic single, overrides, erg only', () => {
   const s = planSettings();
   const ut1 = g.workoutPieces(WORKOUTS, 'W1')[0];
-  assert.deepStrictEqual({ ...g.pieceTargetPct(ut1, s) }, { base: '2k', low: 60, high: 70 });
+  // Aerobic bases on the 20' first, like power zones off FTP (David, 2026-11-16)
+  assert.deepStrictEqual({ ...g.pieceTargetPct(ut1, s) }, { base: "20'", low: 70, high: 80 });
   const t = g.pieceTarget(ut1, 202.546, s);
   assert.strictEqual(t.range, true);
-  assert.strictEqual(t.lowW, 122);   // 60% of 202.5 W
-  assert.strictEqual(t.highW, 142);  // 70% of 202.5 W
+  assert.strictEqual(t.lowW, 142);   // 70% of 202.5 W
+  assert.strictEqual(t.highW, 162);  // 80% of 202.5 W
   assert.ok(t.slowSplit > t.fastSplit);
-  assert.strictEqual(g.formatTarget(t), g.formatTime(t.slowSplit) + ' to ' + g.formatTime(t.fastSplit) + ' /500m (122-142 W)');
+  assert.strictEqual(g.formatTarget(t), g.formatTime(t.slowSplit) + ' to ' + g.formatTime(t.fastSplit) + ' /500m (142-162 W)');
   const at = g.pieceTarget(g.workoutPieces(WORKOUTS, 'P1')[0], 202.546, s);
   assert.strictEqual(at.range, false);
   assert.strictEqual(at.highW, 172);
   assert.strictEqual(g.formatTarget(at), g.formatTime(at.fastSplit) + ' /500m (172 W)');
   assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'X1')[0], s), null, 'no erg target on a run');
-  // Anaerobic default from Settings when the piece leaves % blank
-  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'U8')[0], s).low, 95);
+  // Sprint work (Anaerobic zone) never has a target (David, 2026-11-16), even with an explicit %
+  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'U8')[0], s), null);
+  assert.strictEqual(g.pieceTargetPct(g.workoutPieces(WORKOUTS, 'P1')[3], s), null);
+});
+
+test('targets: a piece with no test on its base falls back to the other test (David, 2026-11-16)', () => {
+  const s = planSettings();
+  const aero = g.workoutPieces(WORKOUTS, 'W1')[0];           // Aerobic, base 2k
+  const only2k = g.pieceTargetFromBases(aero, { '2k': 200 }, s);
+  assert.ok(only2k, 'a 2k-only rower still gets a target');
+  assert.strictEqual(only2k.base, '2k');
+  assert.strictEqual(only2k.lowPct, 60, "uses the zone's own % for the 2k");
+  assert.strictEqual(only2k.highPct, 70);
+  const only20 = g.pieceTargetFromBases(aero, { "20'": 180 }, s);
+  assert.strictEqual(only20.base, "20'");
+  const both = g.pieceTargetFromBases(aero, { '2k': 200, "20'": 180 }, s);
+  assert.strictEqual(both.base, "20'", "aerobic uses the 20' first when she has one");
+  const thr = g.pieceTargetFromBases(g.workoutPieces(WORKOUTS, 'P1')[0], { '2k': 200, "20'": 180 }, s);
+  assert.strictEqual(thr.base, '2k', 'a piece with its own base keeps it');
+  assert.strictEqual(g.pieceTargetFromBases(aero, {}, s), null, 'neither test: no target');
 });
 
 const SCHEDULE = [
@@ -441,7 +460,7 @@ test('week plan: published filter, squads, missing-benchmark flag', () => {
   assert.strictEqual(pub.sessions[1].athletes.length, 2, 'Varsity workout with no Novice one that day: the novice does it too (David, 2026-11-03)');
   const two = pub.sessions[0].athletes.find(a => a.athleteId === 'A902');
   assert.strictEqual(two.targets[0].text, '', 'no benchmark, no target');
-  assert.strictEqual(pub.flags.map(f => f.athleteId + f.base).join(), 'A9022k');
+  assert.strictEqual(pub.flags.map(f => f.athleteId).join(), 'A902');
   const typo = g.buildWeekPlan({ ...inputs, schedule: [{ Date: D(2026, 11, 3), 'Workout ID': 'NOPE', Published: true }], weekStart: D(2026, 11, 2), publishedOnly: true });
   assert.match(typo.flags[0].message, /NOPE on 2026-11-03 is not on the Workouts tab/);
   const site = g.weekPlanForSite(inputs, D(2026, 11, 2));
@@ -481,6 +500,9 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   const t500 = 500 * Math.pow(2.8 / w, 1 / 3);
   c = g.checkAgainstPlan(Array.from({ length: 8 }, (_, i) => iv(i + 1, t500, 500)), s8, { '2k': 202.546 }, s);
   assert.strictEqual(c.matches, true);
+  assert.strictEqual(c.hit, null, 'Anaerobic (sprint) work has no target, so nothing to hit');
+  const s8t = s8.map((p) => ({ ...p, zone: 'Threshold', lowPct: 95 }));
+  c = g.checkAgainstPlan(Array.from({ length: 8 }, (_, i) => iv(i + 1, t500, 500)), s8t, { '2k': 202.546 }, s);
   assert.strictEqual(c.hit, true);
 });
 

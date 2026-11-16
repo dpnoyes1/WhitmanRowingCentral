@@ -4,7 +4,7 @@
 // site.coaches) and can then set a personal password (lib/coachpw.mjs). There is
 // no shared password (David, 2026-11-03). Rotating FEED_KEY signs everyone out.
 import { createHmac, timingSafeEqual } from 'node:crypto';
-import { defaultCoachStore, hasCoachPassword } from './coachpw.mjs';
+import { defaultCoachStore, defaultAthleteStore, hasCoachPassword, readCredential, credVersion } from './coachpw.mjs';
 import { getFeed } from './feed.mjs';
 
 export const COOKIE = 'wrc_session';
@@ -30,25 +30,32 @@ export function sessionSecret(env) {
  * who: 'team' (a coach, who always carries her name) or an athlete ID. The name lets the menu show it and
  * the password change know whose password it is. It is signed, not secret.
  */
-export function makeToken(secret, who = 'team', now = Date.now(), name = '') {
+export function makeToken(secret, who = 'team', now = Date.now(), name = '', cred = '') {
   const exp = Math.floor(now / 1000) + SESSION_DAYS * 86400;
   if (who === 'team' && !name) throw new Error('A coach session needs her name');
-  const label = who !== 'team' ? 'ath:' + who : 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url');
+  // cred: the password stamp she signed in with (credVersion; '' = birthday, no password of her own). See liveSession.
+  const label = (who !== 'team' ? 'ath:' + who : 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url')) + '~' + String(cred || '');
   const payload = label + '.' + exp;
   return payload + '.' + sign(secret, payload);
 }
 
-/** { kind: 'team', name } or { kind: 'athlete', id } for a good, unexpired token, else null. An old nameless 'team' token (from the retired shared password) is not valid. */
+/**
+ * { kind: 'team', name } or { kind: 'athlete', id } for a good, unexpired token, else null, plus cred (the password stamp, or
+ * null for a token made before stamps) and iat (when it was made, seconds). An old nameless 'team' token is not valid.
+ */
 export function readToken(secret, token, now = Date.now()) {
   if (!secret || !token) return null;
   const parts = String(token).split('.');
   if (parts.length !== 3) return null;
   const payload = parts[0] + '.' + parts[1];
   if (!sameText(sign(secret, payload), parts[2]) || Number(parts[1]) * 1000 <= now) return null;
-  const c = parts[0].match(/^coach:([A-Za-z0-9_-]+)$/);
-  if (c) return { kind: 'team', name: Buffer.from(c[1], 'base64url').toString('utf8') };
-  const m = parts[0].match(/^ath:([A-Za-z0-9-]+)$/);
-  return m ? { kind: 'athlete', id: m[1] } : null;
+  const st = parts[0].match(/~([A-Za-z0-9_-]{0,16})$/);
+  const label = st ? parts[0].slice(0, -st[0].length) : parts[0];
+  const extra = { cred: st ? st[1] : null, iat: Number(parts[1]) - SESSION_DAYS * 86400 };
+  const c = label.match(/^coach:([A-Za-z0-9_-]+)$/);
+  if (c) return { kind: 'team', name: Buffer.from(c[1], 'base64url').toString('utf8'), ...extra };
+  const m = label.match(/^ath:([A-Za-z0-9-]+)$/);
+  return m ? { kind: 'athlete', id: m[1], ...extra } : null;
 }
 
 export function tokenValid(secret, token, now = Date.now()) {
@@ -152,18 +159,36 @@ export function adminKey(env) {
  */
 export async function liveSession(env, req, deps = {}) {
   const who = session(env, req);
-  if (!who || who.kind !== 'team') return who;
+  if (!who) return null;
+  const coach = who.kind === 'team';
+  const key = coach ? nameKey(who.name) : who.id;
   const admin = adminKey(env);
-  if (!admin) return who;
-  const key = nameKey(who.name);
-  if (key === admin) return { ...who, admin: true };
   try {
-    const store = deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore;
-    return (await hasCoachPassword(store, key)) ? who : null;
+    const store = coach
+      ? (deps.coachStore === undefined ? await defaultCoachStore() : deps.coachStore)
+      : (deps.athleteStore === undefined ? await defaultAthleteStore() : deps.athleteStore);
+    if (coach && admin && key !== admin && !(await hasCoachPassword(store, key))) return null;
+    if (!credStillGood(who, store ? await readCredential(store, key) : null, !store)) return null;
   } catch (err) {
-    console.error('coach check error:', err.message);
+    console.error('session check error:', err.message);
     return null;
   }
+  return coach && admin && key === admin ? { ...who, admin: true } : who;
+}
+
+/**
+ * Review 2026-11-16: a session ends when its password changes. A session carries the stamp of the password it signed in
+ * with; it stays good only while that is still the saved password ('' = still no password of their own, so a coach's
+ * reset or a removed coach ends it too). A token from before stamps is good unless the password was saved after it was
+ * made. With no password store at all (local tests), a session that signed in with a password is refused.
+ */
+export function credStillGood(who, rec, noStore = false) {
+  if (who.cred === null || who.cred === undefined) {
+    const saved = rec && Date.parse(rec.updatedAt);
+    return !(saved && saved > who.iat * 1000 + 2000);
+  }
+  if (noStore) return who.cred === '';
+  return credVersion(rec) === who.cred;
 }
 
 /** False when a signed-in athlete is no longer active on the Roster (cookies last a year). Anyone else is true. A feed error is thrown. */

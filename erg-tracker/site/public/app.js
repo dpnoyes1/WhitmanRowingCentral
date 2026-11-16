@@ -8,6 +8,7 @@ import { openPlan } from './plan.mjs';
 import { openLogMine } from './logmine.mjs';
 import { shrinkPhoto } from './photo.mjs';
 import { openLineups } from './lineups.mjs';
+import { KEY as BACK_KEY, navStep, snapshot, backTarget, clampScroll } from './backstack.mjs';
 
 const app = document.getElementById('app');
 const practiceBox = document.getElementById('practice');
@@ -100,7 +101,9 @@ function setNav(active) {
   if (active === (isCoach() ? 'team' : 'me')) showPractice(); else practiceBox.hidden = true;
   document.getElementById('nav').hidden = false;
   document.getElementById('menu').hidden = false;
-  document.getElementById('log-top').hidden = false;
+  const logTop = document.getElementById('log-top');
+  logTop.hidden = false;
+  logTop.href = isCoach() ? '#/log' : '#/logrun';   // in-app logging; the Google Form is no longer used (David, 2026-11-16)
   document.body.classList.add('authed');
   document.documentElement.classList.remove('out');
   document.getElementById('tabbar').hidden = false;
@@ -300,7 +303,6 @@ function weeklyChart(rows, caption, load = null) {
     const yp = y(p), yo = y(p + o);
     const l = load && load[i];
     const label = `<b>Week of ${fmtDate(r.weekStart)}</b><br>Practice ${fmtMin(p)}<br>OYO ${fmtMin(o)}<br>Total ${fmtMin(p + o)}` +
-      (l && l.rpe !== null ? `<br>Average RPE ${l.rpe}` : '') +
       (l && l.trailing !== null && l.trailing !== undefined ? `<br>${l.trailingWeeks}-week average before: ${fmtMin(l.trailing)}${l.changePct === null ? '' : ` (${l.changePct > 0 ? '+' : ''}${l.changePct}%)`}` : '');
     const gap = o > 0 && p > 0 ? 2 : 0;
     const cx = padL + i * bw + bw / 2;
@@ -317,7 +319,7 @@ function weeklyChart(rows, caption, load = null) {
   const coachLoad = load && load.some((l) => l.trailing !== undefined);
   const table = `<details class="small"><summary class="muted">Show as a table</summary><div class="table-wrap"><table>
     <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th>${coachLoad ? '<th class="r">vs average</th>' : ''}</tr>
-    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}${load && load[i].rpe != null ? `<div class="muted small">RPE ${load[i].rpe}</div>` : ''}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
+    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
       ${coachLoad ? `<td class="r">${load[i].changePct === null ? '' : `${load[i].flag ? '▲ ' : ''}${load[i].changePct > 0 ? '+' : ''}${load[i].changePct}%`}</td>` : ''}</tr>`).join('')}
   </table></div></details>`;
   return `<div class="chart">
@@ -393,7 +395,7 @@ function showLogin(note = '') {
       <button class="btn" type="submit" id="signin"><span class="spinner" aria-hidden="true"></span><span class="label">Sign in</span></button>
       <p id="login-err" class="error small" role="alert"></p>
     </form>
-    <p class="small login-links"><a href="/logworkout" target="_blank" rel="noopener">Log a workout</a> · <a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
+    <p class="small login-links"><a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
   document.getElementById('login').onsubmit = async (ev) => {
     ev.preventDefault();
     const err = document.getElementById('login-err');
@@ -475,14 +477,17 @@ async function showTeam() {
         ${tile('Training this week', fmtMin(w.avgPerRower), 'average per rower')}
         ${tile('OYO goal met', `${w.oyoMetRequired}/${g.rowers}`, `${w.oyoElite} at Elite · ${w.oyoLogged} logged OYO`)}
       </div>
-      <div class="two">${t.splits ? splitsCard(t.splits) : ''}
-        <div class="card"><h2>Weekly training</h2><p class="muted small">Average per rower, weighted minutes</p>
-        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div></div>
-      ${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}
-      <div class="two">
-        <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>
-        <div class="card"><h2>Latest logs</h2>${recentList(t)}</div>
-      </div>${footer(t.meta)}`;
+      ${(() => {
+        const weekly = `<div class="card"><h2>Weekly training</h2><p class="muted small">Average per rower, weighted minutes</p>
+        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>`;
+        const intensity = `<div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>`;
+        const logs = `<div class="card"><h2>Latest logs</h2>${recentList(t)}</div>`;
+        // Athletes have no split averages, so Weekly training and Intensity sit side by side and Latest logs spans the row (David, 2026-11-16).
+        // Beside Weekly training the zones list one per row, so the box fills its height (layout review, 2026-11-16).
+        if (!t.splits) return `<div class="two">${weekly}${intensity.replace('<div class="card">', '<div class="card zone-card">')}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${logs}`;
+        // Coaches: Intensity is short, so it and Latest logs each take the full width (David, 2026-11-16).
+        return `<div class="two">${splitsCard(t.splits)}${weekly}</div>${t.notLogged ? notLoggedCard(t.notLogged, squad) : ''}${intensity}${logs}`;
+      })()}${footer(t.meta)}`;
     app.querySelectorAll('[data-sq]').forEach((b) => { b.onclick = () => { squad = b.dataset.sq; store.set(SQUAD_KEY, squad); render(); }; });
     wireTips(app);
     wireFooter();
@@ -492,13 +497,13 @@ async function showTeam() {
 
 /** Coaches only: average season-best split for each group, 2k and 20' together (David, 2026-10-25). */
 function splitsCard(s) {
+  // Split sits under the time or meters, so the table fits a phone and the half-width box without side scrolling (David, 2026-11-16).
+  const two = (main, split) => (main === null ? '–' : `${main}${split === null ? '' : `<div class="muted small">${fmtTime(split)}</div>`}`);
   return `<div class="card"><h2>Average season-best results</h2>
-    <div class="table-wrap"><table><tr><th>Group</th><th class="r">2k Time</th><th class="r">2k Split</th><th class="r">20' Meters</th><th class="r">20' Split</th><th class="r">Average Stars</th></tr>
+    <div class="table-wrap"><table class="avg-results"><tr><th>Group</th><th class="r">2k<div class="small">time / split</div></th><th class="r">20'<div class="small">meters / split</div></th><th class="r">Avg stars</th></tr>
     ${s.groups.map((g) => `<tr><td>${esc(g.label)}</td>
-      <td class="r">${g.twoK.avgTime === null ? '–' : fmtTime(g.twoK.avgTime)}</td>
-      <td class="r">${g.twoK.avgSplit === null ? '–' : fmtTime(g.twoK.avgSplit)}</td>
-      <td class="r">${g.twenty.avgMeters === null ? '–' : fmtNum(g.twenty.avgMeters)}</td>
-      <td class="r">${g.twenty.avgSplit === null ? '–' : fmtTime(g.twenty.avgSplit)}</td>
+      <td class="r">${two(g.twoK.avgTime === null ? null : fmtTime(g.twoK.avgTime), g.twoK.avgSplit)}</td>
+      <td class="r">${two(g.twenty.avgMeters === null ? null : fmtNum(g.twenty.avgMeters), g.twenty.avgSplit)}</td>
       <td class="r">${g.avgStars === null ? '–' : g.avgStars.toFixed(1)}</td></tr>`).join('')}
     </table></div></div>`;
 }
@@ -531,10 +536,11 @@ function recentList(t) {
   const names = Object.fromEntries(t.athletes.map((a) => [a.id, a.name]));
   if (!t.recent.length) return '<p class="empty">Nothing logged yet.</p>';
   // Activity sits under the name so the table fits a phone (David, 2026-10-28).
-  return `<div class="table-wrap"><table>${t.recent.map((r) => `<tr>
-    <td>${fmtDate(r.date)}</td><td><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
-    <div class="muted small">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}${r.drag ? ' · drag ' + r.drag : ''}</div></td>
-    <td class="r">${fmtMin(r.minutes)}</td></tr>`).join('')}</table></div>`;
+  // Full width on desktop: two columns of logs, so date, name and time stay close together (layout review, 2026-11-16).
+  return `<div class="recent-list">${t.recent.map((r) => `<div class="recent-row">
+    <span class="muted">${fmtDate(r.date)}</span><span><a href="#/athlete/${esc(r.athleteId)}">${esc(names[r.athleteId] || '')}</a>
+    <span class="muted small" style="display:block">${esc(r.test ? r.mainSet : r.type)}${r.activity && r.activity !== 'Erg (RowErg)' ? ' · ' + esc(r.activity) : ''}${r.drag ? ' · drag ' + r.drag : ''}</span></span>
+    <span class="r num">${fmtMin(r.minutes)}</span></div>`).join('')}</div>`;
 }
 
 async function showAthletes() {
@@ -551,6 +557,7 @@ async function showAthletes() {
         <span>${esc(a.name)}${mine && mine.id === a.id ? ' (you)' : ''}${a.stars === null ? '' : `<span class="stars small" role="img" aria-label="${starWord(a.stars)}">${starText(a.stars)}</span>`}${linked.has(a.id) ? '<img class="c2" src="/icons/concept2.png" alt="Connected to Concept2 Logbook" title="Connected to Concept2 Logbook" width="18" height="18">' : ''}</span><span class="pill">${esc(a.grade)}</span></a>`).join('')}
     </div></div>`).join('')}${footer(t.meta)}`;
   let asq = 'all';
+  pageUi = () => ({ page: 'athletes', asq, q: document.getElementById('q').value });
   const filter = () => {
     const q = document.getElementById('q').value.trim().toLowerCase();
     app.querySelectorAll('.athletes a').forEach((a) => { a.hidden = !!q && !a.dataset.name.includes(q); });
@@ -558,6 +565,13 @@ async function showAthletes() {
   };
   document.getElementById('q').oninput = filter;
   app.querySelectorAll('[data-asq]').forEach((b) => { b.onclick = () => { asq = b.dataset.asq; app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); filter(); }; });
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'athletes' ? restoreUi.ui : null;
+  if (back) {
+    if (['all', 'varsity', 'novice'].includes(back.asq)) asq = back.asq;
+    document.getElementById('q').value = String(back.q || '');
+    app.querySelectorAll('[data-asq]').forEach((x) => x.setAttribute('aria-pressed', String(x.dataset.asq === asq)));
+    filter();
+  }
   wireFooter();
 }
 
@@ -573,7 +587,7 @@ async function showAthlete(id) {
   const makeups = v.openMakeups.length ? `<div class="card"><h2>Make-ups open</h2>
       ${v.openMakeups.map((m) => `<p><b>Missed ${fmtDay(m.date)}</b>: make it up by <b>${fmtDay(m.makeUpBy)}</b> <span class="pill warn">${daysLeft(m.makeUpBy, v.today)}</span></p>
         ${m.sessions.length ? m.sessions.map((s) => sessionBlock(s, true)).join('') : '<p class="muted small">No workout was published for this day.</p>'}`).join('')}
-      <p class="muted small">Make-up: log on the Form with the missed date.</p></div>` : '';
+      <p class="muted small">Make-up: log it in Slack with /log and pick Make-up.</p></div>` : '';
   const madeUp = v.madeUp && v.madeUp.length ? `<div class="card"><h2>Made up</h2>
       ${v.madeUp.map((m) => `<p>${fmtDay(m.date)} practice <span class="pill good">Made up ${fmtDate(m.makeupDate)} ✓</span></p>`).join('')}</div>` : '';
   app.innerHTML = `${staleNote(v.meta)}
@@ -596,12 +610,12 @@ async function showAthlete(id) {
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
-    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.bests) : starsLine(v.gms)}
+    ${v.own || v.coach ? gmsCard(v.gms, v.coach, v.gmsSummary, v.bests, v.starKey) : starsLine(v.gms)}
     <div class="card"><h2>Best results</h2>${bestsTable(v)}</div>
     ${v.own || v.coach ? pacingCard(v.pacing) : ''}
     <div class="card"><h2>Weekly training (weighted minutes)</h2>${weeklyChart(v.weekly, 'Weekly training minutes', v.insights && v.insights.load)}
       ${v.insights ? loadNote(v.insights, v.coach) : ''}</div>
-    ${v.insights ? effortCard(v.insights) + progressCard(v.insights, v.coach) : ''}
+    ${v.insights ? progressCard(v.insights, v.coach) : ''}
     <div class="two">
       <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(v.zones)}</div>
       <div class="card"><h2>Last 10 practices</h2><div class="dots">
@@ -646,13 +660,19 @@ function workoutsCard(rows, yearStart) {
 function workoutList(rows, yearStart) {
   const shown = rows.filter((r) => (workoutFilter.year === 'all' || r.date >= yearStart) && (!workoutFilter.zone || r.zone === workoutFilter.zone));
   if (!shown.length) return '<p class="muted">No workouts match these filters.</p>';
-  // Activity, zone and RPE sit under the type so the table fits a phone (David, 2026-10-28).
+  // Activity, zone and drag sit under the type so the table fits a phone (David, 2026-10-28).
   return `<div class="table-wrap"><table><tr><th>Date</th><th>Workout</th><th class="r">Min</th><th class="r">Meters</th></tr>
-    ${shown.map((r) => `<tr><td><a href="#/workout/${encodeURIComponent(r.id)}">${fmtDate(r.date)}</a></td>
+    ${shown.map((r) => `<tr><td class="nowrap"><a href="#/workout/${encodeURIComponent(r.id)}">${shortDay(r.date)}</a></td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}
-        <div class="muted small">${[r.activity, r.zone, r.rpe != null && `RPE ${r.rpe}`, r.drag && `drag ${r.drag}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
+        <div class="muted small">${[r.activity, r.zone, r.drag && `drag ${r.drag}`].filter(Boolean).map((x) => esc(x)).join(' · ')}</div></td>
       <td class="r">${fmtMin(r.minutes)}</td><td class="r">${r.meters ? fmtNum(r.meters) : ''}</td></tr>`).join('')}
   </table></div>`;
+}
+
+/** Short date for list rows: "Oct 23", with "'25" added for another year, so it stays on one line on a phone. */
+function shortDay(d) {
+  const sameYear = String(d).slice(0, 4) === new Date().toISOString().slice(0, 4);
+  return fmtDate(d, { month: 'short', day: 'numeric' }) + (sameYear ? '' : ` '${String(d).slice(2, 4)}`);
 }
 
 function wireWorkouts(rows, yearStart) {
@@ -693,15 +713,15 @@ async function showWorkout(id) {
         : `<table class="pieces"><tr><th>Interval</th><th class="r">Logged</th></tr>${d.intervals.map((x) => `<tr><td>${x.n}</td><td class="r splits">${workSplits([x], d.rowErg, isBike(w))}</td></tr>`).join('') || '<tr><td colspan="2" class="muted">No intervals logged.</td></tr>'}</table>`}
       <p class="muted small">✓ in range · ↓ under · ↑ over · * BikeErg per 1000m</p>`;
   }
+  pageParent = { hash: own ? '#/me' : '#/athlete/' + encodeURIComponent(v.athlete.id), label: own ? 'my page' : v.athlete.name };
   app.innerHTML = `${staleNote(v.meta)}
     <div class="head"><div><div class="eyebrow">${fmtDay(w.date)}</div><h1>${esc(v.athlete.name)}</h1></div>
-      <a class="btn ghost sm" href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
+      <a class="btn ghost sm" data-back href="#/athlete/${encodeURIComponent(v.athlete.id)}">‹ Back to ${own ? 'my page' : esc(v.athlete.name)}</a></div>
     <div class="card"><h2>${esc(d && d.workout ? d.workout : w.type)}</h2>
       <div class="result-line">${pills}</div>
       <div class="grid">
         ${tile('Minutes', fmtMin(w.minutes), `${fmtMin(w.weighted)} weighted`)}
         ${tile('Meters', w.meters ? fmtNum(w.meters) : '–', w.zone ? `Zone ${w.zone}` : 'No zone')}
-        ${tile('RPE', w.rpe ?? '–', '')}
         ${w.drag ? tile('Drag factor', w.drag, 'from Logbook') : ''}
       </div>
       ${body}</div>
@@ -732,12 +752,6 @@ function loadNote(ins, coach) {
   const flagged = ins.load.filter((l) => l.flag);
   return `<p class="muted small">Tick: prior 3-week average. ▲: more than ${ins.jumpPct}% above it.
     ${flagged.length ? `<b>${flagged.length} week${flagged.length > 1 ? 's' : ''} flagged.</b>` : 'No jumps in these weeks.'}</p>`;
-}
-
-function effortCard(ins) {
-  return `<div class="card"><h2>Effort (average session RPE)</h2>
-    ${lineChart(ins.load.map((l) => ({ weekStart: l.weekStart, value: l.rpe })), { caption: 'Average session RPE by week', fmt: (v) => String(Math.round(v * 10) / 10), min: 1, max: 10, tipLabel: 'Average RPE' })}
-    <p class="muted small">RPE 1-10, week average.</p></div>`;
 }
 
 function changeText(d, lowerBetter) {
@@ -798,7 +812,7 @@ function nextStarText(g) {
 }
 
 /** Her own page and coaches: GMS % per test and how far to the next star, in time or meters. */
-function gmsCard(gms, coach = false, summary = null, bests = []) {
+function gmsCard(gms, coach = false, summary = null, bests = [], key = null) {
   if (!gms.length) {
     // A 2k or 20' this season but no GMS means no weight on file: the result stands, unadjusted (David, 2026-11-11).
     const tested = bests.some((b) => b.season && (b.test === '2000m' || b.test === '20min'));
@@ -807,16 +821,18 @@ function gmsCard(gms, coach = false, summary = null, bests = []) {
       ? `A test is recorded this season, and it is shown unadjusted below. The GMS % and stars appear once a coach adds ${her} weight.`
       : `No 2k or 20' test this season yet. A test gives ${herObj} a GMS % and stars.`}</p></div>`;
   }
-  // The next-star text is long, so it sits behind "Show more" instead of making the table scroll sideways.
+  // Next star per test, visible (David, 2026-11-16): time for the 2k, meters for the 20', with the split it works out to.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
+  const keyRows = key ? key.map((k) => `<div class="gms-key"><span class="stars" role="img" aria-label="${starWord(k.stars)}">${starText(k.stars)}</span><span>${Number(k.pct).toFixed(1).replace(/\.0$/, '')}% or better${k.label ? ` · ${esc(k.label)}` : ''}</span></div>`).join('') : '';
   return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best GMS this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
     </table></div>
-    ${more ? `<button class="linkish small more-toggle" type="button">Show more</button><div class="small" hidden>${more}</div>` : ''}
+    ${more ? `<div class="small gms-next"><b>To the next star</b>${more}</div>` : ''}
     ${summary ? `<p class="callout">${esc(summary)}</p>` : ''}
-    <p class="muted small">100% = 1v8 standard. Stars from 2k and 20'. Best GMS % per test.</p></div>`;
+    <p class="muted small">100% = 1v8 standard. Any 2k or 20' earns 1 star. Stars shown = average of the 2k and 20'.</p>
+    ${keyRows ? `<div class="gms-keys">${keyRows}</div>` : ''}</div>`;
 }
 
 // ---- week ahead ----
@@ -881,13 +897,15 @@ function teamResults(s, today) {
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length && !logged.every((x) => x.result.test) ? ` · ${inRange} all in range` : ''}</summary>
     <div class="seg results-sort" role="group" aria-label="Sort results">
       <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
-    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th>Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
+    <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th class="st-col">Status</th><th class="r">Avg</th>${s.pieces.map((p) => `<th class="r">${esc(p.label)}</th>`).join('')}</tr></thead><tbody>
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
-      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a></td>
-      <td>${x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`}</td>
+      // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
+      const st = x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
+      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
+      <td class="st-col">${st}</td>
       <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
-      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(x.targets[i].replace(/\s*\([^)]*\)$/, ''))}</div>` : ''}</td>`).join('')}</tr>`;
+      ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(shortPace(x.targets[i].replace(/\s*\([^)]*\)$/, '')))}</div>` : ''}</td>`).join('')}</tr>`;
     }).join('')}
     </tbody></table></div></details>`;
 }
@@ -950,7 +968,7 @@ async function loadLogbookCard(id, own) {
     off.onclick = async () => {
       off.disabled = true;
       await fetch('/api/concept2/disconnect' + (own ? '' : '?athlete=' + encodeURIComponent(id)), { method: 'POST', credentials: 'same-origin' });
-      history.replaceState(null, '', location.pathname + location.hash);
+      history.replaceState(history.state, '', location.pathname + location.hash);
       loadLogbookCard(id, own);
     };
   }
@@ -970,7 +988,6 @@ function logbookCard(p) {
     ${p.possibleMakeup ? `<p class="small">Looks like a make-up for ${esc(p.makeupFor ? fmtDay(p.makeupFor) : 'a missed practice')}.</p>` : ''}
     <p class="small"><label>Counts as <select class="lb-type">${types}</select></label>
       <label class="lb-mk"${p.sessionType === 'Make-up' ? '' : ' hidden'}> for the practice on <input type="date" class="lb-mkdate" value="${esc(p.makeupFor || '')}"></label>
-      <label>Effort (1 easy – 10 max) <select class="lb-rpe"><option value="">skip</option>${[1, 2, 3, 4, 5, 6, 7, 8, 9, 10].map((n) => `<option>${n}</option>`).join('')}</select></label>
       ${p.benchmark ? `<label><input type="checkbox" class="lb-bench"> This was my ${p.benchmark === '2000m' ? '2k' : "20'"} test</label>` : ''}</p>
     <p><button class="btn lb-confirm">Confirm</button> <span class="muted small lb-msg">If you do nothing, it counts after 20 hours${p.possibleMakeup ? ' (make-ups wait for you)' : ''}.</span></p></div>`;
 }
@@ -986,7 +1003,7 @@ function wireLogbookCard(card, p) {
       method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' },
       body: JSON.stringify({
         entryId: p.id, sessionType: type.value, makeupFor: card.querySelector('.lb-mkdate').value,
-        rpe: card.querySelector('.lb-rpe').value, benchmark: bench && bench.checked ? p.benchmark : ''
+        rpe: '', benchmark: bench && bench.checked ? p.benchmark : ''
       })
     });
     const out = await res.json().catch(() => ({}));
@@ -1021,10 +1038,19 @@ async function loadLogbookPending(box) {
   const timer = setInterval(() => { if (!list.isConnected) clearInterval(timer); else refresh(); }, LOGBOOK_RECHECK_MS);
 }
 
-/** "2:07.0 /500m (171 W)" as pace, with watts underneath. */
+/** "2:27.1 to 2:19.8 /500m" as "2:20 - 2:27" (whole seconds, fast to slow); other text is returned as is. */
+function shortPace(main) {
+  const secs = (x) => { const [mm, ss] = x.split(':'); return Number(mm) * 60 + Number(ss); };
+  const clock = (s) => { const n = Math.round(s); return `${Math.floor(n / 60)}:${String(n % 60).padStart(2, '0')}`; };
+  const r = main.match(/^(\d+:\d+(?:\.\d+)?) to (\d+:\d+(?:\.\d+)?)\s*\/500m$/);
+  const one = main.match(/^(\d+:\d+(?:\.\d+)?)\s*\/500m$/);
+  return r ? `${clock(secs(r[2]))} - ${clock(secs(r[1]))}` : one ? clock(secs(one[1])) : main;
+}
+
+/** "2:27.1 to 2:19.8 /500m (101-118 W)" as "2:20 - 2:27", watts underneath. */
 function fmtTarget(t) {
   const m = t.match(/^(.*?)\s*\(([^)]*)\)$/);
-  return m ? `${esc(m[1])}<div class="muted small">${esc(m[2])}</div>` : esc(t);
+  return m ? `${esc(shortPace(m[1]))}<div class="muted small">${esc(m[2])}</div>` : esc(shortPace(t));
 }
 
 /** Today's plan with targets. Coaches viewing an athlete pass her id so the week link opens her week. */
@@ -1032,7 +1058,7 @@ function todayCard(sessions, id = null) {
   if (!sessions || !sessions.length) return '';
   const none = sessions.every((s) => s.pieces.every((p) => !p.target));
   return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
-    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="/logworkout" target="_blank" rel="noopener">Log a workout</a>
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="${isCoach() ? '#/log' : '#/logrun'}">Log a workout</a>
     <a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a><a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
 }
 
@@ -1059,6 +1085,13 @@ async function showWeek(id = null, prev = false) {
       ${team.map((a) => `<option value="${esc(a.id)}"${id === a.id ? ' selected' : ''}>${esc(a.name)}</option>`).join('')}</select></div>` : '';
   const firstWith = v.days.find((d) => d.day >= v.today && d.sessions.length) || v.days.find((d) => d.sessions.length);
   let sel = (v.days.find((d) => d.day === v.today && d.sessions.length) || firstWith || {}).day;
+  const tab = {};
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'week' ? restoreUi.ui : null;
+  if (back) {
+    if (v.days.some((d) => d.day === back.sel && d.sessions.length)) sel = back.sel;
+    Object.assign(tab, back.tab || {});
+  }
+  pageUi = () => ({ page: 'week', sel, tab: { ...tab } });
   const stat = (d) => {
     if (!d.sessions.length) return '<span class="muted small">nothing scheduled</span>';
     if (d.day > v.today) return '<span class="muted small">upcoming</span>';
@@ -1074,8 +1107,17 @@ async function showWeek(id = null, prev = false) {
       <span class="wkday"><b>${fmtDate(x.day, { weekday: 'short' })}</b><small>${fmtDate(x.day, { month: 'short', day: 'numeric' })}</small></span>
       <span class="wkwhat">${x.sessions.length ? x.sessions.map((s) => `<span class="wkname">${esc(s.workout)}${/^(varsity|novice)$/i.test(s.squad) ? ` <span class="pill">${esc(s.squad)}</span>` : ''}</span>`).join('') : '<span class="muted">Nothing scheduled</span>'}</span>
       <span class="wkstat">${stat(x)}${x.sessions.length ? '<span class="go" aria-hidden="true">›</span>' : ''}</span></button>`).join('')}`;
+    // Several workouts in one day (warm up, the work, cool down) sit on tabs (David, 2026-11-16); the main one opens first.
+    const many = d && d.sessions.length > 1;
+    if (many && !(tab[d.day] >= 0 && tab[d.day] < d.sessions.length)) {
+      const main = d.sessions.findIndex((s) => !/warm|cool/i.test(s.workout));
+      tab[d.day] = main >= 0 ? main : 0;
+    }
+    const shown = d && d.sessions.length ? (many ? [d.sessions[tab[d.day]]] : d.sessions) : [];
     document.getElementById('wk-detail').innerHTML = d && d.sessions.length ? `<div class="card"><div class="eyebrow">${fmtDay(d.day)}${d.day === v.today ? ' · today' : ''}</div>
-      ${d.sessions.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today).replace('<details class="team-results">', '<details class="team-results" open>')).join('')}</div>` : '';
+      ${many ? `<div class="seg day-tabs" role="tablist" aria-label="Workouts this day">${d.sessions.map((s, i) => `<button type="button" role="tab" data-tab="${i}" aria-selected="${i === tab[d.day]}" aria-pressed="${i === tab[d.day]}">${esc(s.workout)}</button>`).join('')}</div>` : ''}
+      ${shown.map((s) => sessionBlock({ ...s, day: d.day }, !!v.athlete, v.today).replace('<details class="team-results">', '<details class="team-results" open>')).join('')}</div>` : '';
+    document.querySelectorAll('#wk-detail [data-tab]').forEach((b) => { b.onclick = () => { tab[d.day] = Number(b.dataset.tab); drawDays(); }; });
     document.querySelectorAll('#wk-days [data-d]').forEach((b) => { b.onclick = () => { sel = b.dataset.d; drawDays(); }; });
     wireResultsSort(app);
   };
@@ -1104,10 +1146,11 @@ async function showBoards() {
     const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
     const yr = Number(String(v.yearStart).slice(0, 4));
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
-      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div>
-      <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
-        ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
-      <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
+      <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div></div>
+      <div class="board-filters">
+        <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
+        <div class="filters chips">${seg('window', [['season', 'This school year'], ['allTime', 'All time']])}
+          ${seg('group', [['all', 'All'], ['varsity', 'Varsity <span class="age">(10th-12th)</span>'], ['freshman', 'Fr/Nov <span class="age">(7th-9th)</span>']])}</div></div>
       <div class="card board">${rows.length ? `<div class="table-wrap"><table>
         <tr><th class="r">#</th><th>Athlete</th><th class="r">${isMeters ? 'Distance' : 'Time'}</th><th class="r">Split</th><th class="r rate">Rate</th>${gmsCol ? '<th class="r gms">GMS %</th>' : ''}<th class="date">Date</th></tr>
         ${rows.map((r, i) => `<tr${mine && mine.id === r.id ? ' class="me"' : ''}><td class="r rk">${i + 1}</td>
@@ -1155,11 +1198,11 @@ async function showStars() {
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
         <div class="gms-keys">${[5, 4, 3, 2, 1].map((n) => star(n, esc(v.starLabels[n] || ''))).join('')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
-      <div class="card"><div class="gms-all"><button type="button" class="btn ghost sm" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></div><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r">Details</th></tr>
+      <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r"><button type="button" class="linkish small" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></th></tr>
         ${tested.map((r, i) => `<tr class="gms-row"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
           <td><span class="stars" role="img" aria-label="${starWord(r.stars)}">${starText(r.stars)}</span></td>
           <td class="r big-result">${pct(r.combined)}</td><td class="r">${pct(r.k2Pct)}</td><td class="r">${pct(r.m20Pct)}</td>
-          <td class="muted">${nextTxt(r)}</td>
+          <td class="muted next-star">${nextTxt(r)}</td>
           <td class="r"><button type="button" class="gms-toggle" data-r="${esc(r.id)}" aria-expanded="${open.has(r.id)}" aria-label="Show results for ${esc(r.name)}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></td></tr>${open.has(r.id) ? `<tr class="gms-detail"><td></td><td colspan="7">${r.used.map((u) => `<div class="gms-used"><b>${TEST_LABELS[u.test]}</b> ${fmtResult(u)} <span class="muted">${split(u)} /500m · ${fmtDate(u.date, { month: 'short', day: 'numeric', year: 'numeric' })} · ${pct(u.gmsPct)} · ${starText(u.stars)}</span></div>`).join('')}</td></tr>` : ''}`).join('')}
       </table></div></div>
       ${untested.length ? `<div class="card"><h2>No 2k or 20' yet this season</h2><p class="muted small">${untested.map((r) => esc(r.name)).join(', ')}</p></div>` : ''}
@@ -1191,7 +1234,7 @@ async function showInsights() {
   const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
     : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
       : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
-  const loadCell = (w) => `<td class="r">${fmtMin(w.total)}</td><td class="r">${jump(w)}</td>`;
+  const loadCell = (w, c = '') => `<td class="r${c}">${fmtMin(w.total)}</td><td class="r${c}">${jump(w)}</td>`;
   let which = 'season';
   const draw = () => {
   const over = v.rowers.filter((r) => r.oyo.pct !== null && r.oyo.pct >= v.overreachPct).sort((x, y) => y.oyo.pct - x.oyo.pct);
@@ -1204,26 +1247,28 @@ async function showInsights() {
   const lb = v.logbook && v.logbook.active ? v.logbook : null;
   const lbTile = lb ? tile('Missing Logbook account', lb.missing ? lb.missing.length : '–', lb.missing ? 'not connected to Concept2' : 'could not check') : '';
   const alerts = `<div class="grid">${tile('Overreaching on OYO', over.length, `${v.overreachPct}% or more of Standard`)}${tile('Attendance under 80%', low.length, which === 'recent' ? `last ${v.attendanceRecent} practices` : 'this season')}${tile("Missing a test", noTest.length, "2k or 20' this school year")}${lbTile}</div>
-    <div class="cols">
-      <div class="card"><h2>Overreaching on OYO</h2><p class="muted small">OYO at ${v.overreachPct}%+ of Standard, this week.</p>${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div>
+    <!-- Layout review (David, 2026-11-16): the short lists side by side, sized to their content; the long one full width below. -->
+    <div class="cols ins-cols">
       <div class="card"><div class="ins-head"><h2>Attendance under 80%</h2><div class="seg" role="group" aria-label="Attendance period"><button type="button" data-att="season" aria-pressed="${which === 'season'}">Season</button><button type="button" data-att="recent" aria-pressed="${which === 'recent'}">Past 2 weeks</button></div></div>
         <p class="muted small">${which === 'recent' ? `Last ${v.attendanceRecent} practices.` : 'This school year.'} Make-ups count.</p>${low.length ? low.map((r) => rowLink(r, `<b class="num">${pc(r)}%</b>`)).join('') : '<p class="muted">Nobody.</p>'}</div>
       <div class="card"><h2>Missing a test</h2><p class="muted small">No 2k or 20' this school year${!run.has2k ? " (no team 2k yet)" : ''}.</p>${noTest.length ? noTest.map((r) => rowLink(r, `<span class="muted small">${[miss2k(r) && 'no 2k', miss20(r) && "no 20'"].filter(Boolean).join(', ')}</span>`)).join('') : '<p class="muted">Everyone has both.</p>'}</div>
       ${lb ? `<div class="card"><h2>Missing Logbook account</h2><p class="muted small">Not connected to Logbook.</p>${!lb.missing ? '<p class="muted">Could not load list. Reload.</p>' : lb.missing.length ? lb.missing.map((r) => rowLink(r, '<img class="c2" src="/icons/concept2.png" alt="" width="18" height="18" style="opacity:.4">')).join('') : '<p class="muted">Everyone is connected.</p>'}</div>` : ''}
-    </div>`;
+    </div>
+      <div class="card ins-wide"><h2>Overreaching on OYO</h2><p class="muted small">OYO at ${v.overreachPct}%+ of Standard, this week.</p><div class="ins-list">${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div></div>
+`;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
     <p class="muted small">${missedFlagged ? `<b>${missedFlagged} missing ${v.missedFlagAt}+ practices</b>` : 'No one flagged.'}
       Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
-      <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r" colspan="2">Last week</th><th class="r">RPE last week</th>
-        <th class="r">Steady split</th><th class="r">Est. 2k</th><th class="r">${fmtDate(v.today, { month: 'long' })}</th><th class="r">Streak</th></tr>
-      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
+      <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r c-last" colspan="2">Last week</th>
+        <th class="r c-split">Steady split</th><th class="r c-est">Est. 2k</th><th class="r c-month">${fmtDate(v.today, { month: 'long' })}</th><th class="r c-streak">Streak</th></tr>
+      ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small sq">${esc(r.squad)}</span></td>
         <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td>
-        ${loadCell(r.thisWeek)}${loadCell(r.lastWeek)}<td class="r">${r.lastWeek.rpe ?? ''}</td>
-        <td class="r">${trend(r.splitTrend)}</td><td class="r">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
-        <td class="r">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
-        <td class="r">${r.month.streak}</td></tr>`).join('')}
+        ${loadCell(r.thisWeek)}${loadCell(r.lastWeek, ' c-last')}
+        <td class="r c-split">${trend(r.splitTrend)}</td><td class="r c-est">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
+        <td class="r c-month">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
+        <td class="r c-streak">${r.month.streak}</td></tr>`).join('')}
     </table></div>
     <p class="muted small">Missed: last ${v.missedWindowDays} days, open vs overdue; ${v.missedFlagAt}+ flagged. Steady split: recent Aerobic vs prior (▲ faster). Est. 2k: from newer 20'.</p></div>
     ${footer(v.meta)}`;
@@ -1274,7 +1319,7 @@ async function showLogFor() {
   const draw = () => {
     const kind = testKind(), out = S.type === 'practice' && S.status === 'out';
     if (!kind) S.test = null;
-    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Log for an athlete</div><h1>Log a workout</h1><p class="muted">Same as the Form. Updates in ~5 min.</p></div></div>
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Log for an athlete</div><h1>Log a workout</h1><p class="muted">Updates in ~5 min.</p></div></div>
       <form class="card logfor" id="logfor" novalidate>
         <label class="f">Athlete<select class="in" data-f="athlete"><option value="">Choose an athlete</option>${athletes.map((x) => `<option value="${esc(x.id)}"${x.id === S.athlete ? ' selected' : ''}>${esc(x.name)}</option>`).join('')}</select></label>
         <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
@@ -1286,14 +1331,14 @@ async function showLogFor() {
         <div class="seg" role="group" aria-label="Pieces">${[['single', 'Single piece'], ['intervals', 'Intervals']].map(([v, l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode === v}">${l}</button>`).join('')}</div>
         ${S.mode === 'single' ? `<div class="lf-row">${field('Time (min:sec.tenth)', 'time', 'placeholder="20:00.0"')}${field('Distance (meters)', 'dist', `inputmode="numeric" placeholder="${S.activity === 'Run' ? '5000' : '4936'}"`)}${onErg() ? field('Stroke rate (optional)', 'rate', 'inputmode="numeric"') : ''}</div>${paceHint()}`
           : `<label class="f">One line per piece: time, meters, rate (optional), rest time (optional)<textarea class="in" data-f="pieces" rows="5" placeholder="7:44.8, 2000, 31, 4:00">${esc(S.pieces)}</textarea></label>`}
-        <div class="lf-row">${field('Effort 1 to 10 (optional)', 'rpe', 'inputmode="numeric"')}${S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? field('Drag factor (optional)', 'drag', 'inputmode="numeric"') : ''}</div>
+        <div class="lf-row">${S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? field('Drag factor (optional)', 'drag', 'inputmode="numeric"') : ''}</div>
         ${kind ? `<div class="card hl" id="lf-test"><b>This piece is exactly ${kind.label}. Is it a test?</b><div class="seg" role="group" aria-label="Is it a test?"><button type="button" data-test="yes" aria-pressed="${S.test === 'yes'}">Yes, a test</button><button type="button" data-test="no" aria-pressed="${S.test === 'no'}">No</button></div>
           <p class="muted small">${S.test === 'yes' ? `${kind.what}: counts on boards${kind.key === '500m' || kind.key === '100m' ? ' (no stars or GMS %)' : ' and stars'}.` : S.test === 'no' ? 'Normal workout, not on boards.' : 'Pick one before saving.'}</p></div>`
           : !onErg() ? ''
           : '<p class="muted small">Test question: only single 2000 m, 500 m, 100 m or 20:00.</p>'}
         ${field('Note for coaches (optional)', 'note')}
         <div class="f"><span>Photo of the screen or watch (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lf-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lf-photo" accept="image/*" aria-label="Photo of the screen or watch">'}
-          <span class="muted small">Kept as a small private copy, with location data removed. Proof for runs, rides and other non-erg work.</span></div>`}
+          <span class="muted small">Only the athlete and coaches can see it. Kept as a small copy, with location data removed. Proof for runs, rides and other non-erg work.</span></div>`}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save workout'}</button></div></form>`;
     const f = app.querySelector('#logfor');
@@ -1315,7 +1360,7 @@ async function showLogFor() {
       if (!S.athlete) { S.err = 'Choose an athlete.'; draw(); return; }
       if (testKind() && !S.test) { S.err = 'Answer the test question first.'; draw(); return; }
       S.busy = true; S.err = ''; S.msg = ''; draw();
-      const form = { date: S.date, activity: S.activity, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: S.rpe, drag: S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? S.drag : '', note: S.note };
+      const form = { date: S.date, activity: S.activity, type: S.type, status: S.type === 'practice' ? S.status : '', makeup_for: S.type === 'makeup' ? S.makeup : '', rpe: '', drag: S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? S.drag : '', note: S.note };
       if (!(S.type === 'practice' && S.status === 'out')) { form.pieces = pieceText(); if (testKind()) form.test = S.test; }
       try {
         const res = await fetch('/api/log', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: S.athlete, requestId: S.rid, form, ...(S.photo ? { photo: S.photo } : {}) }) });
@@ -1483,6 +1528,13 @@ async function showBalance() {
   setNav('balance');
   let squad = 'all', sort = 'endurance';
   const open = new Set();
+  const back = restoreUi && restoreUi.ui && restoreUi.ui.page === 'balance' ? restoreUi.ui : null;
+  if (back) {
+    if (['all', 'varsity', 'novice'].includes(back.squad)) squad = back.squad;
+    if (['endurance', 'sprint', 'name'].includes(back.sort)) sort = back.sort;
+    (back.open || []).forEach((id) => open.add(id));
+  }
+  pageUi = () => ({ page: 'balance', squad, sort, open: [...open] });
   let focusId = null;
   const signed = (n) => `${n > 0 ? '+' : ''}${Math.abs(n) < 1 ? n.toFixed(1) : Math.round(n)}%`;
   const months = Math.round(v.windowDays / 30.4), weakMonths = Math.round((v.halfLifeDays * Math.log2(1 / v.weakBelow)) / 30.4);
@@ -1525,7 +1577,7 @@ async function showBalance() {
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Balance</h1></div>
       <div class="bal-ctl">${seg('squad', squad, [['all', 'All'], ['varsity', 'Varsity'], ['novice', 'Novice']])}${seg('sort', sort, [['endurance', 'Endurance'], ['sprint', 'Sprint'], ['name', 'Name']])}</div></div>
       <div class="tiles">${tile('All three tests', `${v.team.allThree}/${v.team.rowers}`, `last ${months} months`)}${tile("Team 20'", chg('20min'), chgSub('20min'))}${tile('Team 2k', chg('2000m'), chgSub('2000m'))}${tile('Team 100m', chg('100m'), chgSub('100m'))}</div>
-      <div class="card bal-list"><div class="bal-row bal-headrow"><span>Rower</span><span>Watts <span class="muted small">100m / 2k / 20'</span></span><span>Sprint lean</span><span>Endurance lean</span><span></span></div>
+      <div class="card bal-list${shown.some((r) => r.sprint) ? '' : ' no-sprint'}"><div class="bal-row bal-headrow"><span>Rower</span><span>Watts <span class="muted small">100m / 2k / 20'</span></span><span>Sprint lean</span><span>Endurance lean</span><span></span></div>
         ${shown.map((r) => `<div class="bal-row"><div class="bal-who"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a>
             <div class="sub muted small">${esc(r.squad)}${[r.sprint && r.sprint.tag, r.endurance && r.endurance.tag].filter(Boolean).map((t) => ` <span class="pill a">${t}</span>`).join('')}</div></div>
           <span class="bal-watts num">${wattsOf(r, '100m')} / ${wattsOf(r, '2000m')} / ${wattsOf(r, '20min')}</span>
@@ -1598,7 +1650,7 @@ async function showOyo() {
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
-          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}${which === 'now' && r.streak > 1 ? ` · ${r.streak} wk streak` : ''}</div></div>
+          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}</div>${which === 'now' && r.streak > 1 ? `<div class="sub">${r.streak} wk streak</div>` : ''}</div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
             <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
@@ -1689,7 +1741,7 @@ function sessionsTable(rows) {
       const extra = [
         r.mainSet && `Main set: ${esc(r.mainSet)}`, r.zone && `Zone: ${esc(r.zone)}`,
         r.status !== 'Out' && `Weighted: ${fmtMin(r.weighted)}`, r.meters && `Meters: ${fmtNum(r.meters)}`,
-        r.rpe != null && `RPE ${r.rpe}`, r.drag && `Drag ${r.drag}`
+        r.drag && `Drag ${r.drag}`
       ].filter(Boolean).join(' · ');
       return `<tr class="session-row"><td>${fmtDate(r.date)}</td>
       <td>${esc(r.type)}${r.status && r.status !== 'Full' ? ` <span class="pill">${esc(r.status)}</span>` : ''}${r.makeupFor ? ` <span class="muted small">for ${fmtDate(r.makeupFor)}</span>` : ''}</td>
@@ -1919,8 +1971,85 @@ function wireAthletePasswords() {
 const SKELETON = `<div class="skel" aria-hidden="true"><div class="skel-bar w40"></div><div class="skel-row"><div class="skel-tile"></div><div class="skel-tile"></div><div class="skel-tile"></div></div><div class="skel-card"></div></div><span class="sr-only">Loading…</span>`;
 
 let routed = false, pendingNote = '', redirected = false;
+
+// ---- Back (David, 2026-11-16) --------------------------------------------
+// backstack.mjs keeps the pages opened in this tab. Pages that have on-page choices worth
+// keeping (Week day and tab, Athletes filter, Balance squad and sort) set pageUi to report
+// them, and read restoreUi when Back returns to them.
+let pageUi = null, restoreUi = null, pageParent = null, navReset = false, navReplace = false;
+let backState = (() => { try { return JSON.parse(sessionStorage.getItem(BACK_KEY)); } catch { return null; } })();
+const saveBack = () => { try { sessionStorage.setItem(BACK_KEY, JSON.stringify(backState)); } catch { /* private window: Back still works for this page load */ } };
+if ('scrollRestoration' in history) history.scrollRestoration = 'manual';
+
+function stepBack() {
+  // Snapshot the page being left, unless this is the first draw after a reload (the page isn't on screen yet).
+  if (routed && SESSION && !app.querySelector('.login')) {
+    let ui = null;
+    try { ui = pageUi ? pageUi() : null; } catch { ui = null; }
+    const h1 = app.querySelector('h1');
+    backState = snapshot(backState, { y: window.scrollY, ui, title: h1 ? h1.textContent.trim().slice(0, 40) : '', open: [...app.querySelectorAll('details')].map((d) => d.open) });
+  }
+  const idx = history.state && Number.isInteger(history.state.wrc) ? history.state.wrc : undefined;
+  const step = navStep(backState, location.hash || '#/', { idx, replace: navReplace, reset: navReset });
+  navReplace = navReset = false;
+  backState = step.state;
+  saveBack();
+  if (idx !== backState.pos) history.replaceState({ ...(history.state || {}), wrc: backState.pos }, '');
+  restoreUi = step.kind === 'restore' || step.kind === 'same' ? step.entry : null;
+  pageUi = null; pageParent = null;
+}
+
+function finishBack() {
+  const r = restoreUi;
+  restoreUi = null;
+  if (r && Array.isArray(r.open)) {
+    const ds = [...app.querySelectorAll('details')];
+    if (ds.length === r.open.length) ds.forEach((d, i) => { d.open = !!r.open[i]; });
+  }
+  if (r && r.y) {
+    // After the final draw, and clamped so a shorter page doesn't jump past its end.
+    requestAnimationFrame(() => window.scrollTo(0, clampScroll(r.y, document.documentElement.scrollHeight - window.innerHeight)));
+  } else if (routed) window.scrollTo(0, 0);
+  drawBack();
+}
+
+function drawBack() {
+  const t = SESSION && !app.querySelector('.login') ? backTarget(backState, location.hash, pageParent) : null;
+  const label = t ? (t.label ? 'Back to ' + t.label : 'Back') : '';
+  const btn = document.getElementById('back'), bar = document.getElementById('backbar');
+  btn.hidden = bar.hidden = !t;
+  if (t) { btn.setAttribute('aria-label', label); btn.title = label; bar.querySelector('button').textContent = '‹ ' + label; }
+}
+
+function goBack() {
+  const t = backTarget(backState, location.hash, pageParent);
+  if (!t) return;
+  if (t.history) history.back();
+  else { navReset = true; location.hash = t.hash; }
+}
+document.getElementById('back').onclick = goBack;
+document.querySelector('#backbar button').onclick = goBack;
+
+document.addEventListener('click', (ev) => {
+  if (ev.defaultPrevented || ev.button !== 0 || ev.metaKey || ev.ctrlKey || ev.shiftKey || ev.altKey) return;
+  const a = ev.target.closest && ev.target.closest('a[href^="#"]');
+  if (!a) return;
+  const href = a.getAttribute('href');
+  // A page's own "Back to ..." link acts like Back when it points at the page we came from.
+  if (a.hasAttribute('data-back')) {
+    const t = backTarget(backState, location.hash, pageParent);
+    const m = me();
+    const same = (x) => (m && x === '#/me' ? '#/athlete/' + encodeURIComponent(m.id) : x);
+    if (t && t.history && same(t.hash) === same(href)) { ev.preventDefault(); history.back(); }
+    return;
+  }
+  // The menu, the tab bar and the logo start a fresh trail.
+  if (a.closest('#side, #tabbar') || a.classList.contains('brand')) { if (href !== location.hash) navReset = true; }
+});
+
 async function route() {
   tip.hidden = true;
+  stepBack();
   const h = location.hash.replace(/^#\/?/, '');
   const [page, arg] = h.split('/');
   // Placeholder cards if a page takes more than a moment to load; the page replaces them.
@@ -1966,13 +2095,14 @@ async function route() {
     if (page === 'me' && m) return await showAthlete(m.id);
     if (['stars', 'insights', 'lineups', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
+    navReplace = true;   // the redirect replaces this entry in Back, too
     location.replace(m ? '#/me' : '#/team');
   } catch (err) {
     showError(err);
   } finally {
     clearTimeout(slow);
-    // A new page opens at the top, and keyboard and screen-reader users start at its heading.
-    if (routed) window.scrollTo(0, 0);
+    // A new page opens at the top (Back returns to where you were), and keyboard and screen-reader users start at its heading.
+    finishBack();
     routed = true;
     if (redirected) { redirected = false; return; }
     if (pendingNote && SESSION && app.firstElementChild && !app.querySelector('.login')) { app.insertAdjacentHTML('afterbegin', `<p class="notice" role="status">${esc(pendingNote)}</p>`); }
