@@ -12,6 +12,7 @@ var WORKOUT_LIST_ACTION = 'workout-list';
 var WORKOUT_DELETE_ACTION = 'workout-delete';
 var WORKOUT_UPDATE_ACTION = 'workout-update';
 var WORKOUT_MOVE_ACTION = 'workout-move';
+var WORKOUT_UNSAVE_ACTION = 'workout-unsave';
 var WORKOUT_MAX_PIECES = 12;
 var WORKOUT_SQUADS = ['All', 'Varsity', 'Novice'];
 var WORKOUT_SESSIONS = ['Practice', 'OYO'];
@@ -152,12 +153,12 @@ function workoutGroupSaved_(rows) {
   return !rows.some(function (w) { return String(w['Saved'] === undefined || w['Saved'] === null ? '' : w['Saved']).trim().toLowerCase() === 'no'; });
 }
 
-/** Marks a one-off workout as saved (Saved = Yes on all its rows). */
-function workoutMarkSaved_(id) {
+/** Sets Saved = Yes (or No when `yes` is false) on all rows of a workout. */
+function workoutMarkSaved_(id, yes) {
   var sheet = tab_(TABS.WORKOUTS), vals = sheet.getDataRange().getValues(), heads = vals[0].map(String);
   var idc = heads.indexOf('Workout ID'), sc = heads.indexOf('Saved');
   if (idc < 0 || sc < 0) return;
-  for (var r = 1; r < vals.length; r++) if (String(vals[r][idc]).trim() === id) sheet.getRange(r + 1, sc + 1).setValue('Yes');
+  for (var r = 1; r < vals.length; r++) if (String(vals[r][idc]).trim() === id) sheet.getRange(r + 1, sc + 1).setValue(yes === false ? 'No' : 'Yes');
 }
 
 /** True when the library workout `id` is a one-off (so a "keep" request should flip it to saved). */
@@ -266,6 +267,26 @@ function scheduleNextOrder_(schedule, nameOf, days) {
   return out;
 }
 
+/** body: { workoutId, coachName }. Takes a workout off the saved list. Days already planned keep it; nothing is deleted. */
+function processWorkoutUnsave_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var id = String(body.workoutId || '').trim();
+    var existing = readObjects_(TABS.WORKOUTS);
+    var rows = existing.filter(function (w) { return String(w['Workout ID']).trim() === id; });
+    if (!rows.length) return { status: 'invalid', message: 'That workout is no longer in the library.' };
+    if (workoutGroupSaved_(rows)) {
+      workoutsEnsureColumns_();
+      workoutMarkSaved_(id, false);
+      logChange_({ Who: String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach', Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Saved', 'Old value': 'Yes', 'New value': 'No', Note: 'site Plan page (removed from saved workouts)' });
+    }
+    return processWorkoutList_();
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 function processWorkoutList_() {
   var t = weightsTodayAndYear_();
   var v = workoutListView_(readObjects_(TABS.WORKOUTS), readObjects_(TABS.SCHEDULE), t.today);
@@ -293,7 +314,7 @@ function processWorkoutSave_(body) {
       var b = workoutBuildRows_(id, body);
       if (b.error) return { status: 'invalid', message: b.error };
       var same = workoutFindSame_(existing, b.rows);   // already saved: reuse it, no copy
-      if (same) { id = same; if (body.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id); } } else wrows = b.rows;
+      if (same) { id = same; if (body.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id, true); } } else wrows = b.rows;
     }
     var schedule = readObjects_(TABS.SCHEDULE);
     var names = workoutNameMap_(existing.concat(wrows));
@@ -408,7 +429,7 @@ function processWorkoutUpdate_(body) {
       var b = workoutBuildRows_(id, to);
       if (b.error) return { status: 'invalid', message: b.error };
       var same = workoutFindSame_(existing, b.rows);
-      if (same) { id = same; if (to.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id); } } else wrows = b.rows;
+      if (same) { id = same; if (to.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id, true); } } else wrows = b.rows;
     } else if (to.workoutId) {
       id = String(to.workoutId).trim();
       if (!existing.some(function (w) { return String(w['Workout ID']).trim() === id; })) return { status: 'invalid', message: 'That workout is not in the library.' };

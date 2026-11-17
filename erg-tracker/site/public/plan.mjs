@@ -223,6 +223,13 @@ export function openPlan(v, ctx) {
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
 
   // ---- the editor: opens under the week, names its day ----
+  const libraryHtml = () => {
+    const items = data.library.filter((w) => w.saved !== false);
+    if (!items.length) return '';
+    return `<div class="card" id="plib"><div class="eyebrow">Saved workouts</div>
+      <p class="note">Your list for "Start from a saved workout". Removing one only takes it off this list; days already planned keep it.</p>
+      <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
+  };
   const editorHtml = () => {
     if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap “+ Add workout” under a day to build one for that day, or tap a workout to change it.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
@@ -267,7 +274,8 @@ export function openPlan(v, ctx) {
       <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
       <div class="pweek">${weekHtml()}</div>
       <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
-      ${editorHtml()}`;
+      ${editorHtml()}
+      ${libraryHtml()}`;
     wire();
     if (scrollTo) { const el = app.querySelector(scrollTo); scrollTo = ''; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   };
@@ -349,6 +357,10 @@ export function openPlan(v, ctx) {
     app.querySelectorAll('[data-type]').forEach((b) => { b.onclick = () => { B.type = b.dataset.type; draw(); }; });
     app.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => { B.act = b.dataset.act; draw(); }; });
     app.querySelectorAll('[data-unit]').forEach((b) => { b.onclick = () => { B.unit = b.dataset.unit; draw(); }; });
+    app.querySelectorAll('[data-unsave]').forEach((b) => { b.onclick = async () => {
+      const l = lib(b.dataset.unsave), ok = await act({ unsave: { workoutId: b.dataset.unsave } }, 'unsave', () => `Removed “${l ? l.name : 'workout'}” from your saved workouts.`);
+      if (ok) { const f = data.library.find((w) => w.saved !== false); if (!lib(B.pick) || (lib(B.pick) || {}).saved === false) B.pick = f ? f.id : ''; }
+      scrollTo = '#pnotice'; draw(); }; });
     const kp = app.querySelector('[data-keep]'); if (kp) kp.onchange = () => { B.keep = kp.checked; };
     const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; draw(); };
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });

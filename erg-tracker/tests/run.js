@@ -1688,6 +1688,7 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.deepStrictEqual(lv2.library.map(w => w.id).sort(), ['W1', 'W5'], 'an unused one-off is hidden');
   assert.strictEqual(g.workoutIsOneOff_(once, 'W6'), true);
   assert.strictEqual(g.workoutIsOneOff_(old, 'W1'), false);
+  assert.strictEqual(g.WORKOUT_UNSAVE_ACTION, 'workout-unsave');
 });
 
 console.log(`${passed} tests passed`);

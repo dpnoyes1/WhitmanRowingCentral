@@ -29,6 +29,7 @@ function doPost(e) {
   if (body.action === WORKOUT_SAVE_ACTION) return feedJson_(processWorkoutSave_(body));
   if (body.action === WORKOUT_UPDATE_ACTION) return feedJson_(processWorkoutUpdate_(body));
   if (body.action === WORKOUT_MOVE_ACTION) return feedJson_(processWorkoutMove_(body));
+  if (body.action === WORKOUT_UNSAVE_ACTION) return feedJson_(processWorkoutUnsave_(body));
   if (body.action === WORKOUT_DELETE_ACTION) return feedJson_(processWorkoutDelete_(body));
   if (body.action === WEIGHTS_GET_ACTION) return feedJson_(processWeightsGet_());
   if (body.action === WEIGHTS_SAVE_ACTION) return feedJson_(processWeightsSave_(body));

@@ -111,6 +111,16 @@ export async function handleWorkouts(req, envFn, deps = {}) {
   }
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
+  if (body && body.unsave !== undefined) {
+    const id = body.unsave && typeof body.unsave.workoutId === 'string' ? body.unsave.workoutId.slice(0, 40) : '';
+    if (!id) return json({ error: 'Pick a saved workout first.' }, 400);
+    let out;
+    try { out = await callSheet(envFn, fetchImpl, { action: 'workout-unsave', workoutId: id, coachName: who.name || 'Coach' }); }
+    catch (err) { console.error('workouts unsave error:', err.message); return json({ error: 'The Sheet did not answer, so check the list before trying again.' }, 502); }
+    if (out.status === 'invalid') return json({ error: out.message }, 422);
+    if (out.status !== 'ok') { console.error('workouts unsave said:', out.error); return json({ error: 'The Sheet could not do that. Nothing was changed.' }, 502); }
+    return json({ today: out.today, library: out.library, upcoming: out.upcoming });
+  }
   for (const kind of ['remove', 'update', 'move']) {
     if (body && body[kind] !== undefined) return sessionAction(kind, body[kind], who, fetchImpl, envFn);
   }
