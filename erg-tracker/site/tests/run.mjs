@@ -2871,6 +2871,19 @@ test('display names: first name, last initial only for a shared first name (Davi
   assert.strictEqual(out.rows[0].note, 'Alexa Silvertooth ran', 'only exact names change');
 });
 
+test('display names: inactive athletes do not lengthen an active name (Norah Tello, 2026-11-17)', () => {
+  const m = displayNames([
+    { name: 'Norah Tello', active: true }, { name: 'Norah Tama', active: false },
+    { name: 'Ann Lee', active: true }, { name: 'Ann Lopez', active: true }, { name: 'Ann Lamb', active: false }
+  ]);
+  assert.strictEqual(m.get('Norah Tello'), 'Norah');
+  assert.strictEqual(m.get('Norah Tama'), 'Norah Tama', 'inactive one is told apart');
+  assert.strictEqual(m.get('Ann Lee'), 'Ann Lee');
+  assert.strictEqual(m.get('Ann Lopez'), 'Ann Lopez');
+  const two = displayNames([{ name: 'Norah Tello', active: true }, { name: 'Norah Kim', active: true }]);
+  assert.strictEqual(two.get('Norah Tello'), 'Norah T.');
+});
+
 photoTests(test);
 askTests(test);
 
