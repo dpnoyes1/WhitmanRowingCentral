@@ -1,0 +1,12 @@
+{
+ "note": "Sideways scrolling already found. A new one fails the run. Remove a line when its fix lands.",
+ "expected": [
+  "athlete #/attendance @320 page document",
+  "coach #/attendance @320 page document",
+  "coach #/balance @320 inner main#app > details.card.bal-check > div.table-wrap",
+  "coach #/insights @320 inner main#app > div.card > div.table-wrap",
+  "coach #/insights @320 page document",
+  "coach #/weights @320 inner main#app > div.card > div.table-wrap",
+  "coach #/weights @768 inner main#app > div.card > div.table-wrap"
+ ]
+}
