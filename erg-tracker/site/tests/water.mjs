@@ -475,6 +475,15 @@ test('Water report API: coaches only, the season from July 1 to the date', async
   assert.strictEqual((await handleWater(get(coach, '?rate=r99'), env, { fetchImpl })).status, 400);
 });
 
+test('Moving time never exceeds the monitor timer (real race files ran 2 s over before this)', () => {
+  const start = Date.UTC(2026, 9, 18, 16, 25) / 1000;
+  const strokes = strokesFor(start, [{ kind: 'row', s: 1160, splitS: 122.2, rate: 34 }], { seed: 8 });
+  const f = readFit(writeFit({ serial: 3121111, start: strokes[0].t, strokes }));
+  const s = W.summarize(f);
+  assert.ok(s.movingS <= f.session.timerS, s.movingS + ' vs timer ' + f.session.timerS);
+  assert.strictEqual(s.kind, 'Race');
+});
+
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (e) { console.error('FAIL ' + name + '\n  ' + (e && e.message)); process.exitCode = 1; }
 }

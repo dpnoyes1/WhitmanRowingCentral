@@ -176,6 +176,9 @@ export function guessKind(fit, o = WATER) {
 /** One row per file for the Water sessions tab (plan Step 2), apart from the boat, lineup and import details the page adds. */
 export function summarize(fit, kind = null, o = WATER) {
   const mv = movement(fit.strokes, o);
+  // Moving time never exceeds the monitor's own timer (real Oct 18 race files: the first-stroke credit made it 2 s over the clock).
+  const timer = fit.session && fit.session.timerS;
+  if (timer > 0 && mv.movingS > timer) { mv.movingS = Math.round(timer); mv.avgSplitS = round1(splitOf(mv.movingS, mv.movingM)); }
   const k = kind || guessKind(fit, o);
   let pieces = k === 'Pieces' ? piecesOf(fit, o) : [];
   if (k === 'Race' && mv.movingS > 0) {
