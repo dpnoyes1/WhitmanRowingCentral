@@ -32,7 +32,7 @@ export function sessionSecret(env) {
  */
 export function makeToken(secret, who = 'team', now = Date.now(), name = '', cred = '') {
   const exp = Math.floor(now / 1000) + SESSION_DAYS * 86400;
-  if (who === 'team' && !name) throw new Error('A coach session needs her name');
+  if (who === 'team' && !name) throw new Error('A coach session needs a name');
   // cred: the password stamp she signed in with (credVersion; '' = birthday, no password of her own). See liveSession.
   const label = (who !== 'team' ? 'ath:' + who : 'coach:' + Buffer.from(String(name).slice(0, 80)).toString('base64url')) + '~' + String(cred || '');
   const payload = label + '.' + exp;

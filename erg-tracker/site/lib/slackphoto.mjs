@@ -250,7 +250,7 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     await store.set('pending:' + user, { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, check: unsure, today, dateAsk, note: notes.join(' | ').slice(0, 400) });
     if (who.role === 'athlete') return nameStep(who.athlete, user, event, envFn, fetchImpl, store, say, deps, true);   // only ever herself
     const caption = String(event.text || '').trim();
-    if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with her name (first name is enough).`); return { status: 'asked' }; }
+    if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with the athlete's name (first name is enough).`); return { status: 'asked' }; }
     return nameStep(caption, user, event, envFn, fetchImpl, store, say, deps);
   }
 
@@ -296,7 +296,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
   const who = await callSheet(envFn, fetchImpl, { action: 'slack-access', slackUserId: user, athleteName: name }).catch((e) => ({ status: 'error', error: e.message }));
   if (who.status === 'not_allowed') { await say(NOT_ON_ROSTER); return { status: 'not_allowed' }; }
   if (who.status === 'not_yourself') { await say(':lock: You can only log your own sessions. Send the photo again without a name.'); return { status: 'not_yourself' }; }
-  if (who.status === 'unknown_name') { await say(`I can't find "${name}" as an active athlete on the roster. Reply with her name as it is on the roster.`); return { status: 'unknown_name' }; }
+  if (who.status === 'unknown_name') { await say(`I can't find "${name}" as an active athlete on the roster. Reply with the athlete's name as it is on the roster.`); return { status: 'unknown_name' }; }
   if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the name again in a minute.'); return { status: 'error' }; }
   const token = randomBytes(9).toString('hex');
   const shape = benchmarkShape(pending.machine, pending.pieces);
