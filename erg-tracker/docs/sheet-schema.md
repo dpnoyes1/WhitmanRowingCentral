@@ -58,6 +58,7 @@ Date, Squad, Shift (Early / Late), Start, End, Window start, Window end (text HH
 | Notes | |
 | Unit | `mi` or `km` for a Run by distance (Work is still meters). Blank otherwise |
 | Pace target | Optional custom goal pace typed m:ss: per 500m, or per mile/km for a Run. Replaces the % target on that piece and is the same for every athlete |
+| Saved | Yes = in the saved-workout list; No = a one-off made for one day. Blank (older rows) counts as saved |
 
 Work, Rest and Start every are text typed like Settings values and parsed with `parseTime` when read; they are plan config, not logged data.
 

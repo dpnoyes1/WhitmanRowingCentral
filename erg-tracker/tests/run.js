@@ -1673,6 +1673,21 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.strictEqual(g.workoutFindSame_(lib, g.workoutBuildRows_('W9', { name: 'Tue 20s', pieces: [{ workType: 'Time', reps: 4, work: '20:00' }] }).rows), '');
   assert.strictEqual(g.workoutFindSame_(lib, g.workoutBuildRows_('W9', { name: 'Other name', pieces: [{ workType: 'Time', reps: 3, work: '20:00' }] }).rows), '', 'the name counts');
   assert.deepStrictEqual(J(g.workoutPieceCompact_(lib[0])), { workType: 'Time', reps: '3', work: '20:00', activity: 'Erg (RowErg)' });
+  // One-offs: only a workout saved on purpose joins the saved list; one in use stays visible for editing.
+  const piece = [{ workType: 'Time', reps: 2, work: '10:00' }];
+  assert.strictEqual(g.workoutBuildRows_('W5', { name: 'One off', pieces: piece }).rows[0].Saved, 'No');
+  assert.strictEqual(g.workoutBuildRows_('W5', { name: 'One off', pieces: piece, keep: true }).rows[0].Saved, 'Yes');
+  const kept = g.workoutBuildRows_('W5', { name: 'Kept', pieces: piece, keep: true }).rows;
+  const once = g.workoutBuildRows_('W6', { name: 'Once', pieces: piece }).rows;
+  const once2 = g.workoutBuildRows_('W8', { name: 'Once', pieces: piece, keep: true }).rows;
+  assert.strictEqual(g.workoutFindSame_(once, once2), 'W6', 'Saved does not make a workout different');
+  const old = lib.map(w => Object.assign({}, w));
+  const lv = J(g.workoutListView_(kept.concat(once, old), [{ Date: '2026-11-20', Squad: 'All', Session: 'Practice', 'Workout ID': 'W6', Published: true }], '2026-11-12'));
+  assert.deepStrictEqual(lv.library.map(w => [w.id, w.saved]).sort(), [['W1', true], ['W5', true], ['W6', false]], 'old rows count as saved; a used one-off is listed but not saved');
+  const lv2 = J(g.workoutListView_(kept.concat(once, old), [], '2026-11-12'));
+  assert.deepStrictEqual(lv2.library.map(w => w.id).sort(), ['W1', 'W5'], 'an unused one-off is hidden');
+  assert.strictEqual(g.workoutIsOneOff_(once, 'W6'), true);
+  assert.strictEqual(g.workoutIsOneOff_(old, 'W1'), false);
 });
 
 console.log(`${passed} tests passed`);

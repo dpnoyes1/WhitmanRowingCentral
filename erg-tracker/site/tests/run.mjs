@@ -2640,6 +2640,8 @@ test('workout builder: coaches only, whitelisted fields go to the Sheet, errors 
   }
   assert.strictEqual((await handleWorkouts(post(athlete, { update: { key, to: { notes: 'x' } } }), env, { fetchImpl: sheet(ok) })).status, 403);
   assert.strictEqual(calls.length, n2, 'bad edits never reach the Sheet');
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', keep: true, pieces: [] }).keep, true);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', keep: 'yes', pieces: [] }).keep, undefined);
   assert.strictEqual(cleanWorkoutBody({ name: 'x', pieces: new Array(13).fill({}) }), null);
   assert.strictEqual(cleanWorkoutBody({ name: 'x', dates: new Array(32).fill('2026-11-17'), pieces: [] }), null);
 });

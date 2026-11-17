@@ -66,7 +66,9 @@ HEADERS[TABS.WORKOUTS] = [
   'Activity', 'Zone', 'Base', 'Target low %', 'Target high %', 'Rate', 'Notes',
   // Unit: mi or km for a Run by distance (Work is still stored in meters). Pace target: a custom goal pace typed
   // by the coach, m:ss per 500m (m:ss per mile or km for a Run); it replaces the % target on that piece.
-  'Unit', 'Pace target'
+  'Unit', 'Pace target',
+  // Saved: Yes = in the coach's saved-workout list; No = a one-off made for one day. Blank (older rows) counts as saved.
+  'Saved'
 ];
 // One row per session per day. Published = No keeps it hidden from athletes.
 // Order = position within the day (1, 2, 3...); blank rows sort warm up, the work, cool down (WorkoutBuilder.gs).

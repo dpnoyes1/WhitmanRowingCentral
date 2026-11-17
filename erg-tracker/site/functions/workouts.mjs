@@ -19,6 +19,7 @@ export function cleanWorkoutBody(body) {
     if (v) out[k] = v;
   }
   out.publish = body.publish === true;
+  if (body.keep === true) out.keep = true;
   if (body.dates !== undefined) {
     if (!Array.isArray(body.dates) || body.dates.length > 31 || body.dates.some((d) => typeof d !== 'string' || d.length > 10)) return null;
     out.dates = body.dates;
