@@ -91,6 +91,22 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   await page.context().close();
 });
 
+flow('OYO page: an athlete sees their own row first, a coach sees plain ranking', async ({ browser, server }) => {
+  let page = await newPage(browser, 390);
+  await signInAthlete(page, server.url, server.athlete, '#/oyo');
+  await page.waitForSelector('.oyo-row');
+  const classes = await page.$$eval('.oyo-row', (els) => els.map((e) => e.classList.contains('me')));
+  assert.ok(classes.length > 1);
+  assert.equal(classes[0], true, 'own row is not first');
+  assert.equal(classes.filter(Boolean).length, 1);
+  await page.context().close();
+  page = await newPage(browser, 1280);
+  await signInCoach(page, server.url, '#/oyo');
+  await page.waitForSelector('.oyo-row');
+  assert.equal(await page.$$eval('.oyo-row.me', (els) => els.length), 0);
+  await page.context().close();
+});
+
 export default async function e2e(ctx) {
   let ok = true;
   for (const [name, fn] of flows) {

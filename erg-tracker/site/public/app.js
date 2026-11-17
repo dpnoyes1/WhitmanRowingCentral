@@ -1654,6 +1654,8 @@ async function showOyo() {
   const render = () => {
     const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
+    // An athlete sees their own row first, then everyone else ranked high to low (David, 2026-11-17). Coaches keep the plain ranking.
+    if (mine) rows.sort((x, y) => (y.id === mine.id) - (x.id === mine.id));
     const metNow = v.rowers.filter((r) => r.status !== 'short').length, metLast = v.rowers.filter((r) => r.lastWeek.status !== 'short').length;
     const elite = rows.filter((r) => r.status === 'elite').length;
     // One scale for every bar, so the Required and Elite marks line up down the board.
