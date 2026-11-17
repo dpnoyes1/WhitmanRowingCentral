@@ -9,6 +9,7 @@ import { openLogMine } from './logmine.mjs';
 import { shrinkPhoto } from './photo.mjs';
 import { openLineups } from './lineups.mjs';
 import { openWater } from './water.mjs';
+import { openWaterResults } from './waterresults.mjs';
 import { KEY as BACK_KEY, navStep, snapshot, backTarget, clampScroll } from './backstack.mjs';
 
 const app = document.getElementById('app');
@@ -131,6 +132,7 @@ function setNav(active) {
   document.getElementById('nav-completion').hidden = false;
   document.getElementById('nav-lineups').hidden = !isCoach();
   document.getElementById('nav-water').hidden = !isCoach();
+  document.getElementById('nav-waterresults').hidden = !isCoach();
   document.getElementById('nav-weights').hidden = !isCoach();
   document.getElementById('nav-plan').hidden = !isCoach();
   document.getElementById('sec-coach').hidden = !isCoach();
@@ -2090,6 +2092,7 @@ async function route() {
     if (page === 'completion' || page === 'attendance') return await showCompletion();
     if (page === 'lineups' && isCoach()) return await showLineups();
     if (page === 'water' && isCoach()) return showWater();
+    if (page === 'waterresults' && isCoach()) { setNav('waterresults'); return openWaterResults({ app, esc, fmtTime, fmtNum }); }
     if (page === 'weights' && isCoach()) return await showWeights();
     if (page === 'plan' && isCoach()) return await showPlan();
     if (page === 'log' && isCoach()) return await showLogFor();
@@ -2101,7 +2104,7 @@ async function route() {
     if (page === 'workout' && arg) return await showWorkout(decodeURIComponent(arg));
     const m = me();
     if (page === 'me' && m) return await showAthlete(m.id);
-    if (['stars', 'insights', 'lineups', 'water', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
+    if (['stars', 'insights', 'lineups', 'water', 'waterresults', 'weights', 'plan', 'log', 'balance', 'settings'].includes(page) && !isCoach()) pendingNote = 'That page is for coaches.';
     redirected = true;
     navReplace = true;   // the redirect replaces this entry in Back, too
     location.replace(m ? '#/me' : '#/team');

@@ -94,11 +94,13 @@ export function practiceFit({ serial = 3121111, start = Date.UTC(2027, 1, 3, 20,
 }
 
 /** A set-piece day: n pieces of the given meters at the given split, rest not recorded (like a programmed SpeedCoach workout),
- *  distance restarting each piece, one lap per piece. */
-export function piecesFit({ serial = 3121111, start = Date.UTC(2027, 1, 4, 21, 0) / 1000, splits = [100, 101, 99], meters = 1000, rate = 32, restS = 240, seed = 3, omitSerial = false } = {}) {
+ *  distance restarting each piece, one lap per piece. pieceStarts (seconds after start, one per piece) starts every boat's piece on the
+ *  coach's "go" instead of a fixed rest after it finishes. */
+export function piecesFit({ serial = 3121111, start = Date.UTC(2027, 1, 4, 21, 0) / 1000, splits = [100, 101, 99], meters = 1000, rate = 32, restS = 240, seed = 3, omitSerial = false, pieceStarts = null } = {}) {
   const strokes = [], laps = [];
   let t = start;
   splits.forEach((splitS, i) => {
+    if (pieceStarts) t = start + pieceStarts[i];
     const s = (meters / 500) * splitS;
     const part = strokesFor(t, [{ kind: 'row', s, splitS, rate }], { seed: seed + i, resetEachRow: true });
     strokes.push(...part);

@@ -461,6 +461,14 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lu-head h2 { margin: 0; margin-right: auto; display: flex; align-items: center; gap: 8px; }
 .lu-actions, .lugoal { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .lugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; margin-bottom: 12px; }
+/* Water results (on-water plan Steps 3 and 4) */
+.wr-tools { display: flex; flex-wrap: wrap; gap: 12px; align-items: end; }
+.wr-tools label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
+.wr-tools select { width: auto; }
+.wr-piece h3 { margin: 12px 0 6px; font-size: 15px; }
+.wr-curve td, .wr-curve th { white-space: nowrap; }
+.wresults td.wr-who { white-space: normal; min-width: 160px; max-width: 340px; }
+.wresults td.wr-who small { display: block; line-height: 1.35; }
 /* Water import (on-water plan Step 2) */
 .wi-pick { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .wi-pick label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; min-width: 0; }

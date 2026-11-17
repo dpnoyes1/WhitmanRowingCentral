@@ -3,10 +3,13 @@
 // POST /api/water/save { name, data, boatName, boatClass, shift, kind } -> the Sheet stores the file, the session, its pieces and the
 //   credits. The file is read again here on save, so the numbers never come from the browser.
 // GET  /api/water?date=YYYY-MM-DD -> what is already imported that day, and its saved lineups.
+// GET  /api/water/report?date=YYYY-MM-DD&rate=all|r20|r24|r28 -> the coaches' results page (Steps 3 and 4) for the season up to that date.
 import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { readFit } from '../lib/fit.mjs';
 import { summarize } from '../lib/water.mjs';
+import { waterReportView, RATE_KEYS } from '../lib/waterreport.mjs';
+import { schoolYearStart } from '../lib/stats.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
@@ -63,7 +66,7 @@ export function fileView(fit, name, kind) {
     name, unit: fit.unit, unitSource: fit.unitSource, start: new Date((s.start || fit.strokes[0].t) * 1000).toISOString(), date: when.date, clock: when.clock,
     kind: s.kind, elapsedS: s.elapsedS, movingS: s.movingS, meters: s.meters, avgSplitS: s.avgSplitS, avgRate: s.avgRate, strokes: s.strokes,
     pieces: s.pieces.map((p) => ({ n: p.n, start: new Date(p.start * 1000).toISOString(), workS: p.workS, meters: p.meters, splitS: p.splitS, rate: p.rate, strokes: p.strokes })),
-    curve: s.curve.map((p) => ({ durS: p.durS, splitS: p.splitS, meters: p.meters, rate: p.rate })),
+    curve: Object.fromEntries(Object.entries(s.curves).map(([k, pts]) => [k, pts.map((p) => ({ durS: p.durS, splitS: p.splitS, meters: p.meters, rate: p.rate }))])),
     warnings: s.warnings, sessionId: sessionIdOf(fit.unit, s.start || fit.strokes[0].t), when,
   };
 }
@@ -95,6 +98,18 @@ export async function handleWater(req, envFn, deps = {}) {
       console.error('water context error:', err.message);
       return json({ error: 'The Sheet did not answer. Try again in a minute.' }, 502);
     }
+  }
+  if (req.method === 'GET' && path === '/api/water/report') {
+    const q = new URL(req.url).searchParams;
+    const date = q.get('date') || easternDay((deps.now ?? Date.now()) / 1000).date, rate = q.get('rate') || 'all';
+    if (!DAY.test(date) || !(rate in RATE_KEYS)) return json({ error: 'Bad request.' }, 400);
+    let raw;
+    try { raw = await callSheet(envFn, fetchImpl, { action: 'water-report', from: schoolYearStart(date, '07-01'), to: date }); } catch (err) {
+      console.error('water report error:', err.message);
+      return json({ error: 'The Sheet did not answer. Try again in a minute.' }, 502);
+    }
+    if (raw.status !== 'ok') return json({ error: raw.message || 'The Sheet could not read the water data.' }, 502);
+    return json(waterReportView(raw, q.get('date') ? date : '', rate));
   }
   if (req.method !== 'POST' || !['/api/water/preview', '/api/water/save'].includes(path)) return json({ error: 'Not found' }, 404);
   const body = await readBody(req);
@@ -141,4 +156,4 @@ export async function handleWater(req, envFn, deps = {}) {
 
 export default (req) => handleWater(req, env);
 
-export const config = { path: ['/api/water', '/api/water/preview', '/api/water/save'], method: ['GET', 'POST'] };
+export const config = { path: ['/api/water', '/api/water/preview', '/api/water/save', '/api/water/report'], method: ['GET', 'POST'] };

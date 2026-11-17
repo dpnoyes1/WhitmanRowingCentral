@@ -177,7 +177,7 @@ function saveCard() {
     ${savedHere.length ? `<p class="small">Already saved for this practice: ${savedHere.map((l) => esc(l.boatName)).join(', ')}. Saving replaces it.</p>` : ''}
     <div class="lusv-boats">${LU.boats.map(row).join('')}</div>
     <div class="lu-actions"><button type="button" class="btn sm" data-lusave="1"${SV.busy ? ' disabled' : ''}>${SV.busy ? 'Saving...' : 'Save for practice'}</button></div>
-    ${SV.msg ? `<p class="small${SV.err ? ' warn' : ''}" role="status">${esc(SV.msg)}</p>` : ''}
+    ${SV.msg ? `<p class="small${SV.err ? ' warn-text' : ''}" role="status">${esc(SV.msg)}</p>` : ''}
     ${SV.days.length ? `<p class="muted small">Recent saved practices: ${SV.days.map((d) => `<button type="button" class="btn ghost sm" data-luday="${esc(d)}">${esc(d)}</button>`).join(' ')}</p>` : ''}</div>`;
 }
 

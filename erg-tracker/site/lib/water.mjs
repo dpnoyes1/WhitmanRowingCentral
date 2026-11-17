@@ -6,7 +6,8 @@ export const WATER = {
   maxGapS: 8,            // a stroke counts toward moving time when it comes within 8 s of the one before... (David, 2026-11-13: tune on real practices)
   driftSpeed: 1.5,       // ...and the boat is above drifting speed (1.5 m/s is a 5:33/500m split)
   maxSpeed: 8,           // anything faster is a GPS jump or junk
-  durations: [30, 60, 120, 240, 300, 360, 600, 1200, 1800, 3600],   // best split by duration (30 s to 60 min; 5 min as in the plan's table); timestamps are whole seconds, so nothing shorter
+  durations: [30, 60, 120, 240, 300, 360, 600, 1200, 1800, 3600],
+  rateCaps: [20, 24, 28],   // the curve is also worked out for stretches at or under these average rates ("rate 20 and under only")   // best split by duration (30 s to 60 min; 5 min as in the plan's table); timestamps are whole seconds, so nothing shorter
   minPieceS: 30,         // a lap shorter than this, or under minPieceM, or slower than a drift, is rest, not a piece
   minPieceM: 100,
   matchStartS: 60,       // pieces on two boats match when they start within a minute...
@@ -74,39 +75,45 @@ export function segments(strokes, o = WATER) {
     if (!s.moving) { cur = null; return; }
     if (!cur) {
       const a = strokes[i], lead = Math.round(leadIn(a, o));
-      cur = lead ? { t: [s.t0 - lead, s.t0], d: [0, lead * (a.speed ?? s.speed)] } : { t: [s.t0], d: [0] };
+      cur = lead ? { t: [s.t0 - lead, s.t0], d: [0, lead * (a.speed ?? s.speed)], r: [a.rate, a.rate] } : { t: [s.t0], d: [0], r: [a.rate] };
       segs.push(cur);
     }
     const last = cur.d[cur.d.length - 1];
     if (s.dt === 0) { cur.d[cur.d.length - 1] = last + s.dm; return; }
-    cur.t.push(s.t); cur.d.push(last + s.dm);
+    cur.t.push(s.t); cur.d.push(last + s.dm); cur.r.push(s.rate);
   });
   return segs;
 }
 
-// Meters at second k inside a segment, by straight line between strokes.
+// Meters at second k inside a segment, by straight line between strokes; and running sums of the stroke rate over each second
+// (the rate of the stroke that ends it), so any window's average rate is one subtraction.
 function perSecond(seg) {
   const t0 = seg.t[0], n = seg.t[seg.t.length - 1] - t0;
-  const d = new Float64Array(n + 1);
+  const d = new Float64Array(n + 1), rSum = new Float64Array(n + 1), rCount = new Float64Array(n + 1);
   let j = 0;
   for (let k = 0; k <= n; k++) {
     const t = t0 + k;
     while (j < seg.t.length - 2 && seg.t[j + 1] < t) j++;
     const ta = seg.t[j], tb = seg.t[j + 1] ?? ta, da = seg.d[j], db = seg.d[j + 1] ?? da;
     d[k] = tb > ta ? da + ((db - da) * (t - ta)) / (tb - ta) : db;
+    const r = seg.r ? seg.r[Math.min(j + 1, seg.r.length - 1)] : null;
+    rSum[k] = (k ? rSum[k - 1] : 0) + (r > 0 ? r : 0);
+    rCount[k] = (k ? rCount[k - 1] : 0) + (r > 0 ? 1 : 0);
   }
-  return { t0, d };
+  return { t0, d, rSum, rCount };
 }
 
 /** Best average split the boat held for each duration (plan section 4), with the stroke rate over that stretch.
- *  [{ durS, splitS, meters, rate, at }] for each duration that fits inside one rowing stretch. */
-export function bestSplits(strokes, o = WATER) {
+ *  [{ durS, splitS, meters, rate, at }] for each duration that fits inside one rowing stretch. With maxRate, only stretches whose
+ *  average rate is at or under it count (a stretch with no rate data never counts then). */
+export function bestSplits(strokes, o = WATER, maxRate = null) {
   const series = segments(strokes, o).map(perSecond);
   const out = [];
   for (const D of o.durations) {
     let best = null;
-    for (const { t0, d } of series) {
+    for (const { t0, d, rSum, rCount } of series) {
       for (let k = 0; k + D < d.length; k++) {
+        if (maxRate) { const c = rCount[k + D] - rCount[k]; if (!c || (rSum[k + D] - rSum[k]) / c > maxRate + 0.05) continue; }
         const m = d[k + D] - d[k];
         if (!best || m > best.m) best = { m, at: t0 + k };
       }
@@ -115,6 +122,13 @@ export function bestSplits(strokes, o = WATER) {
     const rates = strokes.filter((s) => s.t > best.at && s.t <= best.at + D && s.rate > 0).map((s) => s.rate);
     out.push({ durS: D, splitS: round1(splitOf(D, best.m)), meters: Math.round(best.m), rate: round1(mean(rates)), at: best.at });
   }
+  return out;
+}
+
+/** The curve at any rate and under each rate cap: { all: [...], r20: [...], r24: [...], r28: [...] }. */
+export function curveSet(strokes, o = WATER) {
+  const out = { all: bestSplits(strokes, o) };
+  for (const cap of o.rateCaps) out['r' + cap] = bestSplits(strokes, o, cap);
   return out;
 }
 
@@ -173,7 +187,7 @@ export function summarize(fit, kind = null, o = WATER) {
     elapsedS: mv.elapsedS, movingS: mv.movingS, meters: mv.meters,
     avgSplitS: k === 'Race' ? round1(splitOf(mv.movingS, mv.meters)) : mv.avgSplitS,
     avgRate: mv.avgRate, strokes: mv.strokes,
-    pieces, curve: bestSplits(fit.strokes, o),
+    pieces, curve: bestSplits(fit.strokes, o), curves: curveSet(fit.strokes, o),
     warnings: fit.warnings || [],
   };
 }

@@ -13,6 +13,7 @@
  */
 var WATER_CONTEXT_ACTION = 'water-context';
 var WATER_SAVE_ACTION = 'water-save';
+var WATER_REPORT_ACTION = 'water-report';
 var WATER_ACTIVITY = 'Water';
 var WATER_SOURCE = 'SpeedCoach';
 var WATER_FOLDER_PROP = 'WATER_FOLDER_ID';
@@ -53,11 +54,19 @@ function waterSessionsFromRows_(rows) {
       boatName: String(r['Boat name'] || '').trim(), boatClass: String(r['Boat class'] || '').trim(), lineupId: String(r['Lineup ID'] || '').trim(),
       start: String(r['Start time'] || ''), movingS: feedNum_(r['Moving s']), elapsedS: feedNum_(r['Elapsed s']), meters: feedNum_(r.Meters),
       avgSplitS: feedNum_(r['Avg split s']), avgRate: feedNum_(r['Avg rate']), strokes: feedNum_(r.Strokes), pieces: feedNum_(r.Pieces),
-      kind: String(r.Kind || ''), fileName: String(r['File name'] || ''), curve: waterJson_(r['Curve JSON']), importedBy: String(r['Imported by'] || '') };
+      kind: String(r.Kind || ''), fileName: String(r['File name'] || ''), curve: waterCurve_(waterJson_(r['Curve JSON'])), importedBy: String(r['Imported by'] || '') };
   });
 }
 
 function waterJson_(v) { try { return v ? JSON.parse(String(v)) : null; } catch (e) { return null; } }
+
+/** A stored curve as { all, r20, r24, r28 } (each a list of { durS, splitS, meters, rate }); a bare list is the any-rate curve. Pure. */
+function waterCurve_(c) {
+  if (Array.isArray(c)) return { all: c };
+  var out = {};
+  if (c && typeof c === 'object') Object.keys(c).forEach(function (k) { if (/^(all|r\d{2})$/.test(k) && Array.isArray(c[k])) out[k] = c[k].slice(0, 20); });
+  return out;
+}
 
 /**
  * The saved lineup a session credits: the one with its Lineup ID if that still exists on the same date, else the boat of the
@@ -148,7 +157,7 @@ function waterCleanSave_(body) {
     boatName: boatName, boatClass: String(s.boatClass), lineupId: String(s.lineupId || '').slice(0, 30), start: String(s.start || ''),
     elapsedS: Number(s.elapsedS) || 0, movingS: moving, meters: meters, avgSplitS: Number(s.avgSplitS) || '', avgRate: Number(s.avgRate) || '',
     strokes: Number(s.strokes) || 0, kind: String(s.kind), fileName: String(s.fileName || '').slice(0, 120),
-    curve: Array.isArray(s.curve) ? s.curve.slice(0, 20) : [], pieces: pieces
+    curve: waterCurve_(s.curve), pieces: pieces
   };
 }
 
@@ -248,6 +257,28 @@ function waterSetLineupId_(sessionId, lineupId) {
       if (String(v[0]).trim() === sessionId) sheet.getRange(i + 2, lCol + 1).setValue(lineupId);
     });
   });
+}
+
+/** Water pieces rows -> page objects. Pure. */
+function waterPiecesFromRows_(rows) {
+  return rows.filter(function (r) { return String(r['Piece ID'] || '').trim(); }).map(function (r) {
+    return { pieceId: String(r['Piece ID']).trim(), sessionId: String(r['Session ID'] || '').trim(), n: feedNum_(r['Piece #']), start: String(r['Start time'] || ''),
+      workS: feedNum_(r['Work s']), meters: feedNum_(r.Meters), splitS: feedNum_(r['Avg split s']), rate: feedNum_(r['Avg rate']), strokes: feedNum_(r.Strokes),
+      lineupId: String(r['Lineup ID'] || '').trim() };
+  });
+}
+
+/** body: { from, to } (YYYY-MM-DD). Every water session, piece and lineup in that range, for the coaches' results page (Steps 3 and 4). */
+function processWaterReport_(body) {
+  var from = String(body.from || ''), to = String(body.to || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(from) || !/^\d{4}-\d{2}-\d{2}$/.test(to)) return { status: 'invalid', message: 'Bad dates.' };
+  var inRange = function (d) { return d >= from && d <= to; };
+  var roster = lineupsRoster_(readObjects_(TABS.ROSTER));
+  var sessions = waterSessionsFromRows_(readObjects_(TABS.WATER_SESSIONS)).filter(function (s) { return inRange(s.date); });
+  var ids = {}; sessions.forEach(function (s) { ids[s.sessionId] = true; });
+  return { status: 'ok', from: from, to: to, sessions: sessions,
+    pieces: waterPiecesFromRows_(readObjects_(TABS.WATER_PIECES)).filter(function (p) { return ids[p.sessionId]; }),
+    lineups: lineupsFromRows_(readObjects_(TABS.LINEUPS), roster).filter(function (l) { return inRange(l.date); }) };
 }
 
 /** body: { dates: [YYYY-MM-DD] }. What the import page needs to suggest boats and lineups for those days. */

@@ -78,7 +78,7 @@ async function save(f) {
 function card(f, i) {
   const { esc } = ctx;
   if (f.state === 'reading') return `<div class="card wi"><b>${esc(f.name)}</b><p class="muted small">Reading...</p></div>`;
-  if (f.state === 'error') return `<div class="card wi"><div class="lu-head"><h2>${esc(f.name)}</h2><button type="button" class="btn ghost sm" data-wdrop="${i}">Remove</button></div><p class="small warn">${esc(f.msg)}</p></div>`;
+  if (f.state === 'error') return `<div class="card wi"><div class="lu-head"><h2>${esc(f.name)}</h2><button type="button" class="btn ghost sm" data-wdrop="${i}">Remove</button></div><p class="small warn-text">${esc(f.msg)}</p></div>`;
   const v = f.view, p = f.pick, lu = lineupFor(f.lineups, p), boats = [...new Set((f.lineups || []).map((l) => l.boatName))];
   const busy = f.state === 'saving';
   const sel = (attr, opts, cur, label) => `<label>${label}<select data-${attr}="${i}"${busy ? ' disabled' : ''}>${opts.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('')}</select></label>`;
@@ -92,10 +92,10 @@ function card(f, i) {
       <label>Boat<input type="text" list="wboats-${i}" maxlength="40" value="${esc(p.boatName)}" data-wboat="${i}" placeholder="Shell name"${busy ? ' disabled' : ''}>
         <datalist id="wboats-${i}">${boats.map((b) => `<option value="${esc(b)}">`).join('')}</datalist></label>
       ${sel('wcls', CLASSES, p.boatClass, 'Class')}${sel('wshift', SHIFTS, p.shift, 'Shift')}${sel('wkind', KINDS, p.kind, 'Kind')}</div>
-    <p class="small ${lu ? '' : 'warn'}">${lu ? 'Lineup: ' + esc(lu.seatNames.filter(Boolean).join(', ')) + (lu.coxName ? ' · cox ' + esc(lu.coxName) : '') + '<br><span class="muted">' + esc(creditLine(lu, v)) + '</span>'
+    <p class="small ${lu ? '' : 'warn-text'}">${lu ? 'Lineup: ' + esc(lu.seatNames.filter(Boolean).join(', ')) + (lu.coxName ? ' · cox ' + esc(lu.coxName) : '') + '<br><span class="muted">' + esc(creditLine(lu, v)) + '</span>'
       : `No lineup saved for ${esc(p.boatName || 'this boat')} on ${esc(v.date)}, ${esc(p.shift)}. You can still save the file; rowers are credited when the lineup is saved.`}</p>
     <div class="lu-actions"><button type="button" class="btn sm" data-wsave="${i}"${busy ? ' disabled' : ''}>${busy ? 'Saving...' : f.state === 'saved' ? 'Save again' : 'Save'}</button></div>
-    ${f.msg ? `<p class="small${f.state === 'saved' ? '' : ' warn'}" role="status">${esc(f.msg)}</p>` : ''}</div>`;
+    ${f.msg ? `<p class="small${f.state === 'saved' ? '' : ' warn-text'}" role="status">${esc(f.msg)}</p>` : ''}</div>`;
 }
 
 function draw() {

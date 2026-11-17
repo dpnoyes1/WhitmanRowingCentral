@@ -8,6 +8,7 @@ import { handleLineupsSaved, cleanLineupsBody } from '../functions/lineups-saved
 import { shiftFor, saveBody, boatsFromSaved, todayET } from '../public/lineups.mjs';
 import { handleWater, suggestFor, easternDay } from '../functions/water.mjs';
 import { clock, lineupFor, creditLine } from '../public/water.mjs';
+import { waterReportView } from '../lib/waterreport.mjs';
 import { athleteView, isWater } from '../lib/views.mjs';
 import * as S from '../lib/stats.mjs';
 import { createRequire } from 'node:module';
@@ -356,7 +357,7 @@ test('Water API: coaches only; preview reads the file and suggests boat, shift a
   assert.ok(Math.abs(saved.session.movingS - 3600) < 15, 'moving time from the file');
   assert.strictEqual(saved.session.boatName, 'Hudson');
   assert.strictEqual(saved.coachName, 'Pat Example');
-  assert.ok(saved.file.base64.length > 1000 && saved.session.curve.length >= 5);
+  assert.ok(saved.file.base64.length > 1000 && saved.session.curve.all.length >= 5 && Array.isArray(saved.session.curve.r20));
   assert.strictEqual((await res.json()).credited.length, 1);
   // refusals
   const bad = async (p, body, extra) => (await handleWater(post(p, coach, body, extra), env, { fetchImpl: sheet(ctx) })).status;
@@ -407,6 +408,71 @@ test('Water page helpers: clock, the lineup a file credits, what saving does', (
   assert.strictEqual(lineupFor(lus, { boatName: ' hudson ', shift: 'Early' }).lineupId, 'L1');
   assert.strictEqual(lineupFor(lus, { boatName: 'Hudson', shift: 'Late' }), null);
   assert.strictEqual(creditLine(lus[0], { movingS: 5397, meters: 15245 }), '2 rowers and the cox · each rower gets 1:29:57 and 15,245 m; the cox gets attendance only');
+});
+
+
+test('Curves under a rate cap: only stretches at or under that average rate count', () => {
+  const f = readFit(writeFit(practice.spec));
+  const set = W.curveSet(f.strokes);
+  const at = (c, d) => c.find((p) => p.durS === d);
+  assert.ok(Math.abs(at(set.all, 600).splitS - 126) <= 1.5 && at(set.all, 600).rate === 22, 'any rate: the 126 block at 22');
+  assert.ok(Math.abs(at(set.r20, 600).splitS - 130) <= 1.5 && at(set.r20, 600).rate <= 20, '20 and under: the 130 block at 20');
+  assert.deepStrictEqual(set.r28.map((p) => p.splitS), set.all.map((p) => p.splitS), 'nothing above 28, so the same curve');
+  const fast = readFit(writeFit(piecesFit().spec));
+  assert.deepStrictEqual(W.bestSplits(fast.strokes, W.WATER, 28), [], 'pieces at 32 have nothing at 28 and under');
+});
+
+test('Water report: day boats, matched pieces with crews, season curves by boat, class and athlete, and ratings', () => {
+  const day = (d, n) => `2027-02-0${d}`;
+  const crew = (ids) => ids.map((id) => id);
+  const lineups = [], sessions = [], pieces = [];
+  const names = Object.fromEntries(Array.from({ length: 12 }, (_, i) => ['A' + (901 + i), 'Fake ' + (i + 1)]));
+  for (let d = 1; d <= 3; d++) {
+    const order = Object.keys(names).sort((a, b) => ((a.charCodeAt(4) * d) % 7) - ((b.charCodeAt(4) * d) % 7));
+    const boats = [['Hudson', '8+', crew(order.slice(0, 8)), 100 + d * 0.1], ['Severn', '4+', crew(order.slice(8, 12)), 113.5]];
+    boats.forEach(([name, cls, seats, split], b) => {
+      const lid = `L${d}${b}`, sid = `WS-${b}-${d}`;
+      lineups.push({ lineupId: lid, date: day(d), shift: 'Early', boatName: name, boatClass: cls, seats, seatNames: seats.map((id) => names[id]), cox: b ? '' : 'A990', coxName: b ? '' : 'Fake Cox', fromPiece: '' });
+      sessions.push({ sessionId: sid, date: day(d), shift: 'Early', boatName: name, boatClass: cls, lineupId: lid, kind: d === 3 ? 'Practice' : 'Pieces', start: `2027-02-0${d}T21:00:${b}0Z`,
+        movingS: 600, meters: 3000, avgSplitS: split, avgRate: 30, curve: { all: [{ durS: 60, splitS: split - 1, rate: 30 }, { durS: 600, splitS: split, rate: 30 }], r20: [] } });
+      if (d !== 3) for (let n = 1; n <= 2; n++) pieces.push({ pieceId: `${sid}-P${n}`, sessionId: sid, n, start: `2027-02-0${d}T21:${n}0:${b}5Z`, workS: (split * 2) + n, meters: 1000, splitS: split + n / 10, rate: 32, lineupId: lid });
+    });
+  }
+  const v = waterReportView({ sessions, pieces, lineups }, '2027-02-02', 'all');
+  assert.deepStrictEqual(v.days, ['2027-02-03', '2027-02-02', '2027-02-01']);
+  assert.strictEqual(v.boats.length, 2);
+  assert.deepStrictEqual(v.boats[0].crew.names.length, 8);
+  assert.strictEqual(v.boats[0].crew.cox, 'Fake Cox');
+  assert.strictEqual(v.groups.length, 2, 'two pieces rowed side by side');
+  assert.ok(v.groups.every((g) => g.results.length === 2 && g.results.every((r) => r.marginPct !== null && r.crew)));
+  assert.strictEqual(v.unmatchedPieces, 0);
+  assert.strictEqual(waterReportView({ sessions, pieces, lineups }, '2027-02-03').groups.length, 0, 'a continuous practice day has no comparisons');
+  assert.strictEqual(waterReportView({ sessions, pieces, lineups }, '').date, '2027-02-03', 'no date: the latest day');
+  const hud = v.season.byBoat.find((b) => b.boatName === 'Hudson');
+  assert.deepStrictEqual(hud.points.map((p) => [p.durS, p.splitS, p.from]), [[60, 99.1, '2027-02-01'], [600, 100.1, '2027-02-01']]);
+  assert.strictEqual(v.season.byClass.length, 2);
+  const sev = v.season.byAthlete.find((a) => sessions.some((s) => s.boatName === 'Severn' && lineups.find((l) => l.lineupId === s.lineupId).seats.includes(a.id)));
+  assert.ok(sev.points.every((p) => p.splitS < 101), 'athlete curves on the 8+ scale');
+  assert.strictEqual(v.ratings.pieces, 4);
+  assert.ok(v.ratings.rowers.every((r) => r.status === 'too early' && r.name.startsWith('Fake')));
+  assert.strictEqual(v.ratings.record.length, 12);
+  assert.strictEqual(waterReportView({ sessions, pieces, lineups }, '2027-02-02', 'r20').season.byBoat[0].points.length, 0);
+  assert.deepStrictEqual(waterReportView({ sessions: [], pieces: [], lineups: [] }, '2027-02-02').ratings.rowers, []);
+});
+
+test('Water report API: coaches only, the season from July 1 to the date', async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const fetchImpl = async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify({ status: 'ok', sessions: [], pieces: [], lineups: [] })); };
+  const get = (cookie, q) => new Request('https://x/api/water/report' + q, { headers: { cookie } });
+  assert.strictEqual((await handleWater(get(athlete, '?date=2027-02-03'), env, { fetchImpl })).status, 403);
+  const res = await handleWater(get(coach, '?date=2027-02-03&rate=r20'), env, { fetchImpl });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'water-report', from: '2026-07-01', to: '2027-02-03', key: 'fake-key' });
+  assert.strictEqual((await res.json()).rateKey, 'r20');
+  assert.strictEqual((await handleWater(get(coach, '?rate=r99'), env, { fetchImpl })).status, 400);
 });
 
 for (const [name, fn] of tests) {
