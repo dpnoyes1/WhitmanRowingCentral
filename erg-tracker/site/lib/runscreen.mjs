@@ -75,6 +75,7 @@ export function normalizeRunRead(raw) {
     activity: String(raw.activity || '').trim(),
     date: String(raw.date || '').trim(),
     meters: d.meters,
+    unit: raw.distance_unit || '',
     bareDistance: d.bare ?? null,
     movingS: anyTime(raw.moving_time),
     elapsedS: anyTime(raw.elapsed_time),

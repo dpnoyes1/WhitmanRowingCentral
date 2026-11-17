@@ -15,6 +15,7 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
+import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
 import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
@@ -1333,6 +1334,76 @@ test('slack background: a crash while handling a DM tells her instead of going s
     fetchImpl: async (url, init) => { sent.push({ url, body: JSON.parse(init.body) }); return Response.json({ ok: true }); } });
   assert.strictEqual(out.status, 'crashed');
   assert.ok(sent.some((c) => c.url === 'https://slack.com/api/chat.postMessage' && c.body.channel === 'UC1' && /Something went wrong/.test(c.body.text)));
+});
+
+test('run photo for Log activity (built, off): fills distance and time, athletes only, 404 while off', async () => {
+  await seedActive();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]).toString('base64');
+  const post = (cookie, body) => new Request('https://x/api/run-photo', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const reply = { app: 'Strava', person: '', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:30', elapsed_time: '', avg_pace: '8:14', pace_unit: '/mi', flags: [] };
+  const client = (r) => ({ messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }] }) } });
+  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: jpeg }), env, {})).status, 404, 'off by default');
+  assert.strictEqual((await handleRunPhoto(post('', { photo: jpeg }), env, { enabled: true })).status, 401);
+  assert.strictEqual((await handleRunPhoto(post(coach, { photo: jpeg }), env, { enabled: true })).status, 403);
+  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: 'not base64!' }), env, { enabled: true, client: client(reply) })).status, 400);
+  let out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client(reply) })).json();
+  assert.deepStrictEqual([out.status, out.dist, out.unit, out.time], ['read', '3.1', 'mi', '25:30']);
+  out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '2h 6m' }) })).json();
+  assert.deepStrictEqual([out.status, out.time], ['read', '2:06:00']);
+  out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '', elapsed_time: '' }) })).json();
+  assert.strictEqual(out.status, 'unread');
+  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', flags: [], person: '', activity: '' });
+});
+
+test('slack run screenshot (built, off by default): athlete sends it, card saves through site-log', async () => {
+  const env = (k) => ({ SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
+  const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
+  const noErg = { title: '', date: '', split_label: '', total: { time: '', meters: null, avg_split: '', avg_rate: null }, total_time_incl_rest: '', rest_meters: null, meters_column: 'none', pieces: [], flags: ['not a Concept2 monitor'] };
+  const run = { app: 'Strava', person: '', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:30', elapsed_time: '', avg_pace: '8:14', pace_unit: '/mi', flags: [] };
+  const world = (answers) => {
+    const calls = []; const store = new Map(); let ai = 0;
+    const fake = { get: async (k) => store.get(k) || null, set: async (k, v) => { store.set(k, JSON.parse(JSON.stringify(v))); }, delete: async (k) => { store.delete(k); } };
+    const deps = { today: '2026-11-17', store: fake, runPhotos: true, athleteIdOf: async () => 'A901', makeCopy: async () => ({ bytes: Buffer.from('small-copy') }), fetchImpl: async (url, init) => {
+      const body = init && init.body ? JSON.parse(init.body) : null;
+      calls.push({ url, body });
+      if (url === 'https://script.example/exec') return Response.json(body.action === 'slack-access' ? { status: 'ok', role: 'athlete', athlete: 'Olivia Fake' } : { status: 'ok', athlete: 'Olivia Fake' });
+      if (url === 'https://files.slack.example/p.jpg') return new Response(jpeg, { status: 200 });
+      if (url === 'https://api.anthropic.com/v1/messages') return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers[Math.min(ai++, answers.length - 1)]) }] });
+      return Response.json({ ok: true });
+    } };
+    return { calls, store, deps, dms: () => calls.filter((c) => c.url === 'https://slack.com/api/chat.postMessage').map((c) => c.body).filter((b) => !/^:eyes: Got your photo/.test(b.text)) };
+  };
+  const msg = { type: 'message', channel_type: 'im', subtype: 'file_share', user: 'UA1', text: '', files: [{ mimetype: 'image/jpeg', url_private_download: 'https://files.slack.example/p.jpg' }] };
+  const press = (id, token) => ({ type: 'block_actions', user: { id: 'UA1', name: 'olivia' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' }, message: { ts: '1.2', text: '*For Olivia Fake:* Run, 3.1 mi (4.99 km) in 25:30, 8:13 per mile, today. Check the numbers, then save.' }, actions: [{ action_id: id, value: token }] });
+  let w = world([noErg, noErg, run]);
+  let out = await handlePhotoEvent(msg, env, w.deps);
+  assert.deepStrictEqual([out.status, out.kind], ['card', 'run']);
+  const card = w.dms()[0];
+  assert.ok(/For Olivia Fake/.test(card.text) && /3\.1 mi/.test(card.text) && /25:30/.test(card.text), card.text);
+  assert.deepStrictEqual(card.blocks[1].elements.map((b) => b.action_id), ['photo_run_oyo', 'photo_run_practice', 'photo_cancel']);
+  const token = card.blocks[1].elements[0].value;
+  out = await handlePhotoButton(press('photo_run_practice', token), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  const save = w.calls.find((c) => c.body && c.body.action === 'site-log').body;
+  assert.deepStrictEqual([save.self, save.athleteId, save.form.type, save.form.activity, save.form.pieces, save.form.date], [true, 'A901', 'practice', 'Run', '25:30.0, 4989', '2026-11-17']);
+  assert.ok(save.photo, 'a small copy of the screenshot goes with it');
+  assert.strictEqual((await handlePhotoButton(press('photo_run_oyo', token), env, w.deps)).status, 'gone', 'first press wins');
+  // not a run either: the usual answer
+  w = world([noErg, noErg, { ...run, distance: '', moving_time: '', elapsed_time: '' }]);
+  out = await handlePhotoEvent(msg, env, w.deps);
+  assert.notStrictEqual(out.kind, 'run');
+  // a ride is refused politely
+  w = world([noErg, noErg, { ...run, activity: 'Ride' }]);
+  assert.strictEqual((await handlePhotoEvent(msg, env, w.deps)).status, 'run_other');
+  // off by default: no run reader call at all
+  w = world([noErg, noErg, run]);
+  await handlePhotoEvent(msg, env, { ...w.deps, runPhotos: false });
+  assert.ok(w.calls.filter((c) => c.url === 'https://api.anthropic.com/v1/messages').length <= 2, 'the run reader is not called when off');
 });
 
 test('slack photo: coach sends a screen, bot asks which athlete, Save button saves', async () => {
