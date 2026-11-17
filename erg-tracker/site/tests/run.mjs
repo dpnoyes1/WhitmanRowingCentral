@@ -15,6 +15,7 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
+import { RUN_PHOTO_CHECK, compareRun, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
@@ -2884,6 +2885,36 @@ test('display names: inactive athletes do not lengthen an active name (Norah Tel
   assert.strictEqual(m.get('Ann Lopez'), 'Ann Lopez');
   const two = displayNames([{ name: 'Norah Tello', active: true }, { name: 'Norah Kim', active: true }]);
   assert.strictEqual(two.get('Norah Tello'), 'Norah T.');
+});
+
+test('run photo check (built, switched off): reading and comparing a run screen', async () => {
+  assert.strictEqual(RUN_PHOTO_CHECK, false, 'stays off until David says go');
+  assert.strictEqual(distanceMeters('3.1', 'mi').meters, 4989);
+  assert.strictEqual(distanceMeters('5,2', 'km').meters, 5200);
+  assert.strictEqual(parsePace("8'30\""), 510);
+  assert.strictEqual(parsePace('5:12'), 312);
+  const raw = { app: 'Strava', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:40', elapsed_time: '27:05', avg_pace: '8:17', pace_unit: '/mi', flags: [] };
+  const read = normalizeRunRead(raw);
+  assert.deepStrictEqual([read.meters, read.movingS, read.elapsedS, read.paceS], [4989, 1540, 1625, 497]);
+  const v = (meters, timeS, r = read) => compareRun(r, { meters, timeS }).verdict;
+  assert.strictEqual(v(4989, 1530), 'match');
+  assert.strictEqual(v(4989, 1625), 'match', 'typed the elapsed time');
+  assert.strictEqual(v(5100, 1540), 'match', 'GPS drift under 5%');
+  assert.strictEqual(v(5400, 1540), 'close');
+  assert.strictEqual(v(8000, 1540), 'mismatch');
+  assert.strictEqual(v(4989, 2400), 'mismatch');
+  assert.strictEqual(compareRun(normalizeRunRead({ ...raw, distance: '', moving_time: '', elapsed_time: '' }), { meters: 5000, timeS: 1500 }).verdict, 'unreadable');
+  const bare = normalizeRunRead({ ...raw, distance: '5.0', distance_unit: '' });
+  assert.strictEqual(compareRun(bare, { meters: 5000, timeS: 1540 }).verdict, 'match', 'no unit: closer of miles and km');
+  assert.strictEqual(compareRun(normalizeRunRead({ ...raw, activity: 'Ride' }), { meters: 4989, timeS: 1540 }).verdict, 'close');
+  // the call: a fake client, a tiny JPEG, no network
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 0]);
+  let sent;
+  const client = { messages: { create: async (body) => { sent = body; return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(raw) }], usage: { input_tokens: 1, output_tokens: 1 } }; } } };
+  const out = await readRunScreen({ client, bytes: jpeg });
+  assert.ok(out.ok && out.read.meters === 4989);
+  assert.strictEqual(sent.messages[0].content[0].type, 'image');
+  assert.strictEqual((await readRunScreen({ client: { messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'no' }] }) } }, bytes: jpeg })).reason, 'bad_reply');
 });
 
 photoTests(test);
