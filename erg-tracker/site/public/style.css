@@ -466,20 +466,26 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .wr-tools label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .wr-tools select { width: auto; }
 .wr-piece h3 { margin: 12px 0 6px; font-size: 15px; }
+.wr-chart { margin: 4px 0 14px; }
+.wr-chart svg { width: 100%; height: auto; display: block; }
+.wr-chart text { fill: var(--text-2); font-size: 11px; font-variant-numeric: tabular-nums; }
+.wr-chart line.g { stroke: var(--border); stroke-width: 1; }
+.wr-chart figcaption { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 13px; margin-top: 6px; }
+.wr-chart figcaption i { display: inline-block; width: 12px; height: 3px; border-radius: 2px; margin-right: 6px; vertical-align: middle; }
 .wr-curve td, .wr-curve th { white-space: nowrap; }
 .wresults td.wr-who { white-space: normal; min-width: 160px; max-width: 340px; }
 .wresults td.wr-who small { display: block; line-height: 1.35; }
 /* Water import (on-water plan Step 2) */
-.wi-pick { display: grid; grid-template-columns: minmax(0, 2fr) repeat(3, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
+.wi-pick { display: grid; grid-template-columns: minmax(0, 2fr) repeat(2, minmax(0, 1fr)); gap: 8px; margin: 8px 0; }
 .wi-pick label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; min-width: 0; }
 .wi-pick input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-height: 44px; }
 .wimport .card label.btn { display: inline-flex; cursor: pointer; margin-right: 8px; }
-@media (max-width: 720px) { .wi-pick { grid-template-columns: repeat(3, minmax(0, 1fr)); } .wi-pick > label:first-child { grid-column: 1 / -1; } }
+@media (max-width: 720px) { .wi-pick { grid-template-columns: repeat(2, minmax(0, 1fr)); } .wi-pick > label:first-child { grid-column: 1 / -1; } }
 /* Save for practice (on-water plan Step 1) */
 .lusv-when { display: flex; flex-wrap: wrap; gap: 10px; align-items: end; margin-bottom: 10px; }
 .lusv-when label { display: flex; flex-direction: column; gap: 4px; font-size: 13px; }
 .lusv-boats { display: grid; gap: 8px; margin-bottom: 12px; }
-.lusv-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 72px minmax(0, 150px); gap: 8px; align-items: center; }
+.lusv-row { display: grid; grid-template-columns: 70px minmax(0, 1fr) 84px minmax(0, 230px); gap: 8px; align-items: center; }
 .lusv input { font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px; border: 1px solid var(--border); background: var(--surface); color: var(--text); min-height: 44px; color-scheme: dark; }
 .lusv-row input, .lusv-row select, .lusv-when input, .lusv-when select { min-width: 0; }
 .lusv-when select { width: auto; }

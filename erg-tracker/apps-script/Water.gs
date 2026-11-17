@@ -50,7 +50,7 @@ function waterSuggestBoat_(unit, units, sessions) {
 /** Water sessions rows -> page objects. Pure. */
 function waterSessionsFromRows_(rows) {
   return rows.filter(function (r) { return String(r['Session ID'] || '').trim(); }).map(function (r) {
-    return { sessionId: String(r['Session ID']).trim(), date: feedDay_(r.Date), shift: String(r.Shift || '').trim(), unit: String(r.Unit || '').trim(),
+    return { sessionId: String(r['Session ID']).trim(), date: feedDay_(r.Date), unit: String(r.Unit || '').trim(),
       boatName: String(r['Boat name'] || '').trim(), boatClass: String(r['Boat class'] || '').trim(), lineupId: String(r['Lineup ID'] || '').trim(),
       start: String(r['Start time'] || ''), movingS: feedNum_(r['Moving s']), elapsedS: feedNum_(r['Elapsed s']), meters: feedNum_(r.Meters),
       avgSplitS: feedNum_(r['Avg split s']), avgRate: feedNum_(r['Avg rate']), strokes: feedNum_(r.Strokes), pieces: feedNum_(r.Pieces),
@@ -70,14 +70,14 @@ function waterCurve_(c) {
 
 /**
  * The saved lineup a session credits: the one with its Lineup ID if that still exists on the same date, else the boat of the
- * same name on that date and shift (first lineup only; mid-practice switches are not built). lineups: Lineups.gs page objects. Pure.
+ * same name on that date (first lineup only; mid-practice switches are not built). lineups: Lineups.gs page objects. Pure.
  */
 function waterLineupFor_(session, lineups) {
   var day = lineups.filter(function (l) { return l.date === session.date && l.fromPiece === ''; });
   var byId = session.lineupId ? day.filter(function (l) { return l.lineupId === session.lineupId; })[0] : null;
   if (byId) return byId;
   var name = String(session.boatName || '').toLowerCase();
-  return day.filter(function (l) { return l.shift === session.shift && l.boatName.toLowerCase() === name; })[0] || null;
+  return day.filter(function (l) { return l.boatName.toLowerCase() === name; })[0] || null;
 }
 
 /**
@@ -141,7 +141,6 @@ function waterCleanSave_(body) {
   var s = body.session || {};
   var date = String(s.date || '');
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !feedParseDay_(date)) return { error: 'The file has no usable date.' };
-  if (LINEUP_SHIFTS.indexOf(String(s.shift || '')) < 0) return { error: 'Pick the shift.' };
   if (WATER_KINDS.indexOf(String(s.kind || '')) < 0) return { error: 'Pick Practice, Pieces or Race.' };
   var boatName = String(s.boatName || '').trim().replace(/\s+/g, ' ').slice(0, 40);
   if (!boatName) return { error: 'Pick the boat.' };
@@ -153,7 +152,7 @@ function waterCleanSave_(body) {
       splitS: Number(p.splitS) || '', rate: Number(p.rate) || '', strokes: Number(p.strokes) || '' };
   });
   return {
-    sessionId: String(s.sessionId || '').slice(0, 60), date: date, shift: String(s.shift), unit: String(s.unit || '').slice(0, 20),
+    sessionId: String(s.sessionId || '').slice(0, 60), date: date, unit: String(s.unit || '').slice(0, 20),
     boatName: boatName, boatClass: String(s.boatClass), lineupId: String(s.lineupId || '').slice(0, 30), start: String(s.start || ''),
     elapsedS: Number(s.elapsedS) || 0, movingS: moving, meters: meters, avgSplitS: Number(s.avgSplitS) || '', avgRate: Number(s.avgRate) || '',
     strokes: Number(s.strokes) || 0, kind: String(s.kind), fileName: String(s.fileName || '').slice(0, 120),
@@ -163,7 +162,7 @@ function waterCleanSave_(body) {
 
 /** Water sessions and pieces rows for a cleaned save. Pure (Date stays YYYY-MM-DD). */
 function waterSessionRow_(c, fileLink, by, at) {
-  return { 'Session ID': c.sessionId, Date: c.date, Shift: c.shift, Unit: c.unit, 'Boat name': c.boatName, 'Boat class': c.boatClass,
+  return { 'Session ID': c.sessionId, Date: c.date, Unit: c.unit, 'Boat name': c.boatName, 'Boat class': c.boatClass,
     'Lineup ID': c.lineupId, 'Start time': c.start, 'Elapsed s': c.elapsedS, 'Moving s': c.movingS, Meters: c.meters,
     'Avg split s': c.avgSplitS, 'Avg rate': c.avgRate, Strokes: c.strokes, Pieces: c.pieces.length, Kind: c.kind,
     'File name': c.fileName, 'File link': fileLink || '', 'Curve JSON': JSON.stringify(c.curve), 'Imported by': by, 'Imported at': at };
@@ -234,11 +233,11 @@ function waterWriteCredits_(sessionId, wanted) {
 }
 
 /** Re-credits every water session of one practice after its lineup is saved (called by Lineups.gs under its lock). */
-function waterRecredit_(date, shift, coachName) {
+function waterRecredit_(date, coachName) {
   if (!ss_().getSheetByName(TABS.WATER_SESSIONS)) return 0;
   var roster = lineupsRoster_(readObjects_(TABS.ROSTER));
   var lineups = lineupsFromRows_(readObjects_(TABS.LINEUPS), roster);
-  var sessions = waterSessionsFromRows_(readObjects_(TABS.WATER_SESSIONS)).filter(function (s) { return s.date === date && s.shift === shift; });
+  var sessions = waterSessionsFromRows_(readObjects_(TABS.WATER_SESSIONS)).filter(function (s) { return s.date === date; });
   sessions.forEach(function (s) {
     var lineup = waterLineupFor_(s, lineups), id = lineup ? lineup.lineupId : '';
     waterWriteCredits_(s.sessionId, waterCredits_(s, lineup, roster, coachName, new Date()));

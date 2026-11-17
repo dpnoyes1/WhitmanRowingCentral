@@ -84,14 +84,14 @@ HEADERS[TABS.RACES] = [
 // Coach-only (on-water plan Step 1). One row per boat per practice, saved from the site's Lineups page. Seat 1 = bow; seats hold
 // Athlete IDs; a 4+ uses Seats 1-4. "From piece" is blank unless a boat changed lineup mid-practice (not built yet).
 HEADERS[TABS.LINEUPS] = [
-  'Lineup ID', 'Date', 'Shift', 'Boat name', 'Boat class',
+  'Lineup ID', 'Date', 'Boat name', 'Boat class',
   'Seat 1', 'Seat 2', 'Seat 3', 'Seat 4', 'Seat 5', 'Seat 6', 'Seat 7', 'Seat 8', 'Cox', 'From piece', 'Saved by', 'Saved at'
 ];
 
 // Coach-only (on-water plan Step 2). One row per imported SpeedCoach / CoxBox file, and one per work piece in it. Times in seconds,
 // splits in seconds per 500 m, Start time as UTC ISO text. The original file is in a private Drive folder (File link).
 HEADERS[TABS.WATER_SESSIONS] = [
-  'Session ID', 'Date', 'Shift', 'Unit', 'Boat name', 'Boat class', 'Lineup ID', 'Start time', 'Elapsed s', 'Moving s', 'Meters',
+  'Session ID', 'Date', 'Unit', 'Boat name', 'Boat class', 'Lineup ID', 'Start time', 'Elapsed s', 'Moving s', 'Meters',
   'Avg split s', 'Avg rate', 'Strokes', 'Pieces', 'Kind', 'File name', 'File link', 'Curve JSON', 'Imported by', 'Imported at'
 ];
 HEADERS[TABS.WATER_PIECES] = [

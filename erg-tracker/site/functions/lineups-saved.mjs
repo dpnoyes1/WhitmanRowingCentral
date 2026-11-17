@@ -1,6 +1,6 @@
 // Saved lineups for a practice (on-water plan Step 1). Coaches only. Reads and writes the Sheet's Lineups tab through the feed key
 // (apps-script/Lineups.gs), never the cached feed, so lineups never reach athletes. GET ?date=YYYY-MM-DD lists that day;
-// POST { date, shift, boats } replaces that practice's boats (an empty list clears it).
+// POST { date, boats } replaces that day's boats (an empty list clears it).
 import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 
@@ -11,9 +11,9 @@ const ID = (v) => (typeof v === 'string' && v.length <= 20 ? v.trim() : '');
 
 /** Only the fields the Sheet reads, each trimmed and capped; anything else in the request is dropped. */
 export function cleanLineupsBody(body) {
-  if (!body || typeof body !== 'object' || !DAY.test(String(body.date || '')) || typeof body.shift !== 'string' || !Array.isArray(body.boats) || body.boats.length > 12) return null;
+  if (!body || typeof body !== 'object' || !DAY.test(String(body.date || '')) || !Array.isArray(body.boats) || body.boats.length > 12) return null;
   return {
-    date: body.date, shift: body.shift.slice(0, 10),
+    date: body.date,
     boats: body.boats.map((b) => ({
       lineupId: ID(b && b.lineupId), boatName: String((b && b.boatName) || '').slice(0, 40), boatClass: String((b && b.boatClass) || '').slice(0, 3),
       seats: Array.isArray(b && b.seats) ? b.seats.slice(0, 8).map(ID) : [], cox: ID(b && b.cox),

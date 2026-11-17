@@ -1,5 +1,5 @@
 // Lineups page (coaches only, David 2026-11-11). The builder lives in this page; "Save for practice" (on-water plan Step 1) stores the boats
-// for one date and shift in the Sheet's Lineups tab (/api/lineups/saved), and a saved practice can be opened again and corrected.
+// for one practice date in the Sheet's Lineups tab (/api/lineups/saved), and a saved practice can be opened again and corrected.
 // Averages use each rower's best 2k and 20' this school year; GMS % is the average of her 2k and 20' GMS % (from the Sheet).
 // A rower with no GMS % (no test, or no weight on file) sits in a boat but is left out of the averages and is never in a Top boat.
 
@@ -10,30 +10,21 @@ const MAX_BOATS = 6;
 
 const boat = (n, role) => ({ n, role, s: Array(n).fill(null), pin: Array(n).fill(false), name: '', cls: n + '+', cox: '', lid: '' });
 const fresh = () => ({ out: new Set(), boats: [boat(8, 'even'), boat(8, 'even'), boat(4, 'low')], goal: 1, pick: null, open: false, built: false });
-const SHIFTS = ['Early', 'Late', 'Other'];
 const CLASSES = { 8: ['8+'], 4: ['4+', '4x', '4-'] };
 const hasCox = (cls) => /\+$/.test(cls);
 
 /** Today in Eastern time, YYYY-MM-DD. */
 export const todayET = (now = new Date()) => new Intl.DateTimeFormat('en-CA', { timeZone: 'America/New_York', year: 'numeric', month: '2-digit', day: '2-digit' }).format(now);
-/** The usual girls' shift for a date (Mon/Wed early, Tue/Thu late, Friday by even/odd date); weekends 'Other'. The coach can change it. */
-export function shiftFor(day) {
-  const d = new Date(day + 'T12:00:00Z'), wd = d.getUTCDay();
-  if (wd === 1 || wd === 3) return 'Early';
-  if (wd === 2 || wd === 4) return 'Late';
-  if (wd === 5) return d.getUTCDate() % 2 === 0 ? 'Early' : 'Late';
-  return 'Other';
-}
 /** The body POSTed to /api/lineups/saved for the boats on the page. Seat 1 is bow (b.s[0]). */
-export function saveBody(date, shift, boats) {
-  return { date, shift, boats: boats.map((b) => ({ lineupId: b.lid || '', boatName: (b.name || '').trim(), boatClass: b.cls || b.n + '+', seats: b.s.map((x) => x ?? ''), cox: hasCox(b.cls || b.n + '+') ? b.cox || '' : '' })) };
+export function saveBody(date, boats) {
+  return { date, boats: boats.map((b) => ({ lineupId: b.lid || '', boatName: (b.name || '').trim(), boatClass: b.cls || b.n + '+', seats: b.s.map((x) => x ?? ''), cox: hasCox(b.cls || b.n + '+') ? b.cox || '' : '' })) };
 }
-/** Saved lineups for one shift -> page boats (all seats pinned). Boats the builder can't show (pairs, singles, mid-practice switches) are skipped
+/** Saved lineups for one day -> page boats (all seats pinned). Boats the builder can't show (pairs, singles, mid-practice switches) are skipped
  *  and counted; rowers no longer active leave their seat empty. */
-export function boatsFromSaved(lineups, shift, activeIds) {
+export function boatsFromSaved(lineups, activeIds) {
   let skipped = 0;
   const boats = [];
-  for (const l of lineups.filter((x) => x.shift === shift)) {
+  for (const l of lineups) {
     if (l.fromPiece !== '' || !(l.seats.length === 8 || l.seats.length === 4)) { skipped++; continue; }
     const b = boat(l.seats.length, 'even');
     l.seats.forEach((id, k) => { if (id && activeIds.has(id)) { b.s[k] = id; b.pin[k] = true; } });
@@ -44,7 +35,7 @@ export function boatsFromSaved(lineups, shift, activeIds) {
 }
 
 // Save-for-practice state; kept across page visits in this tab so a half-typed save is not lost on a redraw.
-const SV = { date: '', shift: '', coxes: [], days: [], saved: [], msg: '', err: false, busy: false };
+const SV = { date: '', coxes: [], days: [], saved: [], msg: '', err: false, busy: false };
 let LU = fresh();
 let R = [];            // rowers from /api/lineups
 let ctx = null;        // { app, esc, fmtTime, fmtNum, redraw }
@@ -164,15 +155,14 @@ function draw() {
 
 function saveCard() {
   const { esc } = ctx;
-  const savedHere = SV.saved.filter((l) => l.shift === SV.shift);
+  const savedHere = SV.saved;
   const row = (b, bi) => `<div class="lusv-row"><span class="muted small">${boatName(bi)}</span>
       <input type="text" maxlength="40" placeholder="Shell name" value="${esc(b.name)}" data-luname="${bi}" aria-label="Shell name for ${boatName(bi)}">
-      ${(CLASSES[b.n] || [b.cls]).length > 1 ? `<select data-lucls="${bi}" aria-label="Boat class for ${boatName(bi)}">${CLASSES[b.n].map((c) => `<option${c === b.cls ? ' selected' : ''}>${c}</option>`).join('')}</select>` : `<span class="num">${esc(b.cls)}</span>`}
+      <select data-lucls="${bi}" aria-label="Boat class for ${boatName(bi)}">${(CLASSES[b.n] || [b.cls]).map((c) => `<option${c === b.cls ? ' selected' : ''}>${c}</option>`).join('')}</select>
       ${hasCox(b.cls) ? `<select data-lucox="${bi}" aria-label="Coxswain for ${boatName(bi)}"><option value="">No cox</option>${SV.coxes.map((c) => `<option value="${esc(c.id)}"${c.id === b.cox ? ' selected' : ''}>${esc(c.name)}</option>`).join('')}</select>` : '<span></span>'}</div>`;
   return `<div class="card lusv"><div class="lu-head"><h2>Save for practice</h2></div>
-    <p class="muted small">Saves these boats for one practice, so the water import can give each rower her boat's minutes and meters. Saving the same date and shift again replaces it.</p>
+    <p class="muted small">Saves these boats for one practice, so the water import can give each rower her boat's minutes and meters. Saving the same date again replaces it.</p>
     <div class="lusv-when"><label>Date <input type="date" value="${esc(SV.date)}" data-ludate="1"></label>
-      <label>Shift <select data-lushift="1">${SHIFTS.map((x) => `<option${x === SV.shift ? ' selected' : ''}>${x}</option>`).join('')}</select></label>
       <button type="button" class="btn ghost sm" data-luload="1"${SV.busy ? ' disabled' : ''}>Open saved</button></div>
     ${savedHere.length ? `<p class="small">Already saved for this practice: ${savedHere.map((l) => esc(l.boatName)).join(', ')}. Saving replaces it.</p>` : ''}
     <div class="lusv-boats">${LU.boats.map(row).join('')}</div>
@@ -205,11 +195,11 @@ async function loadSaved() {
   try {
     const out = await lineupsApi('GET', SV.date);
     Object.assign(SV, { coxes: out.coxes, days: out.days, saved: out.lineups });
-    const { boats, skipped } = boatsFromSaved(out.lineups, SV.shift, new Set(R.map((a) => a.id)));
-    if (!boats.length) { SV.msg = 'Nothing saved for ' + SV.date + ', ' + SV.shift + '.'; SV.err = true; }
+    const { boats, skipped } = boatsFromSaved(out.lineups, new Set(R.map((a) => a.id)));
+    if (!boats.length) { SV.msg = 'Nothing saved for ' + SV.date + '.'; SV.err = true; }
     else {
       LU.boats = boats; LU.goal = -1; LU.built = true; LU.pick = null;
-      SV.msg = 'Opened ' + boats.length + ' boat' + (boats.length === 1 ? '' : 's') + ' saved for ' + SV.date + ', ' + SV.shift + '.' + (skipped ? ' ' + skipped + ' other boat' + (skipped === 1 ? '' : 's') + ' (pairs, singles or a seat switch) stay as saved.' : '');
+      SV.msg = 'Opened ' + boats.length + ' boat' + (boats.length === 1 ? '' : 's') + ' saved for ' + SV.date + '.' + (skipped ? ' ' + skipped + ' other boat' + (skipped === 1 ? '' : 's') + ' (pairs, singles or a seat switch) stay as saved.' : '');
       SV.err = false;
     }
   } catch (e) { SV.msg = e.message; SV.err = true; }
@@ -220,10 +210,10 @@ async function save() {
   if (LU.boats.some((b) => !(b.name || '').trim())) { SV.msg = 'Name every boat (the shell) first.'; SV.err = true; draw(); return; }
   SV.busy = true; SV.msg = ''; draw();
   try {
-    const out = await lineupsApi('POST', null, saveBody(SV.date, SV.shift, LU.boats));
+    const out = await lineupsApi('POST', null, saveBody(SV.date, LU.boats));
     Object.assign(SV, { coxes: out.coxes, days: out.days, saved: out.lineups });
     (out.saved || []).forEach((id, i) => { if (LU.boats[i]) LU.boats[i].lid = id; });
-    SV.msg = 'Saved ' + LU.boats.length + ' boat' + (LU.boats.length === 1 ? '' : 's') + ' for ' + SV.date + ', ' + SV.shift + '.'; SV.err = false;
+    SV.msg = 'Saved ' + LU.boats.length + ' boat' + (LU.boats.length === 1 ? '' : 's') + ' for ' + SV.date + '.'; SV.err = false;
   } catch (e) { SV.msg = e.message; SV.err = true; }
   SV.busy = false; draw();
 }
@@ -248,7 +238,7 @@ function wire() {
     else if (q('[data-luopen]')) LU.open = !LU.open;
     else if (q('[data-lusave]')) { save(); return; }
     else if (q('[data-luload]')) { loadSaved(); return; }
-    else if (q('[data-luday]')) { SV.date = q('[data-luday]').dataset.luday; SV.shift = shiftFor(SV.date); refreshSaved(SV.date); loadSaved(); return; }
+    else if (q('[data-luday]')) { SV.date = q('[data-luday]').dataset.luday; refreshSaved(SV.date); loadSaved(); return; }
     else hit = false;
     if (hit) draw();
   });
@@ -258,8 +248,8 @@ function wire() {
   document.addEventListener('change', (e) => { const t = on() && e.target; if (!t || !t.dataset) return;
     if (t.dataset.lucls !== undefined) { LU.boats[+t.dataset.lucls].cls = t.value; draw(); }
     else if (t.dataset.lucox !== undefined) LU.boats[+t.dataset.lucox].cox = t.value;
-    else if (t.dataset.ludate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { SV.date = t.value; SV.shift = shiftFor(t.value); SV.msg = ''; draw(); refreshSaved(SV.date); }
-    else if (t.dataset.lushift !== undefined) { SV.shift = t.value; SV.msg = ''; draw(); } });
+    else if (t.dataset.ludate !== undefined && /^\d{4}-\d{2}-\d{2}$/.test(t.value)) { SV.date = t.value; SV.msg = ''; draw(); refreshSaved(SV.date); }
+ });
   document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luout]'); if (!el) return; const id = el.dataset.luout;
     if (el.checked) LU.out.delete(id); else { LU.out.add(id); remove(id); if (LU.pick === id) LU.pick = null; } draw(); });
   document.addEventListener('keydown', (e) => { if (!on() || (e.key !== 'Enter' && e.key !== ' ')) return; const t = e.target.closest && e.target.closest('.lusr.empty'); if (t && e.target === t) { e.preventDefault(); t.click(); } });
@@ -268,9 +258,9 @@ function wire() {
   document.addEventListener('drop', (e) => { const t = on() && e.target.closest && e.target.closest('[data-luseat]'); if (!t) return; e.preventDefault(); const id = e.dataTransfer.getData('text/plain'); if (!id) return; place(id, t.dataset.luseat); LU.pick = null; draw(); });
 }
 
-/** Called each time the page opens: a fresh builder, everyone ticked; the save card keeps its date and shift and checks what is saved. */
+/** Called each time the page opens: a fresh builder, everyone ticked; the save card keeps its date and checks what is saved. */
 export function openLineups(rowers, c) {
   R = rowers; ctx = c; LU = fresh();
-  if (!SV.date) { SV.date = todayET(); SV.shift = shiftFor(SV.date); }
+  if (!SV.date) SV.date = todayET();
   SV.msg = ''; wire(); draw(); refreshSaved(SV.date);
 }

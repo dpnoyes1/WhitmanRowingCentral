@@ -81,7 +81,7 @@ export function waterReportView(raw, date, rateKey = 'all', o = WATER) {
   const names = namesOf(raw.lineups || []);
   const crew = (l) => (l ? { names: seated(l).map((id) => names[id] || id), cox: l.cox ? names[l.cox] || l.cox : '' } : null);
   const boats = sessions.filter((s) => s.date === d).sort((a, b) => a.startUnix - b.startUnix).map((s) => ({
-    sessionId: s.sessionId, boatName: s.boatName, boatClass: s.boatClass, shift: s.shift, kind: s.kind, start: s.start,
+    sessionId: s.sessionId, boatName: s.boatName, boatClass: s.boatClass, kind: s.kind, start: s.start,
     movingS: s.movingS, meters: s.meters, avgSplitS: s.avgSplitS, avgRate: s.avgRate, pieces: s.pieces.length, crew: crew(s.lineup),
     curve: (s.curve && s.curve[rateKey]) || [],
   }));

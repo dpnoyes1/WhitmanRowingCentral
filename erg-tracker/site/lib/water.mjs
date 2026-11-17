@@ -6,7 +6,10 @@ export const WATER = {
   maxGapS: 8,            // a stroke counts toward moving time when it comes within 8 s of the one before... (David, 2026-11-13: tune on real practices)
   driftSpeed: 1.5,       // ...and the boat is above drifting speed (1.5 m/s is a 5:33/500m split)
   maxSpeed: 8,           // anything faster is a GPS jump or junk
-  durations: [30, 60, 120, 240, 300, 360, 600, 1200, 1800, 3600],
+  // Best split by duration, 30 s to 12 min (David, 2026-11-16: "out to roughly 12'"). Spaced like cycling's mean-max power curve
+  // (TrainingPeaks marks 1, 2, 5, 6, 10 and 12 min; critical power is fitted on 3-20 min efforts) and around rowing's own lengths:
+  // ~4' a 1000 m piece, ~5' a 1500 m race, 6-7' a 2k. Whole-second timestamps, so nothing under 30 s.
+  durations: [30, 60, 120, 180, 240, 300, 360, 480, 600, 720],
   rateCaps: [20, 24, 28],   // the curve is also worked out for stretches at or under these average rates ("rate 20 and under only")   // best split by duration (30 s to 60 min; 5 min as in the plan's table); timestamps are whole seconds, so nothing shorter
   minPieceS: 30,         // a lap shorter than this, or under minPieceM, or slower than a drift, is rest, not a piece
   minPieceM: 100,

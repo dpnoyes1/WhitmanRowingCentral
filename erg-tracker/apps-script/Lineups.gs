@@ -1,14 +1,13 @@
 /**
  * Saved lineups for a practice (on-water plan Step 1, David 2026-11-13). Coaches only.
- * The site's Lineups page saves the boats it built for one date and shift; the Water import (Step 2) reads them to credit each
+ * The site's Lineups page saves the boats it built for one practice date (no shifts on the water: David, 2026-11-16); the Water import (Step 2) reads them to credit each
  * rower with her boat's minutes and meters. One Lineups row per boat per practice. Seat 1 = bow, like the Races tab.
- * Saving a date and shift again replaces that practice's boats; a boat keeps its Lineup ID when the page sends it back, so
+ * Saving a date again replaces that day's boats; a boat keeps its Lineup ID when the page sends it back, so
  * corrections re-credit the same boat. "From piece" is blank for now: it is there so mid-practice seat switches can be added
  * cheaply later (a second row for the same boat, from piece N on). The pure parts are tested in Node.
  */
 var LINEUPS_LIST_ACTION = 'lineups-list';
 var LINEUPS_SAVE_ACTION = 'lineups-save';
-var LINEUP_SHIFTS = ['Early', 'Late', 'Other'];
 var LINEUP_CLASSES = { '8+': { seats: 8, cox: true }, '4+': { seats: 4, cox: true }, '4x': { seats: 4, cox: false }, '4-': { seats: 4, cox: false },
   '2x': { seats: 2, cox: false }, '2-': { seats: 2, cox: false }, '1x': { seats: 1, cox: false } };
 var LINEUP_MAX_BOATS = 12;
@@ -26,14 +25,12 @@ function lineupsRoster_(roster) {
 }
 
 /**
- * The page's save request -> { date, shift, boats } or { error } in plain words. Pure.
- * body: { date: 'YYYY-MM-DD', shift, boats: [{ lineupId?, boatName, boatClass, seats: [id or '' x seats], cox?, fromPiece? }] }
+ * The page's save request -> { date, boats } or { error } in plain words. Pure.
+ * body: { date: 'YYYY-MM-DD', boats: [{ lineupId?, boatName, boatClass, seats: [id or '' x seats], cox?, fromPiece? }] }
  */
 function lineupsClean_(body, rosterById) {
   var date = String(body.date || '').trim();
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date) || !feedParseDay_(date)) return { error: 'Pick the practice date.' };
-  var shift = String(body.shift || '').trim();
-  if (LINEUP_SHIFTS.indexOf(shift) < 0) return { error: 'Pick the shift: ' + LINEUP_SHIFTS.join(', ') + '.' };
   var boats = Array.isArray(body.boats) ? body.boats : [];
   if (boats.length > LINEUP_MAX_BOATS) return { error: 'At most ' + LINEUP_MAX_BOATS + ' boats in one practice.' };
   var names = {}, seatedAt = {}, out = [];
@@ -67,23 +64,23 @@ function lineupsClean_(body, rosterById) {
     if (cox) seatedAt[cox + '|' + from] = name;
     out.push({ lineupId: String(b.lineupId || '').trim().slice(0, 30), boatName: name, boatClass: String(b.boatClass).trim(), seats: seats, cox: cox, fromPiece: from });
   }
-  return { date: date, shift: shift, boats: out };
+  return { date: date, boats: out };
 }
 
-/** Lineups rows as page objects, newest date first then shift and boat. Pure. */
+/** Lineups rows as page objects, newest date first, then boat. Pure. */
 function lineupsFromRows_(rows, rosterById) {
   var nameOf = function (id) { return id && rosterById[id] ? rosterById[id].name : (id || ''); };
   return rows.filter(function (r) { return String(r['Lineup ID'] || '').trim(); }).map(function (r) {
     var cls = LINEUP_CLASSES[String(r['Boat class']).trim()] || { seats: 8 };
     var seats = LINEUP_SEAT_HEADERS.slice(0, cls.seats).map(function (h) { return String(r[h] || '').trim(); });
     var cox = String(r.Cox || '').trim();
-    return { lineupId: String(r['Lineup ID']).trim(), date: feedDay_(r.Date), shift: String(r.Shift || '').trim(),
+    return { lineupId: String(r['Lineup ID']).trim(), date: feedDay_(r.Date),
       boatName: String(r['Boat name'] || '').trim(), boatClass: String(r['Boat class'] || '').trim(),
       seats: seats, seatNames: seats.map(nameOf), cox: cox, coxName: nameOf(cox),
       fromPiece: r['From piece'] === '' || r['From piece'] === null || r['From piece'] === undefined ? '' : Number(r['From piece']),
       savedBy: String(r['Saved by'] || '').trim() };
   }).sort(function (a, b) {
-    return a.date < b.date ? 1 : a.date > b.date ? -1 : a.shift < b.shift ? -1 : a.shift > b.shift ? 1 : a.boatName < b.boatName ? -1 : a.boatName > b.boatName ? 1 : 0;
+    return a.date < b.date ? 1 : a.date > b.date ? -1 : a.boatName < b.boatName ? -1 : a.boatName > b.boatName ? 1 : 0;
   });
 }
 
@@ -98,14 +95,14 @@ function lineupsBuildRows_(clean, existing, by, savedAt) {
     var id = String(r['Lineup ID'] || '').trim();
     if (!id) return;
     used[id] = true;
-    if (feedDay_(r.Date) === clean.date && String(r.Shift || '').trim() === clean.shift) mine[id] = true;
+    if (feedDay_(r.Date) === clean.date) mine[id] = true;
   });
   var taken = {}, n = 1;
   var nextId = function () { while (used[prefix + n] || taken[prefix + n]) n++; return prefix + n; };
   return clean.boats.map(function (b) {
     var id = b.lineupId && mine[b.lineupId] && !taken[b.lineupId] ? b.lineupId : nextId();
     taken[id] = true;
-    var row = { 'Lineup ID': id, Date: clean.date, Shift: clean.shift, 'Boat name': b.boatName, 'Boat class': b.boatClass,
+    var row = { 'Lineup ID': id, Date: clean.date, 'Boat name': b.boatName, 'Boat class': b.boatClass,
       Cox: b.cox, 'From piece': b.fromPiece, 'Saved by': by, 'Saved at': savedAt };
     LINEUP_SEAT_HEADERS.forEach(function (h, k) { row[h] = b.seats[k] || ''; });
     return row;
@@ -126,7 +123,7 @@ function lineupsCoxes_(rosterById) {
     .sort(function (a, b) { return a.name < b.name ? -1 : a.name > b.name ? 1 : 0; });
 }
 
-/** body: { date }. That day's saved boats (every shift), the 14 most recent days with lineups, and the coxswain list. */
+/** body: { date }. That day's saved boats, the 14 most recent days with lineups, and the coxswain list. */
 function processLineupsList_(body) {
   var roster = lineupsRoster_(readObjects_(TABS.ROSTER));
   var all = lineupsFromRows_(readObjects_(TABS.LINEUPS), roster);
@@ -137,13 +134,13 @@ function processLineupsList_(body) {
 }
 
 /** Rewrites the Lineups tab without the rows for one practice, then adds that practice's new rows. Caller holds the lock. */
-function lineupsReplace_(date, shift, rows) {
+function lineupsReplace_(date, rows) {
   var sheet = tab_(TABS.LINEUPS), headers = HEADERS[TABS.LINEUPS], last = lastDataRow_(sheet, headers.length);
   var keep = [];
   if (last >= 2) {
     var values = sheet.getRange(2, 1, last - 1, headers.length).getValues();
-    var dCol = headers.indexOf('Date'), sCol = headers.indexOf('Shift');
-    keep = values.filter(function (v) { return !(feedDay_(v[dCol]) === date && String(v[sCol]).trim() === shift); });
+    var dCol = headers.indexOf('Date');
+    keep = values.filter(function (v) { return feedDay_(v[dCol]) !== date; });
     sheet.getRange(2, 1, last - 1, headers.length).clearContent();
   }
   if (keep.length) sheet.getRange(2, 1, keep.length, headers.length).setValues(keep);
@@ -151,7 +148,7 @@ function lineupsReplace_(date, shift, rows) {
   appendObjects_(TABS.LINEUPS, rows.map(function (r) { return Object.assign({}, r, { Date: day }); }));
 }
 
-/** body: { date, shift, boats, coachName }. Replaces that practice's boats; an empty boats list deletes them. */
+/** body: { date, boats, coachName }. Replaces that practice's boats; an empty boats list deletes them. */
 function processLineupsSave_(body) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
@@ -160,15 +157,15 @@ function processLineupsSave_(body) {
     var clean = lineupsClean_(body, roster);
     if (clean.error) return { status: 'invalid', message: clean.error };
     var existing = readObjects_(TABS.LINEUPS);
-    var before = existing.filter(function (r) { return feedDay_(r.Date) === clean.date && String(r.Shift || '').trim() === clean.shift; });
+    var before = existing.filter(function (r) { return feedDay_(r.Date) === clean.date; });
     var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
     var rows = lineupsBuildRows_(clean, existing, by, new Date());
-    lineupsReplace_(clean.date, clean.shift, rows);
-    logChange_({ Who: by, Tab: TABS.LINEUPS, 'Row ID': clean.date + ' ' + clean.shift, Field: 'Lineup',
+    lineupsReplace_(clean.date, rows);
+    logChange_({ Who: by, Tab: TABS.LINEUPS, 'Row ID': clean.date, Field: 'Lineup',
       'Old value': lineupsSummary_(before), 'New value': lineupsSummary_(rows), Note: 'site Lineups page' });
     var out = processLineupsList_({ date: clean.date });
     out.saved = rows.map(function (r) { return r['Lineup ID']; });
-    out.recredited = waterRecredit_(clean.date, clean.shift, by);   // water already imported for this practice follows the new lineup
+    out.recredited = waterRecredit_(clean.date, by);   // water already imported for this practice follows the new lineup
     return out;
   } catch (err) {
     return { status: 'error', error: err.message };

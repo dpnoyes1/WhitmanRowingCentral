@@ -1,9 +1,8 @@
 // Water import page (coaches only; on-water plan Step 2). A coach adds the FIT files exported from the NK Logbook app after practice.
-// Each file is read on the server (/api/water/preview), shown with its boat, shift and that boat's saved lineup, and saved on a tap
+// Each file is read on the server (/api/water/preview), shown with its boat and that boat's saved lineup, and saved on a tap
 // (/api/water/save), which credits every rower in the boat with its moving time and meters. Saving the same file again updates it.
 
 const KINDS = ['Practice', 'Pieces', 'Race'];
-const SHIFTS = ['Early', 'Late', 'Other'];
 const CLASSES = ['8+', '4+', '4x', '4-', '2x', '2-', '1x'];
 let F = [];            // one per file: { key, name, data, state: 'reading'|'ready'|'saving'|'saved'|'error', view, pick, lineups, msg }
 let ctx = null;        // { app, esc, fmtTime, fmtNum }
@@ -16,10 +15,10 @@ export const clock = (s) => {
   return h ? `${h}:${String(m).padStart(2, '0')}:${String(x).padStart(2, '0')}` : `${m}:${String(x).padStart(2, '0')}`;
 };
 
-/** The saved lineup a file would credit (same date, shift and boat name; first lineup only), or null. */
+/** The saved lineup a file would credit (same date and boat name; first lineup only), or null. */
 export function lineupFor(lineups, pick) {
   const name = (pick.boatName || '').trim().toLowerCase();
-  return (lineups || []).find((l) => l.fromPiece === '' && l.shift === pick.shift && l.boatName.toLowerCase() === name) || null;
+  return (lineups || []).find((l) => l.fromPiece === '' && l.boatName.toLowerCase() === name) || null;
 }
 
 /** What saving will do, in one line. */
@@ -54,7 +53,7 @@ async function addFiles(list) {
       f.data = await toBase64(file);
       const out = await post('/api/water/preview', { name: file.name, data: f.data });
       Object.assign(f, { state: 'ready', view: out.file, lineups: out.lineups, imported: out.imported,
-        pick: { boatName: out.suggest.boatName || '', boatClass: out.suggest.boatClass || '8+', shift: out.suggest.shift, kind: out.file.kind } });
+        pick: { boatName: out.suggest.boatName || '', boatClass: out.suggest.boatClass || '8+', kind: out.file.kind } });
     } catch (e) { f.state = 'error'; f.msg = e.message; }
     draw();
   }
@@ -91,9 +90,9 @@ function card(f, i) {
     <div class="wi-pick">
       <label>Boat<input type="text" list="wboats-${i}" maxlength="40" value="${esc(p.boatName)}" data-wboat="${i}" placeholder="Shell name"${busy ? ' disabled' : ''}>
         <datalist id="wboats-${i}">${boats.map((b) => `<option value="${esc(b)}">`).join('')}</datalist></label>
-      ${sel('wcls', CLASSES, p.boatClass, 'Class')}${sel('wshift', SHIFTS, p.shift, 'Shift')}${sel('wkind', KINDS, p.kind, 'Kind')}</div>
+      ${sel('wcls', CLASSES, p.boatClass, 'Class')}${sel('wkind', KINDS, p.kind, 'Kind')}</div>
     <p class="small ${lu ? '' : 'warn-text'}">${lu ? 'Lineup: ' + esc(lu.seatNames.filter(Boolean).join(', ')) + (lu.coxName ? ' · cox ' + esc(lu.coxName) : '') + '<br><span class="muted">' + esc(creditLine(lu, v)) + '</span>'
-      : `No lineup saved for ${esc(p.boatName || 'this boat')} on ${esc(v.date)}, ${esc(p.shift)}. You can still save the file; rowers are credited when the lineup is saved.`}</p>
+      : `No lineup saved for ${esc(p.boatName || 'this boat')} on ${esc(v.date)}. You can still save the file; rowers are credited when the lineup is saved.`}</p>
     <div class="lu-actions"><button type="button" class="btn sm" data-wsave="${i}"${busy ? ' disabled' : ''}>${busy ? 'Saving...' : f.state === 'saved' ? 'Save again' : 'Save'}</button></div>
     ${f.msg ? `<p class="small${f.state === 'saved' ? '' : ' warn-text'}" role="status">${esc(f.msg)}</p>` : ''}</div>`;
 }
@@ -124,9 +123,8 @@ function wire() {
   document.addEventListener('change', (e) => {
     const t = on() && e.target; if (!t || !t.dataset) return;
     if (t.dataset.wfiles) { addFiles([...t.files]); t.value = ''; return; }
-    const i = +(t.dataset.wcls ?? t.dataset.wshift ?? t.dataset.wkind ?? -1); if (!(i >= 0) || !F[i]) return;
+    const i = +(t.dataset.wcls ?? t.dataset.wkind ?? -1); if (!(i >= 0) || !F[i]) return;
     if (t.dataset.wcls !== undefined) F[i].pick.boatClass = t.value;
-    if (t.dataset.wshift !== undefined) F[i].pick.shift = t.value;
     if (t.dataset.wkind !== undefined) F[i].pick.kind = t.value;
     draw();
   });

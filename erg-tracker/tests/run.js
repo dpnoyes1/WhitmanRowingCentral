@@ -1612,12 +1612,11 @@ test('Lineups: clean a save from the Lineups page (on-water Step 1)', () => {
   assert.deepStrictEqual(Object.keys(roster).sort(), ['A901', 'A902', 'A903', 'A904', 'A905']);
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.lineupsCoxes_(roster))), [{ id: 'A905', name: 'Fake Cox' }]);
   const four = (seats, extra = {}) => ({ boatName: 'Hudson', boatClass: '4+', seats, cox: 'A905', ...extra });
-  const ok = g.lineupsClean_({ date: '2027-02-03', shift: 'Early', boats: [four(['A901', 'A902', 'A903', 'A904'])] }, roster);
+  const ok = g.lineupsClean_({ date: '2027-02-03', boats: [four(['A901', 'A902', 'A903', 'A904'])] }, roster);
   assert.ok(!ok.error, ok.error);
   assert.strictEqual(ok.boats[0].fromPiece, '');
-  const err = (body) => g.lineupsClean_({ date: '2027-02-03', shift: 'Early', ...body }, roster).error;
+  const err = (body) => g.lineupsClean_({ date: '2027-02-03', ...body }, roster).error;
   assert.match(err({ date: '2/3/2027', boats: [] }), /date/);
-  assert.match(err({ shift: 'Noon', boats: [] }), /shift/);
   assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904'], { boatName: ' ' })] }), /Name every boat/);
   assert.match(err({ boats: [four(['A901', 'A902', 'A903'])] }), /has 4 seats/);
   assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A906'])] }), /seat 4 is not an active athlete/);
@@ -1628,30 +1627,31 @@ test('Lineups: clean a save from the Lineups page (on-water Step 1)', () => {
   assert.match(err({ boats: [four(['', '', '', ''])] }), /nobody in it/);
   assert.match(err({ boats: [four(['A901', 'A902', 'A903', 'A904'], { fromPiece: 1 })] }), /From piece/);
   // a mid-practice switch: the same boat again from piece 3, with a rower moved in
-  const sw = g.lineupsClean_({ date: '2027-02-03', shift: 'Early', boats: [four(['A901', 'A902', 'A903', 'A904']), four(['A901', 'A902', 'A903', ''], { fromPiece: 3 })] }, roster);
+  const sw = g.lineupsClean_({ date: '2027-02-03', boats: [four(['A901', 'A902', 'A903', 'A904']), four(['A901', 'A902', 'A903', ''], { fromPiece: 3 })] }, roster);
   assert.ok(!sw.error, sw.error);
-  assert.deepStrictEqual(g.lineupsClean_({ date: '2027-02-03', shift: 'Late', boats: [] }, roster).boats.length, 0, 'an empty save clears that practice');
+  assert.deepStrictEqual(g.lineupsClean_({ date: '2027-02-03', boats: [] }, roster).boats.length, 0, 'an empty save clears that day');
+  assert.ok(!('shift' in ok), 'no shifts on the water (David, 2026-11-16)');
 });
 
 test('Lineups: rows keep their Lineup ID on a correction and get the next free ID otherwise', () => {
   const existing = [
-    { 'Lineup ID': 'L20270203-1', Date: '2027-02-03', Shift: 'Early', 'Boat name': 'Hudson', 'Boat class': '4+' },
-    { 'Lineup ID': 'L20270203-2', Date: '2027-02-03', Shift: 'Late', 'Boat name': 'Potomac', 'Boat class': '8+' }];
-  const clean = { date: '2027-02-03', shift: 'Early', boats: [
+    { 'Lineup ID': 'L20270203-1', Date: '2027-02-03', 'Boat name': 'Hudson', 'Boat class': '4+' },
+    { 'Lineup ID': 'L20270203-2', Date: '2027-02-04', 'Boat name': 'Potomac', 'Boat class': '8+' }];
+  const clean = { date: '2027-02-03', boats: [
     { lineupId: 'L20270203-1', boatName: 'Hudson', boatClass: '4+', seats: ['A901', 'A902', '', 'A904'], cox: 'A905', fromPiece: '' },
     { lineupId: 'L20270203-2', boatName: 'Severn', boatClass: '4x', seats: ['A903', '', '', ''], cox: '', fromPiece: '' }] };
   const rows = g.lineupsBuildRows_(clean, existing, 'Coach Pat', 'now');
-  assert.deepStrictEqual(rows.map((r) => r['Lineup ID']), ['L20270203-1', 'L20270203-3'], "the Late boat's ID is not taken over");
+  assert.deepStrictEqual(rows.map((r) => r['Lineup ID']), ['L20270203-1', 'L20270203-3'], "another day's ID is not taken over");
   assert.strictEqual(rows[0]['Seat 3'], '');
   assert.strictEqual(rows[0]['Seat 5'], '');
   assert.strictEqual(rows[0]['Saved by'], 'Coach Pat');
   assert.ok(Object.keys(rows[0]).every((k) => g.HEADERS[g.TABS.LINEUPS].includes(k)), 'only real columns');
   assert.match(g.lineupsSummary_(rows), /^Hudson \(4\+\): A901, A902, A904; cox A905 \| Severn \(4x\): A903$/);
   const back = g.lineupsFromRows_(rows.concat(existing.slice(1)), { A901: { name: 'Fake One' } });
-  assert.deepStrictEqual(back.map((l) => l.boatName), ['Hudson', 'Severn', 'Potomac']);
-  assert.deepStrictEqual(Array.from(back[0].seats), ['A901', 'A902', '', 'A904']);
-  assert.strictEqual(back[0].seatNames[0], 'Fake One');
-  assert.strictEqual(back[2].seats.length, 8);
+  assert.deepStrictEqual(back.map((l) => l.boatName), ['Potomac', 'Hudson', 'Severn'], 'newest day first, then boat');
+  assert.deepStrictEqual(Array.from(back[1].seats), ['A901', 'A902', '', 'A904']);
+  assert.strictEqual(back[1].seatNames[0], 'Fake One');
+  assert.strictEqual(back[0].seats.length, 8);
 });
 
 const deq = (a, b, m) => assert.deepStrictEqual(JSON.parse(JSON.stringify(a)), JSON.parse(JSON.stringify(b)), m);
@@ -1684,13 +1684,13 @@ test('Water: a re-import or lineup change updates, adds and removes rows by Resp
 
 test('Water: which saved lineup a session credits', () => {
   const lineups = [
-    { lineupId: 'L1', date: '2027-02-03', shift: 'Early', boatName: 'Hudson', fromPiece: '' },
-    { lineupId: 'L2', date: '2027-02-03', shift: 'Late', boatName: 'Hudson', fromPiece: '' },
-    { lineupId: 'L3', date: '2027-02-03', shift: 'Early', boatName: 'Hudson', fromPiece: 3 }];
-  const s = { date: '2027-02-03', shift: 'Late', boatName: 'hudson', lineupId: '' };
-  assert.strictEqual(g.waterLineupFor_(s, lineups).lineupId, 'L2', 'by boat name and shift, any case');
+    { lineupId: 'L1', date: '2027-02-03', boatName: 'Hudson', fromPiece: '' },
+    { lineupId: 'L2', date: '2027-02-04', boatName: 'Hudson', fromPiece: '' },
+    { lineupId: 'L3', date: '2027-02-03', boatName: 'Hudson', fromPiece: 3 }];
+  const s = { date: '2027-02-03', boatName: 'hudson', lineupId: '' };
+  assert.strictEqual(g.waterLineupFor_(s, lineups).lineupId, 'L1', 'by boat name on that date, any case');
   assert.strictEqual(g.waterLineupFor_({ ...s, lineupId: 'L1' }, lineups).lineupId, 'L1', 'a kept Lineup ID wins');
-  assert.strictEqual(g.waterLineupFor_({ ...s, lineupId: 'L9' }, lineups).lineupId, 'L2', 'a gone Lineup ID falls back to the name');
+  assert.strictEqual(g.waterLineupFor_({ ...s, lineupId: 'L2' }, lineups).lineupId, 'L1', "another day's Lineup ID falls back to the name");
   assert.strictEqual(g.waterLineupFor_({ ...s, boatName: 'Potomac' }, lineups), null);
 });
 
@@ -1712,14 +1712,13 @@ test('Water: units list, session IDs and the suggested boat', () => {
 });
 
 test('Water: cleaning a save from the site', () => {
-  const base = { session: { sessionId: 'WS-1-2', date: '2027-02-03', shift: 'Early', kind: 'Practice', boatName: ' Hudson ', boatClass: '8+', movingS: 5400, meters: 15245, curve: [{ durS: 60, splitS: 110 }] },
+  const base = { session: { sessionId: 'WS-1-2', date: '2027-02-03', kind: 'Practice', boatName: ' Hudson ', boatClass: '8+', movingS: 5400, meters: 15245, curve: [{ durS: 60, splitS: 110 }] },
     pieces: [{ start: 'x', workS: 200, meters: 1000, splitS: 100, rate: 32, strokes: 100 }] };
   const c = g.waterCleanSave_(base);
   assert.strictEqual(c.boatName, 'Hudson');
   assert.strictEqual(c.pieces[0].n, 1);
   const err = (patch) => g.waterCleanSave_({ ...base, session: { ...base.session, ...patch } }).error;
   assert.match(err({ date: '' }), /date/);
-  assert.match(err({ shift: 'x' }), /shift/);
   assert.match(err({ kind: 'Fun' }), /Practice, Pieces or Race/);
   assert.match(err({ boatName: '' }), /boat/);
   assert.match(err({ boatClass: '9+' }), /class/);

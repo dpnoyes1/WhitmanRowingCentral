@@ -76,10 +76,10 @@ School year (text, e.g. 2025-26), Athlete ID, Athlete, Squad. Filled by "Save sq
 Date, Regatta, Championship (checkbox), Event, Boat (8+ / 4+), Round, Time, Place, 1st time, 2nd time, 3rd time, Seat 1 … Seat 8, Cox, Notes. Times are typed as m:ss.0 text and parsed when read. Seat 1 = bow, Seat 8 = stroke; a 4+ uses Seats 1-4. Seats are Roster names.
 
 ## Lineups (coach-only, on-water plan Step 1)
-Lineup ID ("L<yyyymmdd>-<n>"), Date, Shift (Early / Late / Other), Boat name (the shell), Boat class (8+ / 4+ / 4x / 4- / 2x / 2- / 1x), Seat 1 … Seat 8 (Athlete IDs; Seat 1 = bow; a 4+ uses Seats 1-4), Cox (Athlete ID), From piece (blank; for mid-practice switches later), Saved by, Saved at. Written only by the site's Lineups page; saving a date and shift replaces that practice's rows and keeps each boat's Lineup ID.
+Lineup ID ("L<yyyymmdd>-<n>"), Date, Boat name (the shell), Boat class (8+ / 4+ / 4x / 4- / 2x / 2- / 1x), Seat 1 … Seat 8 (Athlete IDs; Seat 1 = bow; a 4+ uses Seats 1-4), Cox (Athlete ID), From piece (blank; for mid-practice switches later), Saved by, Saved at. Written only by the site's Lineups page; no shifts (one practice per date); saving a date replaces that day's rows and keeps each boat's Lineup ID.
 
 ## Water sessions (coach-only, on-water plan Step 2)
-Session ID ("WS-<unit>-<start Unix seconds>"), Date, Shift, Unit (SpeedCoach serial, or CoxBox number from the file name), Boat name, Boat class, Lineup ID, Start time (UTC ISO text), Elapsed s, Moving s, Meters, Avg split s, Avg rate, Strokes, Pieces, Kind (Practice / Pieces / Race), File name, File link (private Drive copy of the FIT file), Curve JSON (best split by duration: { all, r20, r24, r28 }), Imported by, Imported at.
+Session ID ("WS-<unit>-<start Unix seconds>"), Date, Unit (SpeedCoach serial, or CoxBox number from the file name), Boat name, Boat class, Lineup ID, Start time (UTC ISO text), Elapsed s, Moving s, Meters, Avg split s, Avg rate, Strokes, Pieces, Kind (Practice / Pieces / Race), File name, File link (private Drive copy of the FIT file), Curve JSON (best split by duration: { all, r20, r24, r28 }), Imported by, Imported at.
 
 ## Water pieces (coach-only, on-water plan Step 2)
 Piece ID ("<session>-P<n>"), Session ID, Piece #, Start time (UTC ISO text), Work s, Meters, Avg split s, Avg rate, Strokes, Match group (blank; matching is done when the results page reads), Lineup ID.

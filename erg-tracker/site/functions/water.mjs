@@ -1,6 +1,6 @@
 // Water import (on-water plan Step 2). Coaches only; nothing here reaches the athlete feed except the Entries rows the Sheet writes.
-// POST /api/water/preview { name, data (base64 FIT) } -> what the file holds, plus the boat, shift and lineup to suggest.
-// POST /api/water/save { name, data, boatName, boatClass, shift, kind } -> the Sheet stores the file, the session, its pieces and the
+// POST /api/water/preview { name, data (base64 FIT) } -> what the file holds, plus the boat and lineup to suggest.
+// POST /api/water/save { name, data, boatName, boatClass, kind } -> the Sheet stores the file, the session, its pieces and the
 //   credits. The file is read again here on save, so the numbers never come from the browser.
 // GET  /api/water?date=YYYY-MM-DD -> what is already imported that day, and its saved lineups.
 // GET  /api/water/report?date=YYYY-MM-DD&rate=all|r20|r24|r28 -> the coaches' results page (Steps 3 and 4) for the season up to that date.
@@ -15,7 +15,6 @@ const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 export const MAX_FIT_BYTES = 3 * 1024 * 1024;   // a session file is a few hundred KB; 25 hours of strokes stays well under this
 const KINDS = ['Practice', 'Pieces', 'Race'];
-const SHIFTS = ['Early', 'Late', 'Other'];
 const CLASSES = ['8+', '4+', '4x', '4-', '2x', '2-', '1x'];
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const TZ = 'America/New_York';
@@ -32,14 +31,11 @@ export function easternDay(unix) {
   };
 }
 
-/** The boat, class, shift and lineup to suggest for a file. ctx: the Sheet's water-context answer for its date. */
-export function suggestFor(fileUnit, when, ctx) {
+/** The boat, class and lineup to suggest for a file (no shifts on the water: David, 2026-11-16). ctx: the Sheet's water-context answer for its date. */
+export function suggestFor(fileUnit, ctx) {
   const boatName = (ctx.units || {})[fileUnit] || '';
-  const sameBoat = (ctx.lineups || []).filter((l) => l.fromPiece === '' && boatName && l.boatName.toLowerCase() === boatName.toLowerCase());
-  let shift = /^(Sat|Sun)$/.test(when.weekday) ? 'Other' : when.minutes < 16 * 60 + 45 ? 'Early' : 'Late';   // early 3:30-5:30, late 5:00-7:00
-  if (sameBoat.length === 1) shift = sameBoat[0].shift;
-  const lineup = sameBoat.find((l) => l.shift === shift) || null;
-  return { boatName, boatClass: lineup ? lineup.boatClass : '', shift, lineupId: lineup ? lineup.lineupId : '' };
+  const lineup = (ctx.lineups || []).find((l) => l.fromPiece === '' && boatName && l.boatName.toLowerCase() === boatName.toLowerCase()) || null;
+  return { boatName, boatClass: lineup ? lineup.boatClass : '', lineupId: lineup ? lineup.lineupId : '' };
 }
 
 /** Reads a base64 FIT upload; { fit } or { error } in plain words. */
@@ -125,7 +121,7 @@ export async function handleWater(req, envFn, deps = {}) {
       return json({ error: 'The Sheet did not answer. Try again in a minute.' }, 502);
     }
     const done = (c.sessions || []).find((s) => s.sessionId === f.sessionId) || null;
-    const suggest = done ? { boatName: done.boatName, boatClass: done.boatClass, shift: done.shift, lineupId: done.lineupId } : suggestFor(f.unit, f.when, c);
+    const suggest = done ? { boatName: done.boatName, boatClass: done.boatClass, lineupId: done.lineupId } : suggestFor(f.unit, c);
     if (done) f.kind = done.kind || f.kind;
     delete f.when;
     return json({ file: f, suggest, imported: done ? { by: done.importedBy, boatName: done.boatName } : null, lineups: c.lineups || [] });
@@ -133,12 +129,11 @@ export async function handleWater(req, envFn, deps = {}) {
 
   // save
   const kind = KINDS.includes(body.kind) ? body.kind : null;
-  const shift = SHIFTS.includes(body.shift) ? body.shift : null;
   const boatClass = CLASSES.includes(body.boatClass) ? body.boatClass : null;
   const boatName = String(body.boatName || '').trim().slice(0, 40);
-  if (!kind || !shift || !boatClass || !boatName) return json({ error: 'Pick the boat, class, shift and kind.' }, 422);
+  if (!kind || !boatClass || !boatName) return json({ error: 'Pick the boat, class and kind.' }, 422);
   const f = fileView(up.fit, up.name, kind);
-  const session = { sessionId: f.sessionId, date: f.date, shift, unit: f.unit || '', boatName, boatClass, lineupId: '', start: f.start,
+  const session = { sessionId: f.sessionId, date: f.date, unit: f.unit || '', boatName, boatClass, lineupId: '', start: f.start,
     elapsedS: f.elapsedS, movingS: f.movingS, meters: f.meters, avgSplitS: f.avgSplitS, avgRate: f.avgRate, strokes: f.strokes, kind: f.kind,
     fileName: up.name, curve: f.curve };
   let out;

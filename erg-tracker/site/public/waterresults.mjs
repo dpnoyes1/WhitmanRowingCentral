@@ -17,15 +17,41 @@ function curveTable(rows, durations, label, cellFor) {
       return `<td class="r num">${p ? `${fmtTime(p.splitS)}<br><small class="muted">${p.rate ? p.rate.toFixed(0) + ' spm' : ''}${p.from ? ' · ' + esc(p.from.slice(5)) : ''}</small>` : ''}</td>`; }).join('')}</tr>`).join('')}</tbody></table></div>`;
 }
 
+const COLORS = ['#6cb4ee', '#f5a742', '#5cc98a', '#c48bf0', '#ef6f6c', '#e8d35a'];
+
+/** A split-by-duration curve like cycling's power curve: time on a log scale across, faster splits higher. series: [{ label, points }]. */
+export function curveChart(series, durations) {
+  const { esc, fmtTime } = ctx;
+  const lines = series.filter((x) => x.points.length);
+  if (!lines.length) return '';
+  const W = 720, H = 260, L = 56, R = 16, T = 14, B = 34;
+  const all = lines.flatMap((x) => x.points.map((p) => p.splitS));
+  const step = [1, 2, 5, 10, 15, 20, 30, 60].find((k) => (Math.max(...all) - Math.min(...all)) / k <= 5) || 60;   // round split steps
+  const lo = Math.floor(Math.min(...all) / step) * step, hi = Math.ceil(Math.max(...all) / step) * step + (Math.max(...all) % step === 0 ? step : 0);
+  const d0 = Math.log(durations[0]), d1 = Math.log(durations[durations.length - 1]);
+  const x = (d) => L + ((Math.log(d) - d0) / (d1 - d0)) * (W - L - R);
+  const y = (sp) => T + ((sp - lo) / (hi - lo)) * (H - T - B);   // faster (lower split) at the top
+  const grid = [];
+  for (let v = lo; v <= hi; v += step) grid.push(v);
+  return `<figure class="wr-chart"><svg viewBox="0 0 ${W} ${H}" role="img" aria-label="Best split by duration">
+    ${grid.map((v) => `<line x1="${L}" x2="${W - R}" y1="${y(v)}" y2="${y(v)}" class="g"/><text x="${L - 6}" y="${y(v) + 4}" text-anchor="end">${fmtTime(v).replace(/\.0$/, '')}</text>`).join('')}
+    ${durations.map((d) => `<line x1="${x(d)}" x2="${x(d)}" y1="${T}" y2="${H - B}" class="g"/><text x="${x(d)}" y="${H - B + 16}" text-anchor="middle">${durLabel(d)}</text>`).join('')}
+    ${lines.map((ln, i) => { const c = COLORS[i % COLORS.length], pts = ln.points.filter((p) => durations.includes(p.durS));
+      return `<polyline points="${pts.map((p) => x(p.durS) + ',' + y(p.splitS)).join(' ')}" fill="none" stroke="${c}" stroke-width="2.5"/>` +
+        pts.map((p) => `<circle cx="${x(p.durS)}" cy="${y(p.splitS)}" r="3.5" fill="${c}"><title>${esc(ln.label)} ${durLabel(p.durS)}: ${fmtTime(p.splitS)}${p.rate ? ' at ' + p.rate.toFixed(0) : ''}</title></circle>`).join(''); }).join('')}
+  </svg><figcaption>${lines.map((ln, i) => `<span><i style="background:${COLORS[i % COLORS.length]}"></i>${esc(ln.label)}</span>`).join('')}<span class="muted">split /500m, faster is higher; time across on a log scale</span></figcaption></figure>`;
+}
+
 function dayTab(v) {
   const { esc, fmtTime, fmtNum } = ctx;
   const clock = (s) => { const t = Math.round(s || 0), h = Math.floor(t / 3600), m = Math.floor((t % 3600) / 60); return h ? `${h}:${String(m).padStart(2, '0')}:${String(t % 60).padStart(2, '0')}` : `${m}:${String(t % 60).padStart(2, '0')}`; };
   const crew = (c) => (c ? esc(c.names.join(', ')) + (c.cox ? ` · cox ${esc(c.cox)}` : '') : '<span class="warn-text">no lineup saved</span>');
   const at = (u) => new Date(u * 1000).toLocaleTimeString('en-US', { timeZone: 'America/New_York', hour: 'numeric', minute: '2-digit' });
   return `<div class="card"><h2>Boats</h2>${v.boats.length ? `<div class="table-wrap"><table><thead><tr><th>Boat</th><th>Kind</th><th class="r">Moving</th><th class="r">Meters</th><th class="r">Avg split</th><th class="r">Rate</th></tr></thead><tbody>
-      ${v.boats.map((b) => `<tr><td class="wr-who"><b>${esc(b.boatName)}</b> <span class="muted">${esc(b.boatClass)} · ${esc(b.shift)}</span><br><small class="muted">${crew(b.crew)}</small></td><td>${esc(b.kind)}${b.pieces ? ` (${b.pieces})` : ''}</td>
+      ${v.boats.map((b) => `<tr><td class="wr-who"><b>${esc(b.boatName)}</b> <span class="muted">${esc(b.boatClass)}</span><br><small class="muted">${crew(b.crew)}</small></td><td>${esc(b.kind)}${b.pieces ? ` (${b.pieces})` : ''}</td>
         <td class="r num">${clock(b.movingS)}</td><td class="r num">${fmtNum(b.meters)}</td><td class="r num">${b.avgSplitS ? fmtTime(b.avgSplitS) : '–'}</td><td class="r num">${b.avgRate ?? '–'}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No water files imported for this day.</p>'}</div>
     <div class="card"><h2>Best split by duration</h2><p class="muted small">The fastest average split each boat held for that long today (${esc(v.rateKeys[v.rateKey])}). Mostly shows the day's conditions: compare boats on the same piece below, not across days.</p>
+      ${curveChart(v.boats.map((b) => ({ label: b.boatName + ' ' + b.boatClass, points: b.curve })), v.durations)}
       ${curveTable(v.boats.map((b) => ({ ...b, points: b.curve })), v.durations, 'Boat', (b) => `<b>${esc(b.boatName)}</b> <span class="muted">${esc(b.boatClass)}</span>`)}</div>
     <div class="card"><h2>Pieces side by side</h2><p class="muted small">Pieces that started within a minute of each other over the same distance or time. Splits on the 8+ scale (a 4+ at 1.13), margin against the piece's average; + is faster. Sculling boats are listed but not compared.</p>
       ${v.groups.length ? v.groups.map((g) => `<div class="wr-piece"><h3>${at(g.start)} · ${fmtNum(g.results[0].meters)} m</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Boat</th><th class="r">Split</th><th class="r">8+ scale</th><th class="r">Margin</th><th class="r">Rate</th></tr></thead><tbody>
@@ -37,8 +63,9 @@ function dayTab(v) {
 function seasonTab(v) {
   const { esc } = ctx;
   return `<div class="card"><h2>By boat</h2><p class="muted small">Season best for each duration (${esc(v.rateKeys[v.rateKey])}), with the rate and date it came from. A best-ever curve mostly shows the best day's water.</p>
+      ${curveChart(v.season.byBoat.map((b) => ({ label: b.boatName + ' ' + b.boatClass, points: b.points })), v.durations)}
       ${curveTable(v.season.byBoat, v.durations, 'Boat', (b) => `<b>${esc(b.boatName)}</b> <span class="muted">${esc(b.boatClass)}</span>`)}</div>
-    <div class="card"><h2>By boat class</h2>${curveTable(v.season.byClass, v.durations, 'Class', (b) => esc(b.boatClass))}</div>
+    <div class="card"><h2>By boat class</h2>${curveChart(v.season.byClass.map((b) => ({ label: b.boatClass, points: b.points })), v.durations)}${curveTable(v.season.byClass, v.durations, 'Class', (b) => esc(b.boatClass))}</div>
     <div class="card"><h2>By athlete</h2><p class="muted small">The best of any sweep boat she sat in, on the 8+ scale. It says what her boats did, not what she did.</p>
       ${curveTable(v.season.byAthlete, v.durations, 'Athlete', (a) => esc(a.name))}</div>`;
 }
