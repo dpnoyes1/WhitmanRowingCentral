@@ -12,8 +12,10 @@ export const RUN_PROMPT = `You read a photo or screenshot of a finished run (a r
 Rules:
 - Copy numbers exactly as shown, as text, with their unit words. Do not round, convert or fix them.
 - "distance" is the total distance of the run. Put the number in "distance" and the unit printed next to it in "distance_unit": "mi", "km", "m" or "" if none is shown. A bare number on a US screen is usually miles, but only say so if the unit is printed.
-- "moving_time" is the time labeled Moving Time, Workout Time, Time, Duration, Active Time or Timer. "elapsed_time" is the time labeled Elapsed Time or Total Time, only when the screen shows both. If only one time is shown, put it in "moving_time" and use "" for the other. Times look like 54:32, 1:02:15 or 0:25:30. Copy them as shown.
-- "avg_pace" is the average pace for the whole run, labeled Avg Pace, Pace or Avg. Pace, as shown (for example 8:30, 8'30" or 5:12). "pace_unit" is "/mi", "/km" or "" if not shown. Ignore current or live pace, best pace, and any single lap or split.
+- Garmin Connect (phone app) overview: a big distance number with its unit (mi, km or m) under or beside the word "Distance"; then Avg Heart Rate and Avg Pace (unit printed after the number: "12:12 /mi"); then Total Time and Total Calories. An older layout has three circles (Time, Distance with "(mi)" in its label, Calories) and a row "Pace (min/mi)" where the unit is only in the label. The phone Home screen card "Today's Activity" shows no labels: "6.22 mi", then "55:15 • 8:53 /mi" meaning time then pace. In meters, a decimal comma can appear ("800,00 m" is 800 meters).
+- The activity title and notes (for example "3.25mi Easy Run" or "W7 Mon") are a plan or a name, not a result. Never take a distance or time from the title. The map, temperature, calories, heart rate and elevation are not the distance or time.
+- "moving_time" is the time labeled Total Time, Moving Time, Workout Time, Time, Duration, Active Time or Timer. "elapsed_time" is the time labeled Elapsed Time or Total Time, only when the screen shows both. If only one time is shown, put it in "moving_time" and use "" for the other. Times look like 54:32, 1:02:15 or 0:25:30. Copy them as shown.
+- "avg_pace" is the average pace for the whole run, labeled Avg Pace, Pace or Avg. Pace, as shown (for example 8:30, 8'30" or 5:12). "pace_unit" is "/mi", "/km" or "" if not shown (a label such as "Pace (min/mi)" means "/mi"). Ignore current or live pace, best pace, and any single lap or split.
 - Splits, laps, graphs and heart-rate zones are not the total: never use a lap or split row as the total.
 - "activity" is the sport as shown, for example "Run", "Treadmill", "Walk", "Ride", "Swim". If it is not clearly a run, still report it so the check can say so.
 - "date" is the date printed on the screen exactly as shown, or "". "app" is the app or device name if you can tell, else "".
@@ -35,7 +37,10 @@ export const RUN_SCHEMA = {
 
 /** "3.1", "5,2", "5000" + unit -> meters, or null. Without a unit, 100+ is read as meters and smaller numbers stay unknown. */
 export function distanceMeters(text, unit) {
-  const n = Number(String(text || '').replace(',', '.').replace(/[^\d.]/g, ''));
+  // "800,00" and "5,18" are decimals; "1,609" (comma then exactly three digits, no other comma) is a thousands mark.
+  const raw = String(text || '').trim();
+  const t = /^\d{1,3}(,\d{3})+(\.\d+)?$/.test(raw) ? raw.replace(/,/g, '') : raw.replace(',', '.');
+  const n = Number(t.replace(/[^\d.]/g, ''));
   if (!(n > 0)) return { meters: null, assumed: false };
   if (unit === 'mi') return { meters: Math.round(n * MILE), assumed: false };
   if (unit === 'km') return { meters: Math.round(n * 1000), assumed: false };

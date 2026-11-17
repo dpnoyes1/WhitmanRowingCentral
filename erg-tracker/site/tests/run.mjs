@@ -2891,6 +2891,22 @@ test('run photo check (built, switched off): reading and comparing a run screen'
   assert.strictEqual(RUN_PHOTO_CHECK, false, 'stays off until David says go');
   assert.strictEqual(distanceMeters('3.1', 'mi').meters, 4989);
   assert.strictEqual(distanceMeters('5,2', 'km').meters, 5200);
+  assert.strictEqual(distanceMeters('800,00', 'm').meters, 800, 'Garmin in meters uses a decimal comma');
+  assert.strictEqual(distanceMeters('1,609', 'm').meters, 1609, 'a thousands comma');
+  // what the Garmin Connect screens David sent should read as (2026-11-17), checked after the model's text is normalized
+  const garmin = [
+    [{ distance: '3.24', distance_unit: 'mi', moving_time: '39:29', avg_pace: '12:12', pace_unit: '/mi' }, 5214, 2369],
+    [{ distance: '800,00', distance_unit: 'm', moving_time: '4:01', avg_pace: '5:02', pace_unit: '/km' }, 800, 241],
+    [{ distance: '2.86', distance_unit: 'mi', moving_time: '36:53', avg_pace: '12:53', pace_unit: '/mi' }, 4603, 2213],
+    [{ distance: '3.10', distance_unit: 'mi', moving_time: '28:43', avg_pace: '9:16', pace_unit: '/mi' }, 4989, 1723],
+    [{ distance: '5.18', distance_unit: 'km', moving_time: '32:26', avg_pace: '6:16', pace_unit: '/km' }, 5180, 1946],
+    [{ distance: '6.22', distance_unit: 'mi', moving_time: '55:15', avg_pace: '8:53', pace_unit: '/mi' }, 10010, 3315],
+  ];
+  for (const [g, m, t] of garmin) {
+    const r = normalizeRunRead({ app: 'Garmin Connect', activity: 'Running', date: '', elapsed_time: '', flags: [], ...g });
+    assert.deepStrictEqual([r.meters, r.movingS], [m, t], g.distance);
+    assert.strictEqual(compareRun(r, { meters: m, timeS: t }).verdict, 'match', g.distance + ' pace agrees with distance and time');
+  }
   assert.strictEqual(parsePace("8'30\""), 510);
   assert.strictEqual(parsePace('5:12'), 312);
   const raw = { app: 'Strava', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:40', elapsed_time: '27:05', avg_pace: '8:17', pace_unit: '/mi', flags: [] };
