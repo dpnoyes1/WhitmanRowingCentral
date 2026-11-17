@@ -883,6 +883,15 @@ function sessionBlock(s, withTargets, today = '') {
     ${s.results ? teamResults(s, today) : ''}</div>`;
 }
 
+/** Target pace in seconds per 500m (a range uses its middle; several pieces average), or null when there is none. */
+function targetPace(targets) {
+  const per = (targets || []).filter(Boolean).map((t) => {
+    const times = (t.replace(/\s*\([^)]*\)$/, '').match(/\d+:\d+(?:\.\d+)?/g) || []).map((x) => { const [m, sec] = x.split(':'); return Number(m) * 60 + Number(sec); });
+    return times.length ? times.reduce((a, b) => a + b, 0) / times.length : null;
+  }).filter((x) => x !== null);
+  return per.length ? per.reduce((a, b) => a + b, 0) / per.length : null;
+}
+
 /** Average logged split (RowErg-equivalent /500m) across every piece, or null. */
 function avgSplit(r) {
   const all = [...r.pieces.flat(), ...r.extra].map((x) => x.splitS).filter((x) => x !== null);
@@ -891,8 +900,9 @@ function avgSplit(r) {
 
 /**
  * Coaches: everyone in the session's squad, logged or not, with splits against
- * their targets. Sortable by name or by speed (average split, fastest first;
- * no split last). The choice sticks across fold-outs.
+ * their targets. Sortable by name, by speed (average split, fastest first;
+ * no split last) or by target (average target pace, fastest first, none last;
+ * works before anyone has logged). The choice sticks across fold-outs.
  */
 function teamResults(s, today) {
   const logged = s.results.filter((x) => x.result);
@@ -901,13 +911,13 @@ function teamResults(s, today) {
   const sort = store.get(RESULTS_SORT_KEY) || 'name';
   return `<details class="team-results"><summary>Results: ${logged.length} of ${s.results.length} logged${logged.length && !logged.every((x) => x.result.test) ? ` · ${inRange} all in range` : ''}</summary>
     <div class="seg results-sort" role="group" aria-label="Sort results">
-      <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button></div>
+      <button data-sort="name" aria-pressed="${sort === 'name'}">Name</button><button data-sort="speed" aria-pressed="${sort === 'speed'}">Speed</button><button data-sort="target" aria-pressed="${sort === 'target'}">Target</button></div>
     <div class="table-wrap"><table><thead><tr><th class="r rank">#</th><th>Name</th><th class="st-col">Status</th><th class="r">Avg</th>${s.pieces.map((p, i) => `<th class="r" title="${esc(p.label)}">Target${s.pieces.length > 1 ? ' ' + (i + 1) : ''}</th>`).join('')}</tr></thead><tbody>
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
       // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
       const st = x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
-      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
+      return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}" data-target="${(() => { const t = targetPace(x.targets); return t === null ? '' : t; })()}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
       <td class="st-col">${st}</td>
       <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
       ${s.pieces.map((p, i) => `<td class="r splits">${x.result ? splitsCell(x.result.pieces[i], isBike(x.result)) : ''}${x.targets[i] ? `<div class="muted small">${esc(shortPace(x.targets[i].replace(/\s*\([^)]*\)$/, '')))}</div>` : ''}</td>`).join('')}</tr>`;
@@ -921,11 +931,13 @@ function sortResults(root, sort) {
     d.querySelectorAll('.results-sort button').forEach((b) => b.setAttribute('aria-pressed', String(b.dataset.sort === sort)));
     const body = d.querySelector('tbody');
     const rows = [...body.rows];
-    const speed = (r) => (r.dataset.speed === '' ? Infinity : Number(r.dataset.speed));
-    rows.sort((a, b) => (sort === 'speed' ? speed(a) - speed(b) : 0) || a.dataset.name.localeCompare(b.dataset.name));
+    const key = sort === 'target' ? 'target' : 'speed';
+    const val = (r) => (r.dataset[key] === '' ? Infinity : Number(r.dataset[key]));
+    const ranked = sort === 'speed' || sort === 'target';
+    rows.sort((a, b) => (ranked && val(a) !== val(b) ? (val(a) < val(b) ? -1 : 1) : 0) || a.dataset.name.localeCompare(b.dataset.name));
     let n = 0;
-    rows.forEach((r) => { r.cells[0].textContent = sort === 'speed' && r.dataset.speed !== '' ? ++n : ''; body.appendChild(r); });
-    d.classList.toggle('by-speed', sort === 'speed');
+    rows.forEach((r) => { r.cells[0].textContent = ranked && r.dataset[key] !== '' ? ++n : ''; body.appendChild(r); });
+    d.classList.toggle('by-speed', ranked);
   });
 }
 
