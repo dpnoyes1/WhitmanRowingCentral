@@ -685,6 +685,10 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 @media (max-width: 720px) {
   .filters.chips .seg { flex-wrap: wrap; }
   .filters.chips .seg button { flex: 0 0 auto; padding: 6px 14px; white-space: nowrap; }
+  /* Test chips (20', 2k, 500m, 100m, 30r20) share the row, so they fit a 360 px phone (review 2026-11-17). */
+  .board-filters .filters.tests { flex: 1 1 100%; }
+  .filters.tests .seg { display: flex; width: 100%; gap: 6px; }
+  .filters.tests .seg button { flex: 1 1 0; min-width: 0; padding: 8px 2px; justify-content: center; }
   .wt-table .hide-sm { display: none; }
   .wt-table td, .wt-table th { padding-left: 6px; padding-right: 6px; }
 }
@@ -821,10 +825,10 @@ table.avg-results th, table.avg-results td { padding-left: 6px; padding-right: 6
 .ins-list .ins-row { break-inside: avoid; flex-wrap: nowrap; }
 .ins-list .ins-row .r { white-space: nowrap; }
 /* Star keys line up in a grid instead of wrapping with one left over (layout review, 2026-11-16). */
-.gms-keys { display: grid; grid-template-columns: repeat(2, max-content); gap: 8px 32px; }
+.gms-keys { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 8px 32px; }
 @container (min-width: 900px) { .gms-std .gms-keys { grid-template-columns: repeat(5, max-content); } }
 @container (max-width: 899px) { .gms-std .gms-keys { gap: 8px 20px; } .gms-std .gms-keys > :last-child { grid-column: 1 / -1; } }
-@media (max-width: 420px) { .gms-keys { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 600px) { .gms-keys { grid-template-columns: minmax(0, 1fr); } }
 /* OYO: fixed name and label columns, so every bar starts and ends in the same place and the ticks line up (layout review, 2026-11-16). */
 @media (min-width: 561px) {
   .oyo-row { grid-template-columns: 17.5em minmax(0, 1fr) 6.5em; }
@@ -858,3 +862,26 @@ td.nowrap { white-space: nowrap; }
 @media (min-width: 561px) { .bal-list.no-sprint .bal-row { grid-template-columns: minmax(150px, 1.2fr) 9.5em 8em minmax(0, 2.5fr) 44px; } }
 
 .plib{list-style:none;margin:0;padding:0}.plib li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(255,255,255,.1)}.plib li:first-child{border-top:0}.plib .pmain{min-width:0;overflow-wrap:anywhere}
+
+/* Sideways-scroll fixes (review 2026-11-17): narrow cards (phones, and the two-across Team boxes on tablets) keep these tables on screen. */
+table.chart-table th, table.chart-table td { padding-left: 4px; padding-right: 4px; white-space: normal; }
+table.avg-results th { white-space: normal; }
+.bal-check th, .bal-check td:first-child { white-space: normal; }
+@media (max-width: 720px) {
+  .board .rate { display: none; }
+  .bal-check td.r { white-space: normal; }
+}
+@media (max-width: 420px) {
+  table.insights th { white-space: normal; }
+  table.insights th, table.insights td { padding-left: 4px; padding-right: 4px; }
+}
+/* GMS Rating between phone and wide desktop: headers wrap and cells pad less, so all eight columns fit. */
+@media (min-width: 721px) and (max-width: 1280px) {
+  table.gmsrank th { white-space: normal; }
+  table.gmsrank th, table.gmsrank td { padding-left: 5px; padding-right: 5px; }
+  table.gmsrank td.next-star { min-width: 7em; }
+}
+@media (min-width: 721px) and (max-width: 900px) {
+  table.gmsrank th:first-child, table.gmsrank td:first-child { display: none; }
+  table.gmsrank td.next-star { min-width: 6em; }
+}

@@ -85,7 +85,7 @@ export default function askTests(test) {
     assert.strictEqual(day, '2026-10-19');
     const text = run(COACH, 'latest_test', { test: '20min', group: 'all' });
     assert.ok(/Latest 20' test, Oct 19, all rowers\* \(26 rowers\)/.test(text), text.slice(0, 80));
-    assert.ok(/\n1\. .*: [\d,]+ m \(\d:\d\d\.\d\), ([+−]\d+ m on her best|first test)/.test(text), text.slice(0, 200));
+    assert.ok(/\n1\. .*: [\d,]+ m \(\d:\d\d\.\d\), ([+−]\d+ m on (their|your) best|first test)/.test(text), text.slice(0, 200));
     assert.ok(/Average: /.test(text));
     // A single re-test after the test day doesn't become "the latest test".
     const f2 = { ...feed, benchmarks: [...feed.benchmarks, { ...feed.benchmarks.find((b) => b.test === '20min' && b.athleteId === me.id), id: 'B-FAKE-RETEST', date: '2026-10-21' }] };

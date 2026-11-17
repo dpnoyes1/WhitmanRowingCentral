@@ -78,7 +78,7 @@ export function systemPrompt(feed, asker, today) {
     '- Whether there is practice, practice times, places, the calendar = schedule_link.',
     asker.role === 'coach'
       ? '- A coach may ask about any athlete by name. A coach\'s question about the tracker\'s data that no other lookup fits = search_data, including weights (never cannot_answer with not_in_data for a question about the team\'s results, workouts, plans, weights or logging).'
-      : '- This athlete may ask about her own numbers (name null), the leaderboards and team averages. A question about a named teammate\'s results, plan or pacing = cannot_answer with other_athlete.',
+      : '- This athlete may ask about their own numbers (name null), the leaderboards and team averages. A question about a named teammate\'s results, plan or pacing = cannot_answer with other_athlete.',
     '- Anything that is not about the tracker\'s data (results, boards, stars, GMS, targets, logging) = cannot_answer with not_in_data. Training, health or injury advice = cannot_answer with advice.',
     '- If an earlier question is shown, use it to fill in what a short follow-up leaves out ("and last year?").'
   ].join('\n');

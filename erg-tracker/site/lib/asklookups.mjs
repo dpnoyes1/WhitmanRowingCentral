@@ -32,13 +32,13 @@ export const TOOLS = [
       school_year: nullable({ type: 'integer', description: 'Starting calendar year of the school year when period is school_year, e.g. 2025 for 2025-26; otherwise null' }),
       group: { type: 'string', enum: GROUP_ENUM, description: 'varsity = pieces done in 10th-12th grade, freshman = 7th-9th (Fr/Nov)' },
       limit: nullable({ type: 'integer', description: 'Only the top N (e.g. "top 8"); null for everyone. A top-N board also shows the average result and split of those N.' }) } } },
-  { name: 'by_grade', description: 'The best rower(s) in each grade (class) for one test: seniors (12th), juniors (11th), sophomores (10th), freshmen (9th), 8th, 7th. "Top athlete in each class/grade", "fastest senior", "best junior 2k". For season and school_year, the grade she was in that year; for all_time, her grade now (alumni left out).',
+  { name: 'by_grade', description: 'The best rower(s) in each grade (class) for one test: seniors (12th), juniors (11th), sophomores (10th), freshmen (9th), 8th, 7th. "Top athlete in each class/grade", "fastest senior", "best junior 2k". For season and school_year, the grade they were in that year; for all_time, their grade now (alumni left out).',
     input_schema: { type: 'object', additionalProperties: false, required: ['test', 'period', 'school_year', 'grades', 'per_grade'], properties: {
       test: { type: 'string', enum: TEST_ENUM }, period: { type: 'string', enum: ['season', 'all_time', 'school_year'] },
       school_year: nullable({ type: 'integer', description: 'Starting calendar year of the school year when period is school_year; otherwise null' }),
       grades: nullable({ type: 'array', items: { type: 'integer', enum: [7, 8, 9, 10, 11, 12] }, description: 'Only these grades (e.g. [12] for "fastest senior"); null for every grade' }),
       per_grade: nullable({ type: 'integer', description: 'How many per grade ("top 3 in each class" = 3); null = 1' }) } } },
-  { name: 'latest_test', description: 'Results of the most recent team test day for one test (the latest 2k, the latest 20\'), ranked, with each rower\'s change from her previous best.',
+  { name: 'latest_test', description: 'Results of the most recent team test day for one test (the latest 2k, the latest 20\'), ranked, with each rower\'s change from their previous best.',
     input_schema: { type: 'object', additionalProperties: false, required: ['test', 'group'], properties: { test: { type: 'string', enum: TEST_ENUM }, group: { type: 'string', enum: GROUP_ENUM } } } },
   { name: 'athlete', description: 'One athlete\'s summary: season and career PRs, latest tests, stars, GMS %, this week\'s practices and OYO minutes. name null = the person asking.',
     input_schema: { type: 'object', additionalProperties: false, required: ['name'], properties: { name: nullable({ type: 'string' }) } } },
@@ -55,7 +55,7 @@ export const TOOLS = [
     input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
   { name: 'todays_plan', description: 'The published workout for today or tomorrow, with the athlete\'s own target split for each piece (pacing: "what split should I hold for steady state today"). name null = the person asking; for a coach with no name, the workouts without targets.',
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'day'], properties: { name: nullable({ type: 'string' }), day: { type: 'string', enum: ['today', 'tomorrow'] } } } },
-  { name: 'test_pacing', description: 'How an athlete paced her most recent 2k or 20\' test, part by part, and her best this season. name null = the person asking.',
+  { name: 'test_pacing', description: 'How an athlete paced their most recent 2k or 20\' test, part by part, and their best this season. name null = the person asking.',
     input_schema: { type: 'object', additionalProperties: false, required: ['name', 'test'], properties: { name: nullable({ type: 'string' }), test: { type: 'string', enum: ['2000m', '20min'] } } } },
   { name: 'search_data', description: 'Coaches only: any other question about the tracker\'s data that no lookup above fits (comparisons, trends, counts, workouts logged, RPE, meters, attendance, plans, weights, a mix of these). A stronger model searches the data and writes the answer.',
     input_schema: { type: 'object', additionalProperties: false, required: [], properties: {} } },
@@ -93,7 +93,7 @@ export const shortDate = (d) => `${MONTHS[Number(d.slice(5, 7)) - 1]} ${Number(d
 const starText = (s) => (s === null || s === undefined ? '' : ` ${s}★`);
 const groupText = (g) => (g === 'varsity' ? 'Varsity' : g === 'freshman' ? 'Fr/Nov' : 'all rowers');
 /** Change between two results of one test, signed so that + is always better (more meters, less time). */
-function changeText(test, now, before, her = 'her') {
+function changeText(test, now, before, her = 'their') {
   if (!before) return 'first test';
   const d = isMeters(test) ? now - before : before - now;
   if (Math.abs(d) < (isMeters(test) ? 0.5 : 0.05)) return `same as ${her} best`;
@@ -114,7 +114,7 @@ export function whoFor(feed, asker, name) {
   const me = asker.athleteId ? feed.athletes.find((x) => x.id === asker.athleteId) : null;
   if (!name) {
     if (me) return { a: me };
-    return { reply: 'Which athlete? Ask again with her name.' };
+    return { reply: 'Which athlete? Ask again with the athlete’s name.' };
   }
   const pool = asker.role === 'coach' ? rowers(feed) : activeRowers(feed);
   const r = resolveName(name, pool.map((a) => a.name));
@@ -218,7 +218,7 @@ function latestTest(feed, asker, input, today) {
   const rows = Object.values(best).sort((x, y) => (better(test, x, y) ? -1 : better(test, y, x) ? 1 : 0)).map((b, i) => {
     const before = feed.benchmarks.filter((x) => x.athleteId === b.athleteId && x.test === test && x.valid && resultValue(x) && x.date < day)
       .reduce((acc, x) => (!acc || better(test, x, acc) ? x : acc), null);
-    return { rank: i + 1, a: byId[b.athleteId], v: resultValue(b), change: changeText(test, resultValue(b), before && resultValue(before), b.athleteId === asker.athleteId ? 'your' : 'her') };
+    return { rank: i + 1, a: byId[b.athleteId], v: resultValue(b), change: changeText(test, resultValue(b), before && resultValue(before), b.athleteId === asker.athleteId ? 'your' : 'their') };
   });
   const head = `*Latest ${label(test)} test, ${shortDate(day)}, ${groupText(group)}* (${rows.length} rower${rows.length === 1 ? '' : 's'})`;
   if (!rows.length) return { text: `${head}\nNo results in that group.` };

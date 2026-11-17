@@ -317,9 +317,9 @@ function weeklyChart(rows, caption, load = null) {
     </g>`;
   }).join('');
   const coachLoad = load && load.some((l) => l.trailing !== undefined);
-  const table = `<details class="small"><summary class="muted">Show as a table</summary><div class="table-wrap"><table>
+  const table = `<details class="small"><summary class="muted">Show as a table</summary><div class="table-wrap"><table class="chart-table">
     <tr><th>Week of</th><th class="r">Practice</th><th class="r">OYO</th><th class="r">Total</th>${coachLoad ? '<th class="r">vs average</th>' : ''}</tr>
-    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart)}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
+    ${rows.map((r, i) => `<tr><td>${fmtDate(r.weekStart, { month: 'short', day: 'numeric' })}</td><td class="r">${fmtMin(r.practice)}</td><td class="r">${fmtMin(r.oyo)}</td><td class="r">${fmtMin(r.practice + r.oyo)}</td>
       ${coachLoad ? `<td class="r">${load[i].changePct === null ? '' : `${load[i].flag ? '▲ ' : ''}${load[i].changePct > 0 ? '+' : ''}${load[i].changePct}%`}</td>` : ''}</tr>`).join('')}
   </table></div></details>`;
   return `<div class="chart">
@@ -821,7 +821,7 @@ function gmsCard(gms, coach = false, summary = null, bests = [], key = null) {
   if (!gms.length) {
     // A 2k or 20' this season but no GMS means no weight on file: the result stands, unadjusted (David, 2026-11-11).
     const tested = bests.some((b) => b.season && (b.test === '2000m' || b.test === '20min'));
-    const her = coach ? 'her' : 'your', herObj = coach ? 'her' : 'you';
+    const her = coach ? 'their' : 'your', herObj = coach ? 'them' : 'you';
     return `<div class="card"><h2>Gold Medal Standard</h2><p class="empty">${tested
       ? `A test is recorded this season, and it is shown unadjusted below. The GMS % and stars appear once a coach adds ${her} weight.`
       : `No 2k or 20' test this season yet. A test gives ${herObj} a GMS % and stars.`}</p></div>`;
@@ -1237,7 +1237,7 @@ async function showInsights() {
   const missedFlagged = v.rowers.filter((r) => r.missed.flag).length;
   // Missed practices lead (David, 2026-11-03); load jumps stay, quieter: a ▲ with no pill.
   const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
-    : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above her 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
+    : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above their 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
       : `<span class="muted">${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`);
   const loadCell = (w, c = '') => `<td class="r${c}">${fmtMin(w.total)}</td><td class="r${c}">${jump(w)}</td>`;
   let which = 'season';
@@ -1263,7 +1263,7 @@ async function showInsights() {
 `;
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
     <p class="muted small">${missedFlagged ? `<b>${missedFlagged} missing ${v.missedFlagAt}+ practices</b>` : 'No one flagged.'}
-      Load jumps are shown quietly: weighted minutes against her average for the 3 weeks before (fewer in her first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
+      Load jumps are shown quietly: weighted minutes against the rower's average for the 3 weeks before (fewer in their first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r c-last" colspan="2">Last week</th>
@@ -1599,15 +1599,15 @@ async function showBalance() {
         <h3>The three tests</h3>
         <ul><li>20': aerobic engine. Built by steady volume.</li><li>2k: race performance. The anchor for both comparisons.</li><li>100m: max strength and power.</li></ul>
         <h3>Where the lean comes from</h3>
-        <ol><li>For each rower, take her 2k and the 20' closest to it in time, from the last ${months} months. Same for the 100m.</li>
-          <li>Divide the watts. Example: 20' at 179 W and 2k at 209 W means her 20' holds 86% of her 2k power.</li>
+        <ol><li>For each rower, take their 2k and the 20' closest to it in time, from the last ${months} months. Same for the 100m.</li>
+          <li>Divide the watts. Example: 20' at 179 W and 2k at 209 W means their 20' holds 86% of their 2k power.</li>
           <li>Do the same for every rower and take the team's middle value. Example: 82%.</li>
-          <li>A typical teammate with her 2k would pull 171 W. She pulled 179 W, so her endurance lean is +5%.</li></ol>
+          <li>A typical teammate with that 2k would pull 171 W. This rower pulled 179 W, so their endurance lean is +5%.</li></ol>
         <h3>Reading the bars</h3>
-        <ul><li>Right (blue): stronger at that test than her 2k suggests.</li><li>Left (darker blue): weaker than her 2k suggests.</li><li>Sprint-leaning / Endurance-leaning: the top quarter of the team on that bar.</li>
-          <li>High endurance lean: the engine is there, so the 2k has room to come up.</li><li>Low endurance lean: the 2k is ahead of her base. More steady work.</li><li>Low sprint lean: strength is the limit.</li></ul>
+        <ul><li>Right (blue): stronger at that test than their 2k suggests.</li><li>Left (darker blue): weaker than their 2k suggests.</li><li>Sprint-leaning / Endurance-leaning: the top quarter of the team on that bar.</li>
+          <li>High endurance lean: the engine is there, so the 2k has room to come up.</li><li>Low endurance lean: the 2k is ahead of their base. More steady work.</li><li>Low sprint lean: strength is the limit.</li></ul>
         <h3>What it is not</h3>
-        <ul><li>The comparison is with this team, not an ideal. There are no target numbers yet.</li><li>Size mostly cancels out, because each rower is compared with her own 2k.</li>
+        <ul><li>The comparison is with this team, not an ideal. There are no target numbers yet.</li><li>Size mostly cancels out, because each rower is compared with their own 2k.</li>
           <li>Greyed rows: the two tests were more than about ${weakMonths} months apart, so read them loosely.</li><li>No bar: a test is missing, or fewer than ${v.minTeam} rowers have the pair.</li></ul>
         <h3>The trend chart</h3>
         <p>Open a rower to see each test as % change in watts from her first result. The line climbing fastest is what is improving most.</p>
@@ -1938,7 +1938,7 @@ function wireCoachPasswords() {
  */
 function athletePasswordsCard(apw) {
   const list = apw && apw.athletes;
-  const label = { birthday: 'birthday (no password yet)', set: 'has her own password', temporary: 'temporary password issued' };
+  const label = { birthday: 'birthday (no password yet)', set: 'has their own password', temporary: 'temporary password issued' };
   const body = !list ? '<p class="error small">The list could not be loaded. Reload the page to try again.</p>'
     : `<label class="small" for="apw-pick">Athlete</label>
       <select id="apw-pick" class="in">${list.map((a) => `<option value="${esc(a.id)}">${esc(a.name)} · ${esc(label[a.status] || a.status)}</option>`).join('')}</select>
@@ -1954,7 +1954,7 @@ function wireAthletePasswords() {
   b.onclick = async () => {
     const sel = document.getElementById('apw-pick'), msg = document.getElementById('athlete-pw-msg');
     const name = sel.options[sel.selectedIndex].textContent.split(' · ')[0];
-    if (!confirm(`Reset ${name}'s password? Her current password (or birthday) will stop working.`)) return;
+    if (!confirm(`Reset ${name}'s password? Their current password (or birthday) will stop working.`)) return;
     b.disabled = true; msg.className = 'small'; msg.textContent = '';
     try {
       const res = await fetch('/api/athlete-passwords', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ reset: sel.value }) });
@@ -1962,7 +1962,7 @@ function wireAthletePasswords() {
       const out = await res.json().catch(() => ({}));
       if (!res.ok) { msg.className = 'error small'; msg.textContent = out.error || 'That did not work.'; b.disabled = false; return; }
       msg.className = 'good-text small';
-      msg.innerHTML = `${esc(out.name)}'s temporary password is <strong class="mono">${esc(out.password)}</strong>. Give it to her now: it is shown only once. She types it with her name, then chooses her own password.`;
+      msg.innerHTML = `${esc(out.name)}'s temporary password is <strong class="mono">${esc(out.password)}</strong>. Give it to them now: it is shown only once. They type it with their name, then choose their own password.`;
       sel.options[sel.selectedIndex].textContent = `${out.name} · temporary password issued`;
       b.disabled = false;
     } catch {
