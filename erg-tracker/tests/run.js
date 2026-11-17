@@ -1598,6 +1598,37 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.deepStrictEqual(v.upcoming.map(u => [u.day, u.published, u.name]), [['2026-11-16', true, 'Tuesday 20s']], 'only the next 28 days');
   assert.strictEqual(v.library[0].id, 'W7');
   assert.ok(/3 x 20:00/.test(v.library[0].summary));
+  // Delete takes out one session, never the whole day, and never the other squad's row.
+  const J = (x) => JSON.parse(JSON.stringify(x));
+  const sched = [
+    { Date: '2026-11-18', Squad: 'Varsity', Session: 'Practice', 'Workout ID': 'W7' },
+    { Date: '2026-11-18', Squad: 'Novice', Session: 'Practice', 'Workout ID': 'W7' },
+    { Date: '2026-11-18', Squad: 'All', Session: 'Practice', 'Workout ID': 'W8' },
+    { Date: '2026-11-18', Squad: '', Session: '', 'Workout ID': 'W9' },
+    { Date: '2026-11-19', Squad: 'Varsity', Session: 'Practice', 'Workout ID': 'W7' }];
+  assert.deepStrictEqual(J(g.scheduleRowsToDelete_(sched, { day: '2026-11-18', workoutId: 'W7', squad: 'Varsity', session: 'Practice' })), [2]);
+  assert.deepStrictEqual(J(g.scheduleRowsToDelete_(sched, { day: '2026-11-18', workoutId: 'W9', squad: 'All', session: 'Practice' })), [5], 'blank squad and session mean All and Practice');
+  assert.deepStrictEqual(J(g.scheduleRowsToDelete_(sched, { day: '2026-11-18', workoutId: 'W7', squad: 'All', session: 'Practice' })), [], 'All does not match the squad rows');
+  assert.deepStrictEqual(J(g.scheduleRowsToDelete_(sched.concat([sched[0]]), { day: '2026-11-18', workoutId: 'W7', squad: 'Varsity', session: 'Practice' })), [2, 7], 'identical duplicates go together');
+  // Order within a day: an explicit Order wins; rows without one read warm up, the work, cool down.
+  const nm = { A: 'Cool down', B: 'Main set', C: 'Warm up' };
+  const nameOf = (id) => nm[id] || '';
+  const day = (id, order, d = '2026-11-18') => ({ Date: d, Squad: 'All', Session: 'Practice', 'Workout ID': id, Order: order });
+  assert.deepStrictEqual(J(g.scheduleSorted_([day('A', ''), day('B', ''), day('C', '')], nameOf).map(r => r['Workout ID'])), ['C', 'B', 'A'], 'old rows keep the warm/work/cool order');
+  assert.deepStrictEqual(J(g.scheduleSorted_([day('A', 1), day('B', 2), day('C', 3)], nameOf).map(r => r['Workout ID'])), ['A', 'B', 'C'], 'explicit Order beats the names');
+  assert.deepStrictEqual(J(g.scheduleSorted_([day('B', 1, '2026-11-19'), day('A', 2), day('C', 1)], nameOf).map(r => r.Date + r['Workout ID'])), ['2026-11-18C', '2026-11-18A', '2026-11-19B'], 'days stay in date order');
+  assert.deepStrictEqual(J(g.scheduleNextOrder_([day('A', ''), day('B', '')], nameOf, ['2026-11-18', '2026-11-20'])), { '2026-11-18': 3, '2026-11-20': 1 }, 'a new session goes last');
+  assert.deepStrictEqual(J(g.scheduleMoveList_([4, 7, 9], 1, -1)), [7, 4, 9]);
+  assert.deepStrictEqual(J(g.scheduleMoveList_([4, 7, 9], 2, 1)), null, 'the last one cannot move down');
+  assert.deepStrictEqual(J(g.scheduleMoveList_([4, 7, 9], 0, -1)), null, 'the first one cannot move up');
+  assert.strictEqual(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'] }, { '2026-11-16': 3 }).rows[0].Order, 3);
+  // Saves reuse an identical saved workout instead of copying it.
+  const lib = [{ 'Workout ID': 'W1', Name: 'Tue 20s', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '', 'Start every': '', Activity: 'Erg (RowErg)', Zone: '', Base: '', 'Target low %': '', 'Target high %': '', Rate: '', Notes: '' }];
+  const same = g.workoutBuildRows_('W9', { name: 'Tue 20s', pieces: [{ workType: 'Time', reps: 3, work: '20:00' }] });
+  assert.strictEqual(g.workoutFindSame_(lib, same.rows), 'W1');
+  assert.strictEqual(g.workoutFindSame_(lib, g.workoutBuildRows_('W9', { name: 'Tue 20s', pieces: [{ workType: 'Time', reps: 4, work: '20:00' }] }).rows), '');
+  assert.strictEqual(g.workoutFindSame_(lib, g.workoutBuildRows_('W9', { name: 'Other name', pieces: [{ workType: 'Time', reps: 3, work: '20:00' }] }).rows), '', 'the name counts');
+  assert.deepStrictEqual(J(g.workoutPieceCompact_(lib[0])), { workType: 'Time', reps: '3', work: '20:00', activity: 'Erg (RowErg)' });
 });
 
 console.log(`${passed} tests passed`);

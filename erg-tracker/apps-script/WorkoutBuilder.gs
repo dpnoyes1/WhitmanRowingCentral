@@ -9,6 +9,9 @@
  */
 var WORKOUT_SAVE_ACTION = 'workout-save';
 var WORKOUT_LIST_ACTION = 'workout-list';
+var WORKOUT_DELETE_ACTION = 'workout-delete';
+var WORKOUT_UPDATE_ACTION = 'workout-update';
+var WORKOUT_MOVE_ACTION = 'workout-move';
 var WORKOUT_MAX_PIECES = 12;
 var WORKOUT_SQUADS = ['All', 'Varsity', 'Novice'];
 var WORKOUT_SESSIONS = ['Practice', 'OYO'];
@@ -81,7 +84,7 @@ function workoutBuildRows_(workoutId, body) {
 }
 
 /** body.dates (YYYY-MM-DD list), squad, session, publish, notes -> Schedule rows, or { error }. Pure. */
-function scheduleBuildRows_(workoutId, body) {
+function scheduleBuildRows_(workoutId, body, nextOrder) {
   var dates = Array.isArray(body.dates) ? body.dates : [];
   if (!dates.length) return { rows: [] };   // saving to the library only
   if (dates.length > 31) return { error: 'Pick up to 31 dates at a time.' };
@@ -97,7 +100,7 @@ function scheduleBuildRows_(workoutId, body) {
     if (!dt || dt.getMonth() !== Number(m[2]) - 1) return { error: 'Dates must look like 2026-11-16.' };
     if (seen[d]) continue;
     seen[d] = true;
-    rows.push({ 'Date': dt, 'Squad': squad, 'Session': session, 'Workout ID': workoutId, 'Published': body.publish === true, 'Notes': String(body.notes || '').trim().slice(0, 200) });
+    rows.push({ 'Date': dt, 'Squad': squad, 'Session': session, 'Workout ID': workoutId, 'Published': body.publish === true, 'Notes': String(body.notes || '').trim().slice(0, 200), 'Order': (nextOrder && nextOrder[d]) || 1 });
   }
   return { rows: rows };
 }
@@ -114,18 +117,106 @@ function workoutListView_(workouts, schedule, fromDay) {
   var library = order.map(function (id) {
     var label = '';
     try { label = workoutPieces(pieces[id], id).map(pieceLabel).join(' + '); } catch (e) { label = ''; }
-    return { id: id, name: names[id], summary: label };
+    return { id: id, name: names[id], summary: label, pieces: pieces[id].map(workoutPieceCompact_) };
   }).reverse();
   var until = dayKey_(new Date(Number(fromDay.slice(0, 4)), Number(fromDay.slice(5, 7)) - 1, Number(fromDay.slice(8, 10)) + 28));
-  var upcoming = schedule.filter(function (r) {
+  var nameOf = function (id) { return names[String(id).trim()] || ''; };
+  var upcoming = scheduleSorted_(schedule, nameOf).filter(function (r) {
     var d = feedDay_(r.Date);
     return d && d >= fromDay && d < until && String(r['Workout ID'] || '').trim() !== '';
   }).map(function (r) {
     var id = String(r['Workout ID']).trim();
     return { day: feedDay_(r.Date), squad: String(r.Squad || 'All').trim() || 'All', session: String(r.Session || 'Practice').trim() || 'Practice',
       workoutId: id, name: names[id] || '', published: isActive_(r.Published), notes: String(r.Notes || '') };
-  }).sort(function (a, b) { return a.day < b.day ? -1 : a.day > b.day ? 1 : 0; });
+  });
   return { library: library, upcoming: upcoming };
+}
+
+/** One Workouts row for the site's editor: only the filled-in fields, as text. Pure. */
+function workoutPieceCompact_(w) {
+  var map = { workType: 'Work type', reps: 'Reps', work: 'Work', rest: 'Rest', startEvery: 'Start every', activity: 'Activity', zone: 'Zone',
+    base: 'Base', lowPct: 'Target low %', highPct: 'Target high %', rate: 'Rate', notes: 'Notes' };
+  var o = {};
+  Object.keys(map).forEach(function (k) {
+    var v = w[map[k]];
+    if (v !== '' && v !== null && v !== undefined) o[k] = String(v).trim();
+  });
+  return o;
+}
+
+/**
+ * Where a session sits within its day. An explicit Order wins; rows with no Order (older rows) count as warm up,
+ * then the work, then cool down by workout name, so a day nobody has reordered looks the same as before.
+ * Returns one number per row. Pure.
+ */
+function scheduleOrderKeys_(rows, nameOf) {
+  var byDay = {}, keys = new Array(rows.length);
+  rows.forEach(function (r, i) { var d = feedDay_(r.Date); (byDay[d] = byDay[d] || []).push(i); });
+  Object.keys(byDay).forEach(function (d) {
+    var blanks = [];
+    byDay[d].forEach(function (i) {
+      var raw = rows[i].Order, n = Number(raw);
+      if (raw !== '' && raw !== null && raw !== undefined && isFinite(n)) keys[i] = n; else blanks.push(i);
+    });
+    var rank = function (i) { var nm = nameOf(rows[i]['Workout ID']); return /warm/i.test(nm) ? 0 : /cool/i.test(nm) ? 2 : 1; };
+    blanks.sort(function (a, b) { return rank(a) - rank(b) || a - b; });
+    blanks.forEach(function (i, k) { keys[i] = k + 1; });
+  });
+  return keys;
+}
+
+/** Indexes into rows in display order: by day, then by position in the day. Pure. */
+function scheduleSortedIdx_(rows, nameOf) {
+  var keys = scheduleOrderKeys_(rows, nameOf), day = rows.map(function (r) { return feedDay_(r.Date); });
+  return rows.map(function (r, i) { return i; }).sort(function (a, b) {
+    return day[a] < day[b] ? -1 : day[a] > day[b] ? 1 : (keys[a] - keys[b]) || (a - b);
+  });
+}
+
+function scheduleSorted_(rows, nameOf) {
+  return scheduleSortedIdx_(rows, nameOf).map(function (i) { return rows[i]; });
+}
+
+/** True when two workouts (arrays of Workouts-row objects) are the same name and pieces, whatever their IDs. Pure. */
+function workoutRowsSame_(a, b) {
+  if (a.length !== b.length) return false;
+  var keys = HEADERS[TABS.WORKOUTS].filter(function (k) { return k !== 'Workout ID'; });
+  for (var i = 0; i < a.length; i++) {
+    for (var j = 0; j < keys.length; j++) {
+      var x = a[i][keys[j]], y = b[i][keys[j]];
+      if (String(x === undefined || x === null ? '' : x).trim() !== String(y === undefined || y === null ? '' : y).trim()) return false;
+    }
+  }
+  return true;
+}
+
+/** The library ID of a workout identical to these new rows, or ''. Saves reuse it instead of filling the library with copies. Pure. */
+function workoutFindSame_(existing, newRows) {
+  var groups = {}, ids = [];
+  existing.forEach(function (w) {
+    var id = String(w['Workout ID'] || '').trim();
+    if (!id) return;
+    if (!(id in groups)) { groups[id] = []; ids.push(id); }
+    groups[id].push(w);
+  });
+  for (var i = 0; i < ids.length; i++) if (workoutRowsSame_(groups[ids[i]], newRows)) return ids[i];
+  return '';
+}
+
+/** Makes sure the Schedule tab has its Order header (older Sheets get it on first use, no setup run needed). */
+function scheduleEnsureOrderHeader_() {
+  var sheet = tab_(TABS.SCHEDULE), col = HEADERS[TABS.SCHEDULE].indexOf('Order') + 1;
+  var cell = sheet.getRange(1, col);
+  if (!String(cell.getValue() || '').trim()) cell.setValue('Order').setFontWeight('bold');
+}
+
+/** The next free position on each of these days (existing rows count). Pure. */
+function scheduleNextOrder_(schedule, nameOf, days) {
+  var keys = scheduleOrderKeys_(schedule, nameOf), out = {};
+  days.forEach(function (d) { out[d] = 0; });
+  schedule.forEach(function (r, i) { var d = feedDay_(r.Date); if (d in out && keys[i] > out[d]) out[d] = keys[i]; });
+  days.forEach(function (d) { out[d] += 1; });
+  return out;
 }
 
 function processWorkoutList_() {
@@ -142,6 +233,7 @@ function processWorkoutSave_(body) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
+    scheduleEnsureOrderHeader_();
     var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
     var existing = readObjects_(TABS.WORKOUTS);
     var id = String(body.workoutId || '').trim();
@@ -153,10 +245,18 @@ function processWorkoutSave_(body) {
       id = workoutNextId_(existing.map(function (w) { return w['Workout ID']; }));
       var b = workoutBuildRows_(id, body);
       if (b.error) return { status: 'invalid', message: b.error };
-      wrows = b.rows;
+      var same = workoutFindSame_(existing, b.rows);   // already saved: reuse it, no copy
+      if (same) id = same; else wrows = b.rows;
     }
-    var s = scheduleBuildRows_(id, body);
+    var schedule = readObjects_(TABS.SCHEDULE);
+    var names = workoutNameMap_(existing.concat(wrows));
+    var nameOf = function (wid) { return names[String(wid).trim()] || ''; };
+    var s = scheduleBuildRows_(id, body, scheduleNextOrder_(schedule, nameOf, Array.isArray(body.dates) ? body.dates.map(String) : []));
     if (s.error) return { status: 'invalid', message: s.error };
+    var dupes = s.rows.filter(function (r) { return scheduleRowsToDelete_(schedule, { day: dayKey_(r.Date), workoutId: id, squad: r.Squad, session: r.Session }).length; });
+    if (dupes.length) {
+      return { status: 'invalid', message: 'Already planned: ' + (names[id] || id) + ' for ' + dupes[0].Squad + ' ' + dupes[0].Session + ' on ' + dupes.map(function (r) { return dayKey_(r.Date); }).join(', ') + '. Nothing was saved.' };
+    }
     if (wrows.length) {
       appendObjects_(TABS.WORKOUTS, wrows);
       logChange_({ Who: by, Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Workout', 'Old value': '', 'New value': wrows[0].Name + ' (' + wrows.length + ' pieces)', Note: 'site Plan page' });
@@ -168,6 +268,168 @@ function processWorkoutSave_(body) {
     var out = processWorkoutList_();
     out.savedId = id;
     return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** {Workout ID: Name} from Workouts rows. Pure. */
+function workoutNameMap_(rows) {
+  var names = {};
+  rows.forEach(function (w) { var id = String(w['Workout ID'] || '').trim(); if (id && !(id in names)) names[id] = String(w.Name || '').trim(); });
+  return names;
+}
+
+/**
+ * Schedule row numbers (sheet rows, header = 1) that are exactly this one session: same day, workout, squad and
+ * session. One delete takes out one session, never the whole day, and the Varsity and Novice rows of the same
+ * workout are separate sessions. Identical duplicate rows go together. Pure.
+ */
+function scheduleRowMatches_(r, key) {
+  var squad = String(key.squad || 'All').trim() || 'All', session = String(key.session || 'Practice').trim() || 'Practice';
+  return feedDay_(r.Date) === key.day && String(r['Workout ID'] || '').trim() === key.workoutId &&
+    (String(r.Squad || 'All').trim() || 'All') === squad && (String(r.Session || 'Practice').trim() || 'Practice') === session;
+}
+
+function scheduleRowsToDelete_(schedule, key) {
+  var rows = [];
+  schedule.forEach(function (r, i) { if (scheduleRowMatches_(r, key)) rows.push(i + 2); });
+  return rows;
+}
+
+/**
+ * body: { day, workoutId, squad, session, coachName }. Removes that one session from the Schedule tab and nothing
+ * else: the workout stays in the Workouts library so it can be scheduled again, and days before today are left alone
+ * so old results keep the plan they were checked against. The Change log keeps who removed what.
+ */
+function processWorkoutDelete_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    scheduleEnsureOrderHeader_();
+    var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
+    var key = { day: String(body.day || '').trim(), workoutId: String(body.workoutId || '').trim(), squad: body.squad, session: body.session };
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(key.day) || !key.workoutId) return { status: 'invalid', message: 'Pick a session to remove.' };
+    if (key.day < weightsTodayAndYear_().today) return { status: 'invalid', message: 'Past days stay as they were, so old results keep their plan.' };
+    var hits = scheduleRowsToDelete_(readObjects_(TABS.SCHEDULE), key);
+    if (!hits.length) { var again = processWorkoutList_(); again.removed = 0; return again; }   // already gone (another coach got there first)
+    var sheet = tab_(TABS.SCHEDULE);
+    var what = key.day + ' ' + (String(key.squad || 'All')) + ' ' + (String(key.session || 'Practice'));
+    hits.slice().reverse().forEach(function (row) { sheet.deleteRow(row); });   // bottom first so the numbers stay right
+    logChange_({ Who: by, Tab: TABS.SCHEDULE, 'Row ID': key.workoutId, Field: 'Sessions', 'Old value': what, 'New value': '(removed)', Note: 'site Plan page' });
+    var out = processWorkoutList_();
+    out.removed = hits.length;
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/** Reads and checks the one-session key every change needs. Returns { key } or { error }. Past days are never changed. */
+function scheduleKeyFromBody_(body) {
+  var key = { day: String(body.day || '').trim(), workoutId: String(body.workoutId || '').trim(), squad: body.squad, session: body.session };
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(key.day) || !key.workoutId) return { error: 'Pick a session first.' };
+  if (key.day < weightsTodayAndYear_().today) return { error: 'Past days stay as they were, so old results keep their plan.' };
+  return { key: key };
+}
+
+/**
+ * body: { day, workoutId, squad, session, to: { name, pieces, workoutId, squad, session, notes, publish }, coachName }.
+ * Changes that one session (Schedule row) in place. New pieces become a new library workout (or reuse an identical
+ * one), so other days that use the old workout do not change. Fields left out of "to" stay as they are.
+ */
+function processWorkoutUpdate_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    scheduleEnsureOrderHeader_();
+    var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
+    var k = scheduleKeyFromBody_(body);
+    if (k.error) return { status: 'invalid', message: k.error };
+    var key = k.key, to = body.to || {};
+    var schedule = readObjects_(TABS.SCHEDULE);
+    var hits = scheduleRowsToDelete_(schedule, key);
+    if (!hits.length) return { status: 'invalid', message: 'That workout is no longer on this day. Check the week and try again.' };
+    var squad = to.squad === undefined || to.squad === '' ? (String(key.squad || 'All').trim() || 'All') : String(to.squad).trim();
+    var session = to.session === undefined || to.session === '' ? (String(key.session || 'Practice').trim() || 'Practice') : String(to.session).trim();
+    if (WORKOUT_SQUADS.indexOf(squad) < 0) return { status: 'invalid', message: 'Squad must be All, Varsity or Novice.' };
+    if (WORKOUT_SESSIONS.indexOf(session) < 0) return { status: 'invalid', message: 'Session must be Practice or OYO.' };
+    var existing = readObjects_(TABS.WORKOUTS), id = key.workoutId, wrows = [];
+    if (to.pieces !== undefined) {
+      id = workoutNextId_(existing.map(function (w) { return w['Workout ID']; }));
+      var b = workoutBuildRows_(id, to);
+      if (b.error) return { status: 'invalid', message: b.error };
+      var same = workoutFindSame_(existing, b.rows);
+      if (same) id = same; else wrows = b.rows;
+    } else if (to.workoutId) {
+      id = String(to.workoutId).trim();
+      if (!existing.some(function (w) { return String(w['Workout ID']).trim() === id; })) return { status: 'invalid', message: 'That workout is not in the library.' };
+    }
+    var next = { day: key.day, workoutId: id, squad: squad, session: session };
+    var moved = id !== key.workoutId || squad !== (String(key.squad || 'All').trim() || 'All') || session !== (String(key.session || 'Practice').trim() || 'Practice');
+    if (moved && scheduleRowsToDelete_(schedule, next).length) {
+      return { status: 'invalid', message: 'That workout is already planned for ' + squad + ' ' + session + ' on ' + key.day + '. Nothing was changed.' };
+    }
+    if (wrows.length) {
+      appendObjects_(TABS.WORKOUTS, wrows);
+      logChange_({ Who: by, Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Workout', 'Old value': '', 'New value': wrows[0].Name + ' (' + wrows.length + ' pieces)', Note: 'site Plan page (edit)' });
+    }
+    var sheet = tab_(TABS.SCHEDULE), heads = HEADERS[TABS.SCHEDULE];
+    var put = function (row, header, v) { sheet.getRange(row, heads.indexOf(header) + 1).setValue(v); };
+    hits.forEach(function (row) {
+      put(row, 'Workout ID', id);
+      put(row, 'Squad', squad);
+      put(row, 'Session', session);
+      if (to.notes !== undefined) put(row, 'Notes', String(to.notes || '').trim().slice(0, 200));
+      if (typeof to.publish === 'boolean') put(row, 'Published', to.publish);
+    });
+    var was = key.workoutId + ' ' + (String(key.squad || 'All')) + ' ' + (String(key.session || 'Practice'));
+    logChange_({ Who: by, Tab: TABS.SCHEDULE, 'Row ID': id, Field: 'Sessions', 'Old value': key.day + ' ' + was, 'New value': key.day + ' ' + id + ' ' + squad + ' ' + session +
+      (typeof to.publish === 'boolean' ? (to.publish ? ' (published)' : ' (draft)') : ''), Note: 'site Plan page (edit)' });
+    var out = processWorkoutList_();
+    out.savedId = id;
+    return out;
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Where the session at position `pos` of a day's list ends up when moved by dir (-1 earlier, +1 later). Returns the
+ * list of indexes in the new order, or null when it cannot move that way. Pure.
+ */
+function scheduleMoveList_(dayIdx, pos, dir) {
+  var to = pos + dir;
+  if (pos < 0 || to < 0 || to >= dayIdx.length) return null;
+  var out = dayIdx.slice(), t = out[pos];
+  out[pos] = out[to]; out[to] = t;
+  return out;
+}
+
+/** body: { day, workoutId, squad, session, dir: -1 | 1, coachName }. Moves one session earlier or later within its day and renumbers the day. */
+function processWorkoutMove_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    scheduleEnsureOrderHeader_();
+    var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
+    var k = scheduleKeyFromBody_(body);
+    if (k.error) return { status: 'invalid', message: k.error };
+    var dir = Number(body.dir);
+    if (dir !== -1 && dir !== 1) return { status: 'invalid', message: 'Move it up or down.' };
+    var schedule = readObjects_(TABS.SCHEDULE), names = workoutNameMap_(readObjects_(TABS.WORKOUTS));
+    var order = scheduleSortedIdx_(schedule, function (id) { return names[String(id).trim()] || ''; });
+    var dayIdx = order.filter(function (i) { return feedDay_(schedule[i].Date) === k.key.day && String(schedule[i]['Workout ID'] || '').trim() !== ''; });
+    var pos = -1;
+    dayIdx.forEach(function (i, p) { if (pos < 0 && scheduleRowMatches_(schedule[i], k.key)) pos = p; });
+    if (pos < 0) return { status: 'invalid', message: 'That workout is no longer on this day. Check the week and try again.' };
+    var moved = scheduleMoveList_(dayIdx, pos, dir);
+    if (moved) {
+      var sheet = tab_(TABS.SCHEDULE), col = HEADERS[TABS.SCHEDULE].indexOf('Order') + 1;
+      moved.forEach(function (i, p) { sheet.getRange(i + 2, col).setValue(p + 1); });
+      logChange_({ Who: by, Tab: TABS.SCHEDULE, 'Row ID': k.key.workoutId, Field: 'Order', 'Old value': k.key.day + ' position ' + (pos + 1), 'New value': 'position ' + (pos + dir + 1), Note: 'site Plan page' });
+    }
+    return processWorkoutList_();
   } finally {
     lock.releaseLock();
   }

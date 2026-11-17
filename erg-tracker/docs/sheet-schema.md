@@ -60,7 +60,7 @@ Date, Squad, Shift (Early / Late), Start, End, Window start, Window end (text HH
 Work, Rest and Start every are text typed like Settings values and parsed with `parseTime` when read; they are plan config, not logged data.
 
 ## Schedule
-Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID, Published (checkbox; unticked rows never reach athletes), Notes.
+Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID, Published (checkbox; unticked rows never reach athletes), Notes, Order (position within the day, 1, 2, 3; blank on older rows, which read warm up, the work, cool down by workout name).
 
 Targets, plan matches and hits are computed when read (`Plan.gs`), never stored. Practices' "Planned workout" column is free text; the Schedule tab is what targets and plan checks use.
 

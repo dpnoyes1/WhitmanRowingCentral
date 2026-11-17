@@ -13,7 +13,7 @@ const signLogin = (id, day) => crypto.createHmac('sha256', FAKE_FEED_KEY).update
 const dir = path.join(__dirname, '..', '..', 'apps-script');
 const ctx = vm.createContext({ console });
 ['Config.gs', 'Time.gs', 'Gms.gs', 'Sheet.gs', 'Form.gs', 'Submit.gs', 'Setup.gs', 'Plan.gs', 'PlanSheet.gs',
-  'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs'].forEach(f =>
+  'Profile.gs', 'Dummy.gs', 'TeamGms.gs', 'Regatta.gs', 'Feed.gs', 'WorkoutBuilder.gs'].forEach(f =>
   vm.runInContext(fs.readFileSync(path.join(dir, f), 'utf8'), ctx, { filename: f }));
 
 function dummyFeed(asOf) {

@@ -66,8 +66,9 @@ HEADERS[TABS.WORKOUTS] = [
   'Activity', 'Zone', 'Base', 'Target low %', 'Target high %', 'Rate', 'Notes'
 ];
 // One row per session per day. Published = No keeps it hidden from athletes.
+// Order = position within the day (1, 2, 3...); blank rows sort warm up, the work, cool down (WorkoutBuilder.gs).
 HEADERS[TABS.SCHEDULE] = [
-  'Date', 'Squad', 'Session', 'Workout ID', 'Published', 'Notes'
+  'Date', 'Squad', 'Session', 'Workout ID', 'Published', 'Notes', 'Order'
 ];
 // Squad each rower was on in a past school year ("2025-26"). Missing rows fall back to Roster.
 HEADERS[TABS.SQUAD_HISTORY] = ['School year', 'Athlete ID', 'Athlete', 'Squad'];

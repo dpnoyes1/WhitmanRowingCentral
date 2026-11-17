@@ -1,6 +1,7 @@
-// Add workout (coach workout builder), laid out like the redesign mockup: type it in plain language or fill the
-// builder (Single / Intervals / Variable), tap days on the week, then Save draft or Save and publish. Saves go to the
-// Sheet's Workouts and Schedule tabs through /api/workouts, so the Sheet checks every piece. Coaches only.
+// Plan workouts (coach workout planner). A card per day with its workouts in order; "+ Add workout" under a day opens
+// the builder for THAT day (type it in plain language or fill Single / Intervals / Variable, or start from a saved
+// workout); tap a workout to edit, delete or publish it; arrows reorder a day. Saves go to the Sheet's Workouts and
+// Schedule tabs through /api/workouts, so the Sheet checks every piece. Coaches only.
 const DAYFULL = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday'];
 const CATS = ['Aerobic', 'Threshold', 'Sprint', 'Benchmark', 'Other'];
 const ZONE_OF = { Aerobic: 'Aerobic', Threshold: 'Threshold', Sprint: 'Anaerobic' };   // Benchmark and Other: no zone
@@ -90,16 +91,41 @@ const iso = (dt) => dt.toISOString().slice(0, 10);
 const addDays = (d, n) => { const dt = toDate(d); dt.setUTCDate(dt.getUTCDate() + n); return iso(dt); };
 const mondayOf = (d) => addDays(d, -((toDate(d).getUTCDay() + 6) % 7));
 
+
+/** A saved workout's pieces -> builder fields, or null when the builder cannot show it faithfully. Exported for the tests. */
+export function fromPieces(pieces, name = '') {
+  if (!Array.isArray(pieces) || !pieces.length || pieces.length > 12) return null;
+  const types = new Set(pieces.map((p) => p.workType));
+  if (types.size !== 1 || !['Time', 'Distance'].includes(pieces[0].workType)) return null;
+  if (pieces.some((p) => p.startEvery || p.base || p.lowPct || p.highPct || p.rate || p.notes || (p.activity && p.activity !== 'Erg (RowErg)'))) return null;
+  const zones = new Set(pieces.map((p) => p.zone || ''));
+  if (zones.size !== 1) return null;
+  const by = pieces[0].workType === 'Time' ? 'time' : 'distance', ok = (v) => (by === 'time' ? tsec(v) !== null : dnum(v) !== null);
+  const cat = { Aerobic: 'Aerobic', Threshold: 'Threshold', Anaerobic: 'Sprint', '': 'Other' }[[...zones][0]];
+  if (!cat || pieces.some((p) => !ok(p.work || '') || (p.rest && tsec(p.rest) === null))) return null;
+  const reps = (p) => +(p.reps || 1), o = { name, cat, by };
+  if (pieces.length === 1) {
+    const p = pieces[0];
+    if (reps(p) === 1 && !p.rest) return { ...o, type: 'single', single: by === 'time' ? p.work : clean(p.work) };
+    if (!p.rest || tsec(p.rest) === null || reps(p) < 1 || reps(p) > 99) return null;
+    return { ...o, type: 'intervals', n: String(reps(p)), work: by === 'time' ? p.work : clean(p.work), rest: p.rest };
+  }
+  if (pieces.some((p) => reps(p) !== 1)) return null;
+  return { ...o, type: 'variable', rows: pieces.map((p) => ({ w: by === 'time' ? p.work : clean(p.work), r: p.rest || '' })) };
+}
+
 export function openPlan(v, ctx) {
   const { app, esc, fmtDate } = ctx;
-  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '';
+  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '', asking = false, scrollTo = '';
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
-    mode: 'new', notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
-    rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice',
-    week: startWeek(), days: [], workoutId: data.library[0] ? data.library[0].id : ''
+    open: false, edit: null, day: '', also: [], useId: '', pick: '',
+    notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
+    rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice', published: false,
+    week: startWeek()
   };
+  B.pick = data.library[0] ? data.library[0].id : '';
   let nameTouched = false;
 
   const opt = (list, cur) => list.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('');
@@ -109,6 +135,9 @@ export function openPlan(v, ctx) {
   const okW = (x) => (tim() ? tsec(x) !== null : dnum(x) !== null);
   const input = (k, val, o = {}) => `<input class="in${o.big ? ' bigv' : ''}${bad(o.ok !== false)}" data-k="${k}"${o.i !== undefined ? ` data-i="${o.i}"` : ''} value="${esc(val)}" inputmode="${o.mode || 'text'}" autocomplete="off"${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${o.aria ? ` aria-label="${esc(o.aria)}"` : ''}>`;
   const fld = (label, k, val, o) => `<label class="f">${label}${input(k, val, o)}</label>`;
+  const lib = (id) => data.library.find((w) => w.id === id);
+  const keyOf = (u) => ({ day: u.day, workoutId: u.workoutId, squad: u.squad, session: u.session });
+  const sameKey = (a, b) => a && b && a.day === b.day && a.workoutId === b.workoutId && a.squad === b.squad && a.session === b.session;
 
   const byseg = () => `<div class="f">Work by${seg([['distance', 'Distance'], ['time', 'Time']], B.by, 'data-by', 'tall')}</div>`;
   const fields = () => {
@@ -131,41 +160,72 @@ export function openPlan(v, ctx) {
       : [esc(p.text), esc(p.note) + '. Athletes see this with their own pace window, worked out from a percentage of their 20\' watts.'];
   };
 
-  const dayLabel = (d) => `${fmtDate(d, { weekday: 'short' })} ${toDate(d).getUTCDate()}`;
-  const weekGrid = () => {
+  const dayShort = (d) => `${fmtDate(d, { weekday: 'short' })} ${toDate(d).getUTCDate()}`;
+  const dayLong = (d) => fmtDate(d, { weekday: 'long', month: 'short', day: 'numeric' });
+
+  // ---- the week: a card per day, workouts in order, + Add workout under each day ----
+  const weekHtml = () => {
     const days = Array.from({ length: 7 }, (_, i) => addDays(B.week, i));
     return days.map((d) => {
-      const past = d < data.today, picked = B.days.includes(d);
-      const there = data.upcoming.filter((u) => u.day === d);
-      const rank = (u) => (/warm/i.test(u.name) ? 0 : /cool/i.test(u.name) ? 2 : 1);   // warm up, the work, cool down
-      const lines = there.slice().sort((a, b) => rank(a) - rank(b)).map((u) => `<span class="wgl"><span class="a num">${esc(u.name || u.workoutId)}</span><span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span><small>${esc(u.squad)} · ${esc(u.session)}</small></span>`).join('');
-      return `<button type="button" class="wg${picked ? ' pick' : ''}${lines ? '' : ' add'}" data-day="${d}"${past ? ' disabled' : ''} aria-pressed="${picked}"><b>${esc(dayLabel(d))}</b>${lines ? `<span class="wglist">${lines}</span>` : ''}<span class="${lines ? 'wgmark' : 'muted'}">${picked ? '✓ This workout' : past ? '' : '+ Add'}</span></button>`;
+      const past = d < data.today, there = data.upcoming.map((u, i) => ({ u, i })).filter((x) => x.u.day === d);
+      const cards = there.map(({ u, i }, n) => {
+        const sel = B.open && sameKey(B.edit && B.edit.key, keyOf(u)), sum = (lib(u.workoutId) || {}).summary || '';
+        const arrows = past ? '' : `<span class="pmv"><button type="button" class="xbtn sm" data-mv="${i}:-1"${n === 0 || busy ? ' disabled' : ''} aria-label="Move ${esc(u.name || u.workoutId)} earlier">↑</button><button type="button" class="xbtn sm" data-mv="${i}:1"${n === there.length - 1 || busy ? ' disabled' : ''} aria-label="Move ${esc(u.name || u.workoutId)} later">↓</button></span>`;
+        return `<div class="pcard${sel ? ' sel' : ''}"><div class="phd"><span class="eyebrow">Workout ${n + 1}</span>${arrows}</div>
+          <button type="button" class="pmain" data-edit="${i}"${past ? ' disabled' : ''} aria-label="${past ? '' : 'Edit '}${esc(u.name || u.workoutId)}, ${esc(dayShort(d))}">
+            <b>${esc(u.name || u.workoutId)}</b>${sum ? `<span class="num">${esc(sum)}</span>` : ''}
+            <small>${esc(u.squad)} · ${esc(u.session)} <span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span></small>${u.notes ? `<small class="pnote">${esc(u.notes)}</small>` : ''}</button></div>`;
+      }).join('');
+      const adding = B.open && !B.edit && B.day === d;
+      return `<section class="pday${adding ? ' pick' : ''}"><header><b>${esc(fmtDate(d, { weekday: 'short' }))}</b> <span class="num">${toDate(d).getUTCDate()}</span><small>${there.length ? `${there.length} planned` : ''}</small></header>
+        ${cards || '<p class="muted">No workouts yet</p>'}
+        <button type="button" class="padd${adding ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${adding ? 'Adding below ↓' : '+ Add workout'}</button></section>`;
     }).join('');
   };
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
 
-  const draw = () => {
-    const [pt, pn] = pvHtml();
-    const builder = B.mode === 'new' ? `
-      <div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic, Monday' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
-        <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold, Wednesday”'}</span></div>
+  // ---- the editor: opens under the week, names its day ----
+  const editorHtml = () => {
+    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap “+ Add workout” under a day to build one for that day, or tap a workout to change it.</p></div>`;
+    const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
+    const saved = data.library.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${data.library.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
+    const using = B.useId ? lib(B.useId) : null;
+    const builder = B.useId
+      ? `<div class="card"><div class="eyebrow">Using saved workout</div><div class="big num">${esc(using ? using.name : B.useId)}</div><p class="note">${esc(using ? using.summary : '')} Used exactly as saved.</p><button type="button" class="btn ghost sm" data-ownbuild="1">Build my own instead</button></div>`
+      : `<div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
+        <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
       ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable']], B.type, 'data-type')}
       ${fields()}
-      <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`
-      : `<label class="f">Saved workout<select class="in" data-k="workoutId">${data.library.map((w) => `<option value="${esc(w.id)}"${w.id === B.workoutId ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select></label>`;
-    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>${B.mode === 'new' ? 'Add workout' : 'Schedule a saved workout'}</h1></div>
-        <div class="seg" role="group" aria-label="What to do"><button type="button" data-mode="new" aria-pressed="${B.mode === 'new'}">New workout</button><button type="button" data-mode="old" aria-pressed="${B.mode === 'old'}"${data.library.length ? '' : ' disabled'}>Saved workout</button></div></div>
-      ${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}
-      <div class="cols w"><div class="pstack">${builder}
-        <div class="fgrid"><label class="f">Squad<select class="in" data-k="squad">${opt(['All', 'Varsity', 'Novice'], B.squad)}</select></label><label class="f">Session<select class="in" data-k="session">${opt(['Practice', 'OYO'], B.session)}</select></label></div>
-        ${fld('Notes for the day (athletes and coaches see this)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
-        <div class="actions"><button class="btn ghost${busy && busyKind === 'draft' ? ' busy' : ''}" type="button" data-save="draft"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'draft' ? 'Saving…' : 'Save draft'}</span></button><button class="btn${busy && busyKind === 'publish' ? ' busy' : ''}" type="button" data-save="publish"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'publish' ? 'Publishing…' : 'Save and publish'}</span></button></div>
-        ${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}
-      </div><div class="pstack"><div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">Week of ${esc(weekLabel())} · tap a day to put this workout on it</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div>
-        <div class="weekgrid">${weekGrid()}</div>
-        <p class="note">Drafts hidden until published. No days highlighted: saved to library only.</p></div></div>`;
+      <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
+    const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
+    const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}">${esc(dayShort(d))}</button>`).join('')}</div></div>`;
+    const nDays = 1 + B.also.length, on = nDays > 1 ? ` on ${nDays} days` : '';
+    const dis = busy ? ' disabled' : '';
+    const label = (kind, idle, doing) => (busy && busyKind === kind ? doing : idle);
+    const actions = editing
+      ? `<div class="actions pedit">${asking
+          ? `<span class="wgask" role="group" aria-label="Confirm delete"><span>Athletes can see this one. Remove it from ${esc(dayShort(day))}? It stays in your saved workouts.</span><button type="button" class="btn sm danger" data-rmyes="1"${dis}>${label('remove', 'Yes, delete', 'Deleting…')}</button><button type="button" class="btn ghost sm" data-rmno="1"${dis}>Keep it</button></span>`
+          : `<button type="button" class="btn ghost danger-o" data-del="1"${dis}>Delete workout</button>`}
+          <button type="button" class="btn ghost" data-cancel="1"${dis}>Cancel</button><button type="button" class="btn${busy && busyKind === 'update' ? ' busy' : ''}" data-update="1"${dis}><span class="spinner" aria-hidden="true"></span><span class="label">${label('update', 'Save changes', 'Saving…')}</span></button></div>`
+      : `<div class="actions"><button type="button" class="btn ghost" data-cancel="1"${dis}>Cancel</button><button class="btn ghost${busy && busyKind === 'draft' ? ' busy' : ''}" type="button" data-save="draft"${dis}><span class="spinner" aria-hidden="true"></span><span class="label">${label('draft', 'Save draft' + on, 'Saving…')}</span></button><button class="btn${busy && busyKind === 'publish' ? ' busy' : ''}" type="button" data-save="publish"${dis}><span class="spinner" aria-hidden="true"></span><span class="label">${label('publish', 'Save and publish' + on, 'Publishing…')}</span></button></div>`;
+    return `<section class="card peditor pstack" id="peditor"><div class="eyebrow">${editing ? 'Editing' : 'Adding to'} · ${esc(dayLong(day))}</div><h2>${editing ? 'Edit workout' : 'Add workout'}</h2>
+      ${saved}${builder}
+      <div class="fgrid"><label class="f">Squad<select class="in" data-k="squad">${opt(['All', 'Varsity', 'Novice'], B.squad)}</select></label><label class="f">Session<select class="in" data-k="session">${opt(['Practice', 'OYO'], B.session)}</select></label></div>
+      ${fld('Notes for the day (athletes and coaches see this)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
+      ${editing ? `<div class="f">Who can see it${seg([['draft', 'Draft (hidden)'], ['published', 'Published']], B.published ? 'published' : 'draft', 'data-pub')}</div>` : ''}
+      ${also}${actions}${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}</section>`;
+  };
+
+  const draw = () => {
+    app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>Plan workouts</h1></div>
+        <div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div></div>
+      <div id="pnotice">${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
+      <div class="pweek">${weekHtml()}</div>
+      <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
+      ${editorHtml()}`;
     wire();
+    if (scrollTo) { const el = app.querySelector(scrollTo); scrollTo = ''; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   };
 
   // Keystrokes update the numbers and the preview in place, so typing never loses its place.
@@ -178,76 +238,129 @@ export function openPlan(v, ctx) {
     if (k === 'rw') B.rows[B.by][i].w = val; else if (k === 'rr') B.rows[B.by][i].r = val;
     else if (k === 'nl') B.nl = val; else B[k] = val;
   };
-
-  const fill = () => {
-    const o = parseNL(B.nl);
-    if (!o.type) { nlMsg = { err: 1, t: 'I could not read that. Try “6 × 30:00 with 1:30 rest, aerobic, Monday”.' }; draw(); return; }
+  const apply = (o) => {
     B.type = o.type; B.by = o.by;
     if (o.type === 'single') B.single = o.single;
     if (o.type === 'intervals') { B.n = o.n; B.work = o.work; B.rest = o.rest; }
     if (o.type === 'variable') B.rows[o.by] = o.rows;
     if (o.cat) B.cat = o.cat;
-    if (o.day !== undefined) { const d = addDays(B.week, o.day); if (d >= data.today && !B.days.includes(d)) B.days.push(d); }
-    if (!nameTouched && (o.cat || o.day !== undefined)) B.name = (o.day !== undefined ? DAYFULL[o.day] + ' ' : '') + (o.cat ? o.cat.toLowerCase() : 'workout');
+  };
+
+  const fill = () => {
+    const o = parseNL(B.nl);
+    if (!o.type) { nlMsg = { err: 1, t: 'I could not read that. Try “6 × 30:00 with 1:30 rest, aerobic”.' }; draw(); return; }
+    apply(o);
+    if (o.day !== undefined && !B.edit) { const d = addDays(B.week, o.day); if (d !== B.day && d >= data.today && !B.also.includes(d)) B.also.push(d); }
+    if (!nameTouched && !B.name.trim() && (o.cat || o.day !== undefined)) B.name = (o.day !== undefined ? DAYFULL[o.day] + ' ' : '') + (o.cat ? o.cat.toLowerCase() : 'workout');
     nlMsg = { t: 'Filled in below. Check the numbers, then save.' };
     draw();
   };
 
+  const resetBuilder = () => {
+    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', also: [] });
+    B.rows = { distance: PRESET.distance(), time: PRESET.time() };
+    nameTouched = false; nlMsg = null; asking = false;
+  };
+  const openAdd = (d) => { err = msg = ''; resetBuilder(); B.open = true; B.edit = null; B.day = d; scrollTo = '#peditor'; draw(); };
+  const openEdit = (i) => {
+    const u = data.upcoming[i]; if (!u) return;
+    err = msg = ''; resetBuilder();
+    const l = lib(u.workoutId), parsed = l && fromPieces(l.pieces, l.name);
+    B.open = true; B.edit = { key: keyOf(u) }; B.day = u.day;
+    B.squad = u.squad; B.session = u.session; B.notes = u.notes || ''; B.published = !!u.published; B.name = u.name || '';
+    if (parsed) { apply(parsed); nameTouched = true; } else B.useId = u.workoutId;
+    scrollTo = '#peditor'; draw();
+  };
+  const usePick = () => {
+    const l = lib(B.pick); if (!l) return;
+    const parsed = fromPieces(l.pieces, l.name);
+    if (parsed) { apply(parsed); B.name = l.name; B.useId = ''; nameTouched = true; nlMsg = { t: `Loaded “${l.name}”. Change anything, then save.` }; }
+    else { B.useId = l.id; nlMsg = null; }
+    draw();
+  };
+
   function wire() {
-    app.querySelectorAll('[data-mode]').forEach((b) => { b.onclick = () => { B.mode = b.dataset.mode; msg = err = ''; draw(); }; });
+    app.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => openAdd(b.dataset.add); });
+    app.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => openEdit(Number(b.dataset.edit)); });
+    app.querySelectorAll('[data-mv]').forEach((b) => { b.onclick = () => { const [i, d] = b.dataset.mv.split(':').map(Number); act({ move: { key: keyOf(data.upcoming[i]), dir: d } }, 'move', '').then(() => draw()); }; });
     app.querySelectorAll('[data-type]').forEach((b) => { b.onclick = () => { B.type = b.dataset.type; draw(); }; });
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });
+    app.querySelectorAll('[data-pub]').forEach((b) => { b.onclick = () => { B.published = b.dataset.pub === 'published'; draw(); }; });
+    app.querySelectorAll('[data-also]').forEach((b) => { b.onclick = () => { const d = b.dataset.also, i = B.also.indexOf(d); if (i >= 0) B.also.splice(i, 1); else B.also.push(d); B.also.sort(); draw(); }; });
     app.querySelectorAll('input[data-k]').forEach((el) => {
       el.oninput = () => {
         setK(el.dataset.k, el.value, Number(el.dataset.i));
         if (el.dataset.k === 'name') nameTouched = true;
-        if (el.dataset.k !== 'nl' && el.dataset.k !== 'name') refreshPreview();
+        if (el.dataset.k !== 'nl' && el.dataset.k !== 'name' && el.dataset.k !== 'notes') refreshPreview();
       };
       if (el.dataset.k === 'nl') el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); fill(); } };
       else el.onchange = draw;   // redraw once a field is left, so a wrong number is marked
     });
     app.querySelectorAll('select[data-k]').forEach((el) => { el.onchange = () => { setK(el.dataset.k, el.value); if (el.dataset.k === 'cat') refreshPreview(); }; });
     const f = app.querySelector('[data-fill]'); if (f) f.onclick = fill;
+    const up = app.querySelector('[data-usepick]'); if (up) up.onclick = usePick;
+    const ob = app.querySelector('[data-ownbuild]'); if (ob) ob.onclick = () => { B.useId = ''; draw(); };
     app.querySelectorAll('[data-delrow]').forEach((b) => { b.onclick = () => { B.rows[B.by].splice(Number(b.dataset.delrow), 1); draw(); }; });
     const add = app.querySelector('[data-addrow]'); if (add) add.onclick = () => { B.rows[B.by].push({ w: '', r: '' }); draw(); };
     const clr = app.querySelector('[data-clearrows]'); if (clr) clr.onclick = () => { B.rows[B.by] = [{ w: '', r: '' }, { w: '', r: '' }]; draw(); };
-    app.querySelectorAll('[data-day]').forEach((b) => {
-      b.onclick = () => { const d = b.dataset.day, i = B.days.indexOf(d); if (i >= 0) B.days.splice(i, 1); else B.days.push(d); B.days.sort(); draw(); };
-    });
     app.querySelectorAll('[data-wk]').forEach((b) => { b.onclick = () => { B.week = addDays(B.week, 7 * Number(b.dataset.wk)); draw(); }; });
     app.querySelectorAll('[data-save]').forEach((b) => { b.onclick = () => save(b.dataset.save === 'publish'); });
+    const cn = app.querySelector('[data-cancel]'); if (cn) cn.onclick = () => { B.open = false; B.edit = null; asking = false; err = msg = ''; draw(); };
+    const up2 = app.querySelector('[data-update]'); if (up2) up2.onclick = update;
+    const del = app.querySelector('[data-del]'); if (del) del.onclick = () => { if (B.published) { asking = true; draw(); } else remove(); };
+    const ry = app.querySelector('[data-rmyes]'); if (ry) ry.onclick = remove;
+    const rn = app.querySelector('[data-rmno]'); if (rn) rn.onclick = () => { asking = false; draw(); };
   }
 
-  const save = async (publish) => {
+  // What the editor holds as the saved workout: new pieces from the builder, or a saved one used as is.
+  const workoutPart = () => {
+    if (B.useId) return { part: { workoutId: B.useId } };
+    const built = buildPieces(B);
+    if (!B.name.trim()) return { err: 'Give the workout a name.' };
+    if (built.err) return { err: 'Fix the numbers first. ' + built.err };
+    return { part: { name: B.name.trim(), pieces: built.pieces } };
+  };
+
+  // One call to /api/workouts; every answer carries the Sheet's fresh week.
+  const act = async (body, kind, done) => {
+    if (busy) return false;
     err = msg = '';
-    const body = { dates: B.days, squad: B.squad, session: B.session, publish, notes: B.notes.trim() };
-    if (B.mode === 'new') {
-      const built = buildPieces(B);
-      if (!B.name.trim()) { err = 'Give the workout a name.'; draw(); return; }
-      if (built.err) { err = 'Fix the numbers first. ' + built.err; draw(); return; }
-      body.name = B.name.trim(); body.pieces = built.pieces;
-    } else {
-      body.workoutId = B.workoutId;
-      if (!B.days.length) { err = 'Tap at least one day.'; draw(); return; }
-    }
-    busy = true; busyKind = publish ? 'publish' : 'draft'; draw();
+    busy = true; busyKind = kind; draw();
+    let ok = false;
     try {
       const res = await fetch('/api/workouts', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) });
       const out = await res.json().catch(() => ({}));
-      if (res.status === 401) { ctx.signedOut(); return; }
-      if (!res.ok) { err = out.error || 'Nothing was saved.'; busy = false; draw(); return; }
-      data = out; if (ctx.saved) ctx.saved(out);
-      const n = B.days.length;
-      msg = B.mode === 'new'
-        ? `Saved as ${out.savedId}${n ? ` and put on ${n} day${n > 1 ? 's' : ''}${publish ? ', published' : ' as a draft'}` : ' in the library'}.`
-        : `Scheduled${publish ? ' and published' : ' as a draft'}.`;
-      B.days = []; B.notes = '';
-      if (B.mode === 'new') { B.name = ''; nameTouched = false; B.nl = ''; nlMsg = null; B.workoutId = out.savedId || B.workoutId; }
-    } catch { err = 'Could not reach the site. Check the week before saving again.'; }
-    busy = false;
-    draw();
+      if (res.status === 401) { ctx.signedOut(); return false; }
+      if (!res.ok) err = out.error || 'Nothing was saved.';
+      else { data = out; if (ctx.saved) ctx.saved(out); msg = typeof done === 'function' ? done(out) : done; ok = true; }
+    } catch { err = 'Could not reach the site. Check the week before trying again.'; }
+    busy = false; asking = false;
+    return ok;
   };
+  const after = (ok) => { if (ok) { B.open = false; B.edit = null; } scrollTo = '#pnotice'; draw(); };
+
+  const save = async (publish) => {
+    const w = workoutPart();
+    if (w.err) { err = w.err; draw(); return; }
+    const dates = [B.day, ...B.also].sort();
+    const ok = await act({ dates, squad: B.squad, session: B.session, publish, notes: B.notes.trim(), ...w.part }, publish ? 'publish' : 'draft',
+      () => `Added “${B.name || (lib(B.useId) || {}).name || 'workout'}” to ${dates.map(dayShort).join(', ')}${publish ? ', published' : ' as a draft'}.`);
+    after(ok);
+  };
+  const update = async () => {
+    const w = workoutPart();
+    if (w.err) { err = w.err; draw(); return; }
+    const ok = await act({ update: { key: B.edit.key, to: { squad: B.squad, session: B.session, notes: B.notes.trim(), publish: B.published, ...w.part } } }, 'update',
+      () => `Saved changes to ${dayShort(B.edit.key.day)}.`);
+    after(ok);
+  };
+  const remove = async () => {
+    const k = B.edit.key, u = data.upcoming.find((x) => sameKey(keyOf(x), k));
+    const ok = await act({ remove: k }, 'remove', () => `Deleted “${(u && u.name) || k.workoutId}” from ${dayShort(k.day)}. It is still in your saved workouts.`);
+    after(ok);
+  };
+
   draw();
   // Opened from the last answer: swap in the Sheet's current one unless a save is under way or the page has changed.
-  if (ctx.refresh) ctx.refresh.then((nv) => { if (!busy && ctx.stillHere()) { data = nv; draw(); } }).catch(() => {});
+  if (ctx.refresh) ctx.refresh.then((nv) => { if (!busy && !B.open && ctx.stillHere()) { data = nv; draw(); } }).catch(() => {});
 }

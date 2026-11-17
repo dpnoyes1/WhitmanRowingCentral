@@ -222,7 +222,10 @@ function buildWeekPlan(opts) {
   var rows = opts.schedule.filter(function (r) {
     return isDate_(r.Date) && r.Date >= start && r.Date < end && String(r['Workout ID']).trim() !== '' &&
       (!opts.publishedOnly || isActive_(r.Published));
-  }).sort(function (a, b) { return a.Date - b.Date; });
+  });
+  var nameById = {};
+  (opts.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in nameById)) nameById[id] = String(w.Name || ''); });
+  rows = scheduleSorted_(rows, function (id) { return nameById[String(id).trim()] || ''; });   // by day, then the coach's Order
 
   var flags = {};
   var noviceRows = {};
