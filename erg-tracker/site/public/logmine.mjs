@@ -1,4 +1,4 @@
-// Athlete "Log a workout": a phone form for a run, ride, swim and so on, saved for herself only (David, 2026-11-12).
+// Athlete "Log activity": a phone form for a run, ride, swim and so on, saved for herself only (David, 2026-11-12).
 // Distance in miles, kilometers or meters; the site sends meters. Erg work is not logged here.
 import { shrinkPhoto } from './photo.mjs';
 
@@ -29,7 +29,7 @@ export function openLogMine(ctx) {
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
   const draw = () => {
-    app.innerHTML = `<div class="head"><div><h1>Log a workout</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
+    app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
