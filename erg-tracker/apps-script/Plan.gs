@@ -88,7 +88,9 @@ function workoutPieces(workoutRows, workoutId) {
         lowPct: r['Target low %'] === '' || r['Target low %'] === undefined ? null : Number(r['Target low %']),
         highPct: r['Target high %'] === '' || r['Target high %'] === undefined ? null : Number(r['Target high %']),
         rate: String(r.Rate || '').trim(),
-        notes: String(r.Notes || '').trim()
+        notes: String(r.Notes || '').trim(),
+        unit: String(r.Unit || '').trim(),
+        paceS: String(r['Pace target'] === undefined ? '' : r['Pace target']).trim() ? parseTime(r['Pace target']) : null
       };
       if (type === 'Time') piece.workS = parseTime(r.Work);
       else if (type === 'Distance') piece.workM = Number(String(r.Work).replace(/\s*m$/i, ''));
@@ -98,14 +100,31 @@ function workoutPieces(workoutRows, workoutId) {
     });
 }
 
+/** Metres in a mile, for run distances kept in metres and shown in miles. */
+var METERS_PER_MILE = 1609.344;
+
+/** "3 mi" or "5 km" for a Run piece kept in metres, else "500m". Pure. */
+function pieceDistanceText_(p) {
+  if (p.activity === 'Run' && p.unit === 'km') return Math.round(p.workM / 10) / 100 + ' km';
+  if (p.activity === 'Run') return Math.round(p.workM / METERS_PER_MILE * 100) / 100 + ' mi';
+  return p.workM + 'm';
+}
+
+/** A coach's custom goal pace as text: "1:45.0 /500m", or "8:00 /mi" for a Run. '' when none. Pure. */
+function pieceGoalText_(p) {
+  if (!p.paceS) return '';
+  return formatTime(p.paceS).replace(/\.0$/, '') + (p.activity === 'Run' ? (p.unit === 'km' ? ' /km' : ' /mi') : ' /500m');
+}
+
 /** "3 x 20:00 r2:00 Aerobic" style label for one piece row. */
 function pieceLabel(p) {
-  var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : p.workM + 'm';
+  var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : pieceDistanceText_(p);
   var rest = p.startEveryS ? ' start every ' + formatTime(p.startEveryS).replace(/\.0$/, '')
     : p.restUndefined ? ' r undefined'
     : p.restS ? ' r' + formatTime(p.restS).replace(/\.0$/, '') : '';
   var rate = p.rate ? ' @ r' + p.rate : '';
-  return (p.reps > 1 ? p.reps + ' x ' : '') + work + rest + (p.zone ? ' ' + p.zone : '') + rate;
+  var goal = p.paceS ? ' goal ' + pieceGoalText_(p) : '';
+  return (p.activity === 'Run' ? 'Run ' : '') + (p.reps > 1 ? p.reps + ' x ' : '') + work + rest + (p.zone ? ' ' + p.zone : '') + rate + goal;
 }
 
 /**
@@ -115,6 +134,7 @@ function pieceLabel(p) {
  */
 function pieceTargetPct(p, settings) {
   if (p.activity !== 'Erg (RowErg)') return null;
+  if (p.paceS) return null;   // the coach typed a goal pace: that is the target, no % of her test
   // Sprint work (the builder's Sprint category = Anaerobic zone) never gets a target (David, 2026-11-16).
   if (p.zone === 'Anaerobic') return null;
   // Aerobic zones work like cycling power zones off FTP: % of her 20' watts first, the 2k only when she has no 20' (David, 2026-11-16).
@@ -222,7 +242,10 @@ function buildWeekPlan(opts) {
   var rows = opts.schedule.filter(function (r) {
     return isDate_(r.Date) && r.Date >= start && r.Date < end && String(r['Workout ID']).trim() !== '' &&
       (!opts.publishedOnly || isActive_(r.Published));
-  }).sort(function (a, b) { return a.Date - b.Date; });
+  });
+  var nameById = {};
+  (opts.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in nameById)) nameById[id] = String(w.Name || ''); });
+  rows = scheduleSorted_(rows, function (id) { return nameById[String(id).trim()] || ''; });   // by day, then the coach's Order
 
   var flags = {};
   var noviceRows = {};
@@ -240,6 +263,7 @@ function buildWeekPlan(opts) {
       var bases = {};
       Object.keys(bests).forEach(function (b) { if (bests[b]) bases[b] = bests[b].watts; });
       var targets = pieces.map(function (p) {
+        if (p.paceS) return { label: pieceLabel(p), text: pieceGoalText_(p) };   // custom goal pace: the same for everyone
         var pct = pieceTargetPct(p, s);
         if (!pct) return { label: pieceLabel(p), text: '' };
         var t = pieceTargetFromBases(p, bases, s);
@@ -305,7 +329,12 @@ function rowEquivalentIntervals(intervals, activity) {
  * status is 'in' | 'below' | 'above' | '' (no target). hit is null when no
  * piece had a target. Computed at display, never stored.
  */
-function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
+function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
+  // A planned run is matched loosely: reasonably close or longer counts, and its goal pace (if any) is checked (David, 2026-11-17).
+  if (String(activity || '') === 'Run' && pieces.length && pieces.every(function (p) { return p.activity === 'Run'; })) {
+    var loose = checkRunAgainstPlan_(intervals, pieces, settings);
+    if (loose) return loose;
+  }
   var planned = [];
   pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
   var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
@@ -329,8 +358,14 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
         out.matches = false;
         out.reason = 'Interval ' + (i + 1) + ' is not ' + pieceLabel(Object.assign({}, p, { reps: 1 }));
       }
+      var goalW = p.paceS && p.activity === 'Erg (RowErg)' ? wattsFromSplit(p.paceS) : null;
       var t = pieceTargetFromBases(p, baseWatts, settings);
-      if (t && watts) {
+      if (goalW && watts) {
+        // A custom goal pace is met at that pace or faster, or within the tolerance of it.
+        anyTarget = true;
+        row.status = watts >= goalW * (1 - tol) ? 'in' : 'below';
+        if (row.status !== 'in') allIn = false;
+      } else if (t && watts) {
         anyTarget = true;
         var lo = t.range ? t.lowW : t.lowW * (1 - tol);
         var hi = t.range ? t.highW : t.highW * (1 + tol);
@@ -341,6 +376,44 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
     out.intervals.push(row);
   });
   out.hit = anyTarget ? allIn : null;
+  return out;
+}
+
+/**
+ * A logged run against a planned run. It matches when the logged total is at least 90% of the planned total
+ * (time for a plan by time, meters for one by distance); longer always counts. A goal pace is met at that pace
+ * or faster, or within the single-target tolerance. Null when the plan mixes time and distance (the usual check runs).
+ */
+function checkRunAgainstPlan_(intervals, pieces, settings) {
+  var byTime = pieces.every(function (p) { return p.workType === 'Time'; });
+  var byDist = pieces.every(function (p) { return p.workType === 'Distance'; });
+  if (!byTime && !byDist) return null;
+  var tol = Number(settings['target.single_tolerance_pct'] || 2) / 100;
+  var planned = [];
+  pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
+  var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
+  var planS = 0, planM = 0, ws = 0, wm = 0;
+  planned.forEach(function (p) { planS += p.workS || 0; planM += p.workM || 0; });
+  done.forEach(function (iv) { ws += Number(iv['Work s']) || 0; wm += Number(iv['Work m']) || 0; });
+  var out = { matches: true, reason: '', hit: null, logged: done.length, planned: planned.length, intervals: [] };
+  var plan = byTime ? planS : planM, got = byTime ? ws : wm;
+  if (got > 0 && plan > 0 && got < plan * 0.9) {
+    out.matches = false;
+    out.reason = 'Run is ' + Math.round(got / plan * 100) + '% of the plan';
+  }
+  var anyGoal = false, allIn = true;
+  done.forEach(function (iv, i) {
+    var p = planned[Math.min(i, planned.length - 1)], row = { n: i + 1, watts: null, status: '' };
+    var s = Number(iv['Work s']), m = Number(iv['Work m']);
+    if (p && p.paceS && s > 0 && m > 0) {
+      anyGoal = true;
+      var pace = s / (m / (p.unit === 'km' ? 1000 : METERS_PER_MILE));   // seconds per mile or km
+      row.status = pace <= p.paceS * (1 + tol) ? 'in' : 'below';
+      if (row.status !== 'in') allIn = false;
+    }
+    out.intervals.push(row);
+  });
+  out.hit = anyGoal ? allIn : null;
   return out;
 }
 

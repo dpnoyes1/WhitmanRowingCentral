@@ -16,7 +16,7 @@ import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { paceText, parseDuration } from '../public/logmine.mjs';
-import { parseNL, buildPieces, previewOf } from '../public/plan.mjs';
+import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
 import { handlePassword } from '../functions/password.mjs';
 import { handleCoaches } from '../functions/coaches.mjs';
@@ -2552,6 +2552,33 @@ test('weights page: coaches only, goes to the Sheet with the feed key, weight ne
   assert.ok(!/weight ?lb|"lb"/i.test(wfeed), 'the feed carries no weight');
 });
 
+test('plan page: a saved workout loads back into the builder, or says it cannot', () => {
+  const plain = { act: 'Erg (RowErg)', unit: 'mi', paceOn: false, pace: '' };
+  const round = (B) => fromPieces(buildPieces({ ...plain, ...B }).pieces, 'x');
+  const base = { cat: 'Threshold', by: 'distance', rows: { distance: [{ w: '2000', r: '8:00' }, { w: '1500', r: '' }], time: [] } };
+  assert.deepStrictEqual(round({ ...base, type: 'intervals', n: '8', work: '500', rest: '2:00' }), { ...plain, name: 'x', cat: 'Threshold', by: 'distance', type: 'intervals', n: '8', work: '500', rest: '2:00' });
+  assert.deepStrictEqual(round({ ...base, by: 'time', type: 'single', single: '30:00' }), { ...plain, name: 'x', cat: 'Threshold', by: 'time', type: 'single', single: '30:00' });
+  assert.deepStrictEqual(round({ ...base, type: 'variable' }), { ...plain, name: 'x', cat: 'Threshold', by: 'distance', type: 'variable', rows: [{ w: '2000', r: '8:00' }, { w: '1500', r: '' }] });
+  // A run by distance is stored in meters and comes back in the unit typed; a custom pace target survives the round trip.
+  const runB = { ...base, act: 'Run', type: 'single', by: 'distance', single: '3.1', unit: 'mi', paceOn: true, pace: '8:00' };
+  const runPieces = buildPieces(runB).pieces;
+  assert.deepStrictEqual({ w: runPieces[0].work, a: runPieces[0].activity, u: runPieces[0].unit, p: runPieces[0].pace }, { w: '4989', a: 'Run', u: 'mi', p: '8:00' });
+  assert.deepStrictEqual({ ...round(runB) }, { name: 'x', cat: 'Threshold', by: 'distance', act: 'Run', unit: 'mi', paceOn: true, pace: '8:00', type: 'single', single: '3.1' });
+  assert.strictEqual(round({ ...runB, unit: 'km', single: '5' }).single, '5', 'kilometers come back as typed');
+  assert.strictEqual(buildPieces({ ...runB, pace: '7' }).err.startsWith('Type the pace target'), true);
+  assert.ok(buildPieces({ ...runB, single: 'far' }).err);
+  assert.strictEqual(buildPieces({ ...base, type: 'single', by: 'time', single: '8:00', ...plain, paceOn: false }).pieces[0].pace, undefined, 'no pace unless the box is ticked');
+  const test2k = buildPieces({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).pieces[0];
+  assert.strictEqual(test2k.pace, '1:45.0');
+  assert.strictEqual(previewOf({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).note.includes('Goal pace 1:45.0'), true);
+  assert.strictEqual(parseNL('5k run threshold').act, 'Run');
+  assert.strictEqual(fromPieces([{ workType: 'Time', reps: '1', work: '20:00', lowPct: '80' }]), null, 'targets the builder cannot show');
+  assert.strictEqual(fromPieces([{ workType: 'Time', reps: '3', work: '20:00' }]), null, 'intervals with no rest');
+  assert.strictEqual(fromPieces([{ workType: 'Time', reps: '2', work: '20:00', rest: '1:00' }, { workType: 'Time', reps: '1', work: '10:00' }]), null, 'mixed reps');
+  assert.strictEqual(fromPieces([{ workType: 'Time', work: '5:00', activity: 'Swim' }]), null, 'other activities');
+  assert.strictEqual(fromPieces([]), null);
+});
+
 test('workout builder: coaches only, whitelisted fields go to the Sheet, errors come back', async () => {
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
   const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
@@ -2579,6 +2606,40 @@ test('workout builder: coaches only, whitelisted fields go to the Sheet, errors 
   assert.strictEqual((await handleWorkouts(post(coach, body, { origin: 'https://evil.example' }), env, { fetchImpl: sheet(ok) })).status, 400);
   assert.strictEqual((await handleWorkouts(post(coach, {}), env, { fetchImpl: sheet(ok) })).status, 400);
   assert.strictEqual((await handleWorkouts(post(coach, body), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  // Removing one session: only the four naming fields go on, coaches only, bad input never reaches the Sheet.
+  const n0 = calls.length;
+  res = await handleWorkouts(post(coach, { remove: { day: '2026-11-18', workoutId: 'W7', squad: 'Varsity', session: 'Practice', evil: 'x' } }), env, { fetchImpl: sheet({ ...ok, removed: 1 }) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual((await res.json()).removed, 1);
+  assert.deepStrictEqual(calls[n0], { action: 'workout-delete', day: '2026-11-18', workoutId: 'W7', squad: 'Varsity', session: 'Practice', coachName: 'Pat Example', key: 'fake-key' });
+  assert.strictEqual((await handleWorkouts(post(athlete, { remove: { day: '2026-11-18', workoutId: 'W7' } }), env, { fetchImpl: sheet({}) })).status, 403);
+  for (const bad of [null, 'W7', [], {}, { day: 'tomorrow', workoutId: 'W7' }, { day: '2026-11-18' }]) {
+    assert.strictEqual((await handleWorkouts(post(coach, { remove: bad }), env, { fetchImpl: sheet({}) })).status, 400);
+  }
+  assert.strictEqual(calls.length, n0 + 1, 'bad removals never reach the Sheet');
+  assert.strictEqual((await handleWorkouts(post(coach, { remove: { day: '2026-11-18', workoutId: 'W7' } }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Past days stay as they were.' }) })).status, 422);
+  assert.strictEqual((await handleWorkouts(post(coach, { remove: { day: '2026-11-18', workoutId: 'W7' } }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  assert.strictEqual(calls[calls.length - 1].squad, 'All', 'a blank squad means All');
+  // Edit and move: key plus changes only; notes can be cleared; publish only when it is a real true/false.
+  const n1 = calls.length, key = { day: '2026-11-18', workoutId: 'W7', squad: 'Varsity', session: 'Practice' };
+  res = await handleWorkouts(post(coach, { update: { key: { ...key, evil: 1 }, to: { name: 'N', pieces: [{ workType: 'Time', work: '20:00', reps: 2 }], notes: '', publish: true, evil: 1 } } }), env, { fetchImpl: sheet({ ...ok, savedId: 'W9' }) });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(calls[n1].action, 'workout-update');
+  assert.deepStrictEqual({ ...calls[n1], to: undefined }, { action: 'workout-update', ...key, coachName: 'Pat Example', key: 'fake-key', to: undefined });
+  assert.strictEqual(calls[n1].to.notes, '', 'an empty note clears it');
+  assert.strictEqual(calls[n1].to.publish, true);
+  assert.strictEqual(calls[n1].to.evil, undefined);
+  await handleWorkouts(post(coach, { update: { key, to: { squad: 'Novice' } } }), env, { fetchImpl: sheet(ok) });
+  assert.strictEqual(calls[n1 + 1].to.publish, undefined, 'publish stays as it is unless sent');
+  assert.strictEqual(calls[n1 + 1].to.notes, undefined, 'notes stay as they are unless sent');
+  await handleWorkouts(post(coach, { move: { key, dir: 1 } }), env, { fetchImpl: sheet(ok) });
+  assert.deepStrictEqual(calls[n1 + 2], { action: 'workout-move', ...key, dir: 1, coachName: 'Pat Example', key: 'fake-key' });
+  const n2 = calls.length;
+  for (const bad of [{ move: { key, dir: 2 } }, { move: { key: {}, dir: 1 } }, { update: { key } }, { update: { key: {}, to: { notes: 'x' } } }, { update: { key, to: [] } }]) {
+    assert.strictEqual((await handleWorkouts(post(coach, bad), env, { fetchImpl: sheet(ok) })).status, 400);
+  }
+  assert.strictEqual((await handleWorkouts(post(athlete, { update: { key, to: { notes: 'x' } } }), env, { fetchImpl: sheet(ok) })).status, 403);
+  assert.strictEqual(calls.length, n2, 'bad edits never reach the Sheet');
   assert.strictEqual(cleanWorkoutBody({ name: 'x', pieces: new Array(13).fill({}) }), null);
   assert.strictEqual(cleanWorkoutBody({ name: 'x', dates: new Array(32).fill('2026-11-17'), pieces: [] }), null);
 });

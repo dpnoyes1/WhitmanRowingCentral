@@ -50,17 +50,19 @@ Date, Squad, Shift (Early / Late), Start, End, Window start, Window end (text HH
 | Work | m:ss for Time (20:00), meters for Distance (500 or 500m) |
 | Rest | m:ss, blank, or Undefined |
 | Start every | m:ss send-off for common starts (8 x 500m every 3:30). Rest is then treated as undefined |
-| Activity | Defaults to Erg (RowErg); only RowErg gets watts targets |
+| Activity | Defaults to Erg (RowErg); only RowErg gets watts targets. Run is also built from the site |
 | Zone | Aerobic / Threshold / Anaerobic |
 | Base | 2k / 20'. Blank = Settings `target.default_base` |
 | Target low %, Target high % | % of season-best watts on the base. Blank = zone default from Settings. Equal or one blank = single target |
 | Rate | Optional rate cap or target, shown as text |
 | Notes | |
+| Unit | `mi` or `km` for a Run by distance (Work is still meters). Blank otherwise |
+| Pace target | Optional custom goal pace typed m:ss: per 500m, or per mile/km for a Run. Replaces the % target on that piece and is the same for every athlete |
 
 Work, Rest and Start every are text typed like Settings values and parsed with `parseTime` when read; they are plan config, not logged data.
 
 ## Schedule
-Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID, Published (checkbox; unticked rows never reach athletes), Notes.
+Date, Squad (All / Varsity / Novice), Session (Practice / OYO), Workout ID, Published (checkbox; unticked rows never reach athletes), Notes, Order (position within the day, 1, 2, 3; blank on older rows, which read warm up, the work, cool down by workout name).
 
 Targets, plan matches and hits are computed when read (`Plan.gs`), never stored. Practices' "Planned workout" column is free text; the Schedule tab is what targets and plan checks use.
 

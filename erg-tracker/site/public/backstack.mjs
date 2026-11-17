@@ -61,7 +61,7 @@ export function parentOf(hash) {
 
 const LABELS = { team: 'Team', week: 'Week', athletes: 'Athletes', boards: 'Boards', stars: 'GMS Rating', insights: 'Insights',
   completion: 'Attendance', attendance: 'Attendance', lineups: 'Lineups', weights: 'Weights', plan: 'Plan workouts',
-  log: 'Log for an athlete', logrun: 'Log a workout', balance: 'Balance', settings: 'Settings', oyo: 'OYO', me: 'my page' };
+  log: 'Log for an athlete', logrun: 'Log activity', balance: 'Balance', settings: 'Settings', oyo: 'OYO', me: 'my page' };
 export function labelOf(hash) {
   const page = String(hash || '').replace(/^#\/?/, '').split('/')[0];
   return LABELS[page] || '';

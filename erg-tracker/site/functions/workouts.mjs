@@ -8,7 +8,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : v === undefined || v === null ? '' : typeof v === 'number' ? String(v) : null);
-const PIECE_KEYS = ['workType', 'reps', 'work', 'rest', 'startEvery', 'activity', 'zone', 'base', 'lowPct', 'highPct', 'rate', 'notes'];
+const PIECE_KEYS = ['workType', 'reps', 'work', 'rest', 'startEvery', 'activity', 'zone', 'base', 'lowPct', 'highPct', 'rate', 'notes', 'unit', 'pace'];
 
 /** Only whitelisted, size-limited fields go to the Sheet; the Sheet validates the content. */
 export function cleanWorkoutBody(body) {
@@ -40,6 +40,55 @@ export function cleanWorkoutBody(body) {
   return out;
 }
 
+/** The four fields that name one session on one day. Only these are sent on. */
+export function cleanRemoveBody(r) {
+  if (!r || typeof r !== 'object' || Array.isArray(r)) return null;
+  const day = str(r.day, 10), workoutId = str(r.workoutId, 40), squad = str(r.squad, 20), session = str(r.session, 20);
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(day || '') || !workoutId || squad === null || session === null) return null;
+  return { day, workoutId, squad: squad || 'All', session: session || 'Practice' };
+}
+
+/** What to change on one session. Fields left out stay as they are; notes may be cleared with an empty string. */
+export function cleanUpdateTo(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const t = cleanWorkoutBody({ ...raw, publish: false, dates: undefined });
+  if (!t) return null;
+  delete t.publish;
+  if (typeof raw.publish === 'boolean') t.publish = raw.publish;
+  if (typeof raw.notes === 'string') t.notes = raw.notes.slice(0, 200); else delete t.notes;
+  return t;
+}
+
+/** Remove, edit or move one session. The saved workout stays in the library. */
+async function sessionAction(kind, raw, who, fetchImpl, envFn) {
+  const key = cleanRemoveBody(kind === 'update' ? raw && raw.key : kind === 'move' ? raw && raw.key : raw);
+  if (!key) return json({ error: 'Pick a session first.' }, 400);
+  const payload = { ...key, coachName: who.name || 'Coach' };
+  if (kind === 'update') {
+    const to = cleanUpdateTo(raw.to);
+    if (!to) return json({ error: 'Nothing to change.' }, 400);
+    payload.to = to;
+  }
+  if (kind === 'move') {
+    if (raw.dir !== -1 && raw.dir !== 1) return json({ error: 'Move it up or down.' }, 400);
+    payload.dir = raw.dir;
+  }
+  const action = { remove: 'workout-delete', update: 'workout-update', move: 'workout-move' }[kind];
+  let out;
+  try {
+    out = await callSheet(envFn, fetchImpl, { action, ...payload });
+  } catch (err) {
+    console.error('workouts ' + kind + ' error:', err.message);
+    return json({ error: 'The Sheet did not answer, so check the week before trying again.' }, 502);
+  }
+  if (out.status === 'invalid') return json({ error: out.message }, 422);
+  if (out.status !== 'ok') {
+    console.error('workouts ' + kind + ' said:', out.error);
+    return json({ error: 'The Sheet could not do that. Nothing was changed.' }, 502);
+  }
+  return json({ today: out.today, library: out.library, upcoming: out.upcoming, removed: out.removed, savedId: out.savedId });
+}
+
 export async function handleWorkouts(req, envFn, deps = {}) {
   const who = await liveSession(envFn, req, deps);
   if (!who) return json({ error: 'signin' }, 401);
@@ -61,6 +110,9 @@ export async function handleWorkouts(req, envFn, deps = {}) {
   }
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
+  for (const kind of ['remove', 'update', 'move']) {
+    if (body && body[kind] !== undefined) return sessionAction(kind, body[kind], who, fetchImpl, envFn);
+  }
   const clean = cleanWorkoutBody(body || {});
   if (!clean || (!clean.workoutId && !clean.pieces)) return json({ error: 'Nothing to save.' }, 400);
   let out;
