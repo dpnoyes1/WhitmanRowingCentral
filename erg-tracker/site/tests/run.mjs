@@ -15,7 +15,7 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
-import { RUN_PHOTO_CHECK, compareRun, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
+import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
@@ -2910,6 +2910,17 @@ test('run photo check (built, switched off): reading and comparing a run screen'
     [{ distance: '4.96', distance_unit: 'mi', moving_time: '41:57.00', avg_pace: `8'27"`, pace_unit: '/mi' }, 7982, 2517],
     [{ distance: '3,22', distance_unit: 'km', moving_time: '0:30:48', elapsed_time: '0:36:36', avg_pace: `9'34"`, pace_unit: '/km' }, 3220, 1848],
   );
+  // Strava feed cards David sent (2026-11-17): time is spelled "21m 2s" or "2h 6m"
+  assert.deepStrictEqual(['21m 2s', '2h 6m', '10m 0s', '7m 42s', 'x', ''].map(parseSpelledTime), [1262, 7560, 600, 462, null, null]);
+  garmin.push(
+    [{ distance: '2.02', distance_unit: 'mi', moving_time: '21m 2s', avg_pace: '10:24', pace_unit: '/mi' }, 3251, 1262],
+    [{ distance: '6.39', distance_unit: 'mi', moving_time: '2h 6m', avg_pace: '', pace_unit: '' }, 10284, 7560],
+    [{ distance: '0.76', distance_unit: 'mi', moving_time: '7m 42s', avg_pace: '10:04', pace_unit: '/mi' }, 1223, 462],
+    [{ distance: '0.80', distance_unit: 'mi', moving_time: '10m 0s', avg_pace: '12:30', pace_unit: '/mi' }, 1287, 600],
+    [{ distance: '5.38', distance_unit: 'mi', moving_time: '48m 26s', avg_pace: '9:00', pace_unit: '/mi' }, 8658, 2906],
+    [{ distance: '5.25', distance_unit: 'mi', moving_time: '46m 5s', avg_pace: '8:46', pace_unit: '/mi' }, 8449, 2765],
+  );
+  assert.strictEqual(compareRun(normalizeRunRead({ app: 'Strava', person: 'Pat Example', activity: 'Run', date: '', distance: '3.38', distance_unit: 'mi', moving_time: '34m 2s', elapsed_time: '', avg_pace: '10:04', pace_unit: '/mi', flags: [] }), { meters: 5440, timeS: 2042, name: 'Sam Tester' }).verdict, 'close', 'a different name on the screenshot');
   for (const [g, m, t] of garmin) {
     const r = normalizeRunRead({ app: 'Garmin Connect', activity: 'Running', date: '', elapsed_time: '', flags: [], ...g });
     assert.deepStrictEqual([r.meters, r.movingS], [m, t], g.distance);
