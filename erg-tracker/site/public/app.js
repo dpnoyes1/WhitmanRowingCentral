@@ -754,12 +754,17 @@ function loadNote(ins, coach) {
     ${flagged.length ? `<b>${flagged.length} week${flagged.length > 1 ? 's' : ''} flagged.</b>` : 'No jumps in these weeks.'}</p>`;
 }
 
-function changeText(d, lowerBetter) {
+function changeText(d, lowerBetter, r) {
   if (d === null || d === undefined) return '';
   if (d === 0) return '<span class="muted">same</span>';
   const better = lowerBetter ? d < 0 : d > 0;
   const amt = lowerBetter ? `${Math.abs(d).toFixed(1)}s` : `${fmtNum(Math.abs(d))} m`;
-  return `<span class="${better ? 'good-text' : 'muted'}">${better ? '▲' : '▼'} ${amt} ${lowerBetter ? (better ? 'faster' : 'slower') : (better ? 'more' : 'less')}</span>`;
+  // Split difference per 500m (David, 2026-11-17): a 2k's split moves by a quarter of the time; a 20' compares the two splits.
+  let sd = null;
+  if (lowerBetter) sd = Math.abs(d) / 4;
+  else if (r && r.meters && r.meters - d > 0) sd = Math.abs(600000 / (r.meters - d) - 600000 / r.meters);
+  const splitTxt = sd !== null && sd >= 0.05 ? `<div class="small">${sd.toFixed(1)}s/500m ${better ? 'faster' : 'slower'}</div>` : '';
+  return `<span class="${better ? 'good-text' : 'muted'}">${better ? '▲' : '▼'} ${amt} ${lowerBetter ? (better ? 'faster' : 'slower') : (better ? 'more' : 'less')}${splitTxt}</span>`;
 }
 
 function progressCard(ins, coach) {
@@ -768,7 +773,7 @@ function progressCard(ins, coach) {
     : `<p>${Math.abs(t.changeS) < 0.5 ? 'About the same as' : `<b>${Math.abs(t.changeS).toFixed(1)}s/500m ${t.changeS < 0 ? 'faster' : 'slower'}</b> than`} ${t.weeksEach > 1 ? `the ${t.weeksEach} weeks before` : 'the week before'}
       <span class="muted">(${fmtTime(t.earlierS)} → ${fmtTime(t.recentS)})</span></p>`;
   const rows = (test) => ins.progress[test].slice().reverse().map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}<div class="muted small">${split(r)}</div></td>
-      <td class="r">${changeText(r.change, test === '2000m')}</td></tr>`).join('');
+      <td class="r">${changeText(r.change, test === '2000m', r)}</td></tr>`).join('');
   const table = (test) => ins.progress[test].length ? `<div><h3>${TEST_LABELS[test]}</h3><div class="table-wrap"><table>
       <tr><th>Date</th><th class="r">Result / split</th><th class="r">Change</th></tr>${rows(test)}</table></div></div>`
     : `<div><h3>${TEST_LABELS[test]}</h3><p class="muted">None this school year.</p></div>`;
