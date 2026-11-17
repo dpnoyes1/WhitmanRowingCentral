@@ -8,7 +8,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : v === undefined || v === null ? '' : typeof v === 'number' ? String(v) : null);
-const PIECE_KEYS = ['workType', 'reps', 'work', 'rest', 'startEvery', 'activity', 'zone', 'base', 'lowPct', 'highPct', 'rate', 'notes'];
+const PIECE_KEYS = ['workType', 'reps', 'work', 'rest', 'startEvery', 'activity', 'zone', 'base', 'lowPct', 'highPct', 'rate', 'notes', 'unit', 'pace'];
 
 /** Only whitelisted, size-limited fields go to the Sheet; the Sheet validates the content. */
 export function cleanWorkoutBody(body) {

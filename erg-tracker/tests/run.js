@@ -461,6 +461,11 @@ test('week plan: published filter, squads, missing-benchmark flag', () => {
   const two = pub.sessions[0].athletes.find(a => a.athleteId === 'A902');
   assert.strictEqual(two.targets[0].text, '', 'no benchmark, no target');
   assert.strictEqual(pub.flags.map(f => f.athleteId).join(), 'A902');
+  // A custom goal pace is everyone's target, even a rower with no 2k or 20' (no "no benchmark" flag for it).
+  const goalWk = g.workoutBuildRows_('WGOAL', { name: '2k test', pieces: [{ workType: 'Distance', work: '2000', pace: '1:45.0' }] }).rows;
+  const goalPlan = g.buildWeekPlan({ ...inputs, workouts: inputs.workouts.concat(goalWk), schedule: [{ Date: D(2026, 11, 3), Squad: 'All', Session: 'Practice', 'Workout ID': 'WGOAL', Published: true }], weekStart: D(2026, 11, 2), publishedOnly: true });
+  assert.deepStrictEqual(goalPlan.sessions[0].athletes.map(a => a.targets[0].text), goalPlan.sessions[0].athletes.map(() => '1:45 /500m'));
+  assert.strictEqual(goalPlan.flags.length, 0);
   const typo = g.buildWeekPlan({ ...inputs, schedule: [{ Date: D(2026, 11, 3), 'Workout ID': 'NOPE', Published: true }], weekStart: D(2026, 11, 2), publishedOnly: true });
   assert.match(typo.flags[0].message, /NOPE on 2026-11-03 is not on the Workouts tab/);
   const site = g.weekPlanForSite(inputs, D(2026, 11, 2));
@@ -1622,6 +1627,21 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.deepStrictEqual(J(g.scheduleMoveList_([4, 7, 9], 2, 1)), null, 'the last one cannot move down');
   assert.deepStrictEqual(J(g.scheduleMoveList_([4, 7, 9], 0, -1)), null, 'the first one cannot move up');
   assert.strictEqual(g.scheduleBuildRows_('W7', { dates: ['2026-11-16'] }, { '2026-11-16': 3 }).rows[0].Order, 3);
+  // Runs and custom goal pace: stored in meters with their unit, shown in miles or km, never a % target.
+  const runRows = g.workoutBuildRows_('W9', { name: 'Easy 5k', pieces: [{ workType: 'Distance', work: '5000', activity: 'Run', unit: 'km', pace: '5:30' }] });
+  assert.ok(!runRows.error, runRows.error);
+  assert.strictEqual(runRows.rows[0].Unit, 'km');
+  const runPiece = g.workoutPieces(runRows.rows, 'W9')[0];
+  assert.strictEqual(g.pieceLabel(runPiece), 'Run 5 km goal 5:30 /km');
+  assert.strictEqual(g.pieceTargetPct(runPiece, {}), null);
+  const mile = g.workoutPieces(g.workoutBuildRows_('W9', { name: 'Run', pieces: [{ workType: 'Distance', work: '4989', activity: 'Run' }] }).rows, 'W9')[0];
+  assert.strictEqual(g.pieceLabel(mile), 'Run 3.1 mi', 'a run by distance defaults to miles');
+  const t2k = g.workoutPieces(g.workoutBuildRows_('W9', { name: '2k test', pieces: [{ workType: 'Distance', work: '2000', zone: 'Threshold', pace: '1:45.0' }] }).rows, 'W9')[0];
+  assert.strictEqual(g.pieceLabel(t2k), '2000m Threshold goal 1:45 /500m');
+  assert.strictEqual(g.pieceGoalText_(t2k), '1:45 /500m');
+  assert.strictEqual(g.pieceTargetPct(t2k, { 'target.Threshold.2000m': '95' }), null, 'a goal pace replaces the % target');
+  ['0:20', '40:00', 'fast'].forEach(x => assert.ok(g.workoutBuildRows_('W9', { name: 'n', pieces: [{ workType: 'Time', work: '20:00', pace: x }] }).error, 'bad pace ' + x));
+  assert.ok(g.workoutBuildRows_('W9', { name: 'n', pieces: [{ workType: 'Time', work: '20:00', unit: 'mi' }] }).error, 'a unit is for runs only');
   // Saves reuse an identical saved workout instead of copying it.
   const lib = [{ 'Workout ID': 'W1', Name: 'Tue 20s', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '', 'Start every': '', Activity: 'Erg (RowErg)', Zone: '', Base: '', 'Target low %': '', 'Target high %': '', Rate: '', Notes: '' }];
   const same = g.workoutBuildRows_('W9', { name: 'Tue 20s', pieces: [{ workType: 'Time', reps: 3, work: '20:00' }] });

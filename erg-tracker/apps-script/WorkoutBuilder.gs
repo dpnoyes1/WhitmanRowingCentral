@@ -57,12 +57,23 @@ function workoutPieceRow_(workoutId, name, n, p) {
   if (base && !PLAN_BASES[base]) return { error: where + 'base must be 2k or 20\'.' };
   var activity = String(p.activity || 'Erg (RowErg)').trim();
   if (!ACTIVITIES.some(function (a) { return a[0] === activity; })) return { error: where + 'unknown activity.' };
+  // A Run by distance is kept in metres, with the unit (mi or km) the coach thinks in.
+  var unit = String(p.unit || '').trim();
+  if (activity === 'Run' && type === 'Distance' && !unit) unit = 'mi';
+  if (unit && !(activity === 'Run' && (unit === 'mi' || unit === 'km'))) return { error: where + 'unit is mi or km, for a run.' };
+  var pace = String(p.pace === undefined || p.pace === null ? '' : p.pace).trim();
+  if (pace) {
+    var paceS;
+    try { paceS = parseTime(pace); } catch (e) { paceS = null; }
+    if (!(paceS >= 60 && paceS <= 1500)) return { error: where + 'pace target is a time like 1:45.0 (per 500m), or 8:00 (per mile or km for a run).' };
+  }
   return {
     'Workout ID': workoutId, 'Name': name, 'Piece #': n, 'Reps': reps, 'Work type': type,
     'Work': type === 'Distance' ? work.replace(/\s*m$/i, '') : work,
     'Rest': rest, 'Start every': every, 'Activity': activity, 'Zone': zone, 'Base': base,
     'Target low %': low, 'Target high %': high, 'Rate': String(p.rate || '').trim().slice(0, 20),
-    'Notes': String(p.notes || '').trim().slice(0, 200)
+    'Notes': String(p.notes || '').trim().slice(0, 200),
+    'Unit': unit, 'Pace target': pace
   };
 }
 
@@ -135,7 +146,7 @@ function workoutListView_(workouts, schedule, fromDay) {
 /** One Workouts row for the site's editor: only the filled-in fields, as text. Pure. */
 function workoutPieceCompact_(w) {
   var map = { workType: 'Work type', reps: 'Reps', work: 'Work', rest: 'Rest', startEvery: 'Start every', activity: 'Activity', zone: 'Zone',
-    base: 'Base', lowPct: 'Target low %', highPct: 'Target high %', rate: 'Rate', notes: 'Notes' };
+    base: 'Base', lowPct: 'Target low %', highPct: 'Target high %', rate: 'Rate', notes: 'Notes', unit: 'Unit', pace: 'Pace target' };
   var o = {};
   Object.keys(map).forEach(function (k) {
     var v = w[map[k]];
@@ -203,6 +214,20 @@ function workoutFindSame_(existing, newRows) {
   return '';
 }
 
+/** Makes sure the Workouts tab has its Unit and Pace target headers (older Sheets get them on first save). */
+function workoutsEnsureColumns_() {
+  var sheet = tab_(TABS.WORKOUTS), heads = HEADERS[TABS.WORKOUTS];
+  ['Unit', 'Pace target'].forEach(function (h) {
+    var col = heads.indexOf(h) + 1;
+    if (sheet.getMaxColumns() < col) sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
+    var cell = sheet.getRange(1, col);
+    if (!String(cell.getValue() || '').trim()) {
+      cell.setValue(h).setFontWeight('bold');
+      if (h === 'Pace target') sheet.getRange(2, col, Math.max(sheet.getMaxRows() - 1, 1), 1).setNumberFormat('@');
+    }
+  });
+}
+
 /** Makes sure the Schedule tab has its Order header (older Sheets get it on first use, no setup run needed). */
 function scheduleEnsureOrderHeader_() {
   var sheet = tab_(TABS.SCHEDULE), col = HEADERS[TABS.SCHEDULE].indexOf('Order') + 1;
@@ -258,6 +283,7 @@ function processWorkoutSave_(body) {
       return { status: 'invalid', message: 'Already planned: ' + (names[id] || id) + ' for ' + dupes[0].Squad + ' ' + dupes[0].Session + ' on ' + dupes.map(function (r) { return dayKey_(r.Date); }).join(', ') + '. Nothing was saved.' };
     }
     if (wrows.length) {
+      workoutsEnsureColumns_();
       appendObjects_(TABS.WORKOUTS, wrows);
       logChange_({ Who: by, Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Workout', 'Old value': '', 'New value': wrows[0].Name + ' (' + wrows.length + ' pieces)', Note: 'site Plan page' });
     }
@@ -371,6 +397,7 @@ function processWorkoutUpdate_(body) {
       return { status: 'invalid', message: 'That workout is already planned for ' + squad + ' ' + session + ' on ' + key.day + '. Nothing was changed.' };
     }
     if (wrows.length) {
+      workoutsEnsureColumns_();
       appendObjects_(TABS.WORKOUTS, wrows);
       logChange_({ Who: by, Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Workout', 'Old value': '', 'New value': wrows[0].Name + ' (' + wrows.length + ' pieces)', Note: 'site Plan page (edit)' });
     }

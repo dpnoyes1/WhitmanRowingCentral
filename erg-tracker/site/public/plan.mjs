@@ -14,12 +14,25 @@ const tsec = (s) => { const m = /^(\d{1,3}):([0-5]\d)$/.exec(String(s).trim()); 
 const dnum = (s) => { const m = /^\d{2,5}$/.exec(String(s).replace(/[,\s]|m$/gi, '')); return m ? +m[0] : null; };
 const hms = (s) => { const h = Math.floor(s / 3600), m = Math.floor((s % 3600) / 60), r = s % 60; return h ? `${h}:${String(m).padStart(2, '0')}:${String(r).padStart(2, '0')}` : `${m}:${String(r).padStart(2, '0')}`; };
 const clean = (s) => String(s).replace(/[,\s]|m$/gi, '');
+const MILE = 1609.344, RUN = 'Run', ERG = 'Erg (RowErg)';
+/** A distance as typed: meters for an erg piece, miles or km (decimals allowed) for a run. null when not a number. */
+const distNum = (B, s) => {
+  if (B.act !== RUN) return dnum(s);
+  const t = clean(s);
+  return /^\d{1,3}(\.\d{1,2})?$/.test(t) && +t > 0 ? +t : null;
+};
+const toMeters = (B, v) => (B.act === RUN ? Math.round(+v * (B.unit === 'km' ? 1000 : MILE)) : +v);
+const distText = (B, v) => (B.act === RUN ? `${v} ${B.unit === 'km' ? 'km' : 'mi'}` : v + ' m');
+/** A custom pace target typed as m:ss or m:ss.d, between 1:00 and 25:00. */
+const paceOk = (s) => { const m = /^(\d{1,2}):([0-5]\d)(\.\d)?$/.exec(String(s).trim()); return !!m && +m[1] * 60 + +m[2] >= 60 && +m[1] * 60 + +m[2] <= 1500; };
+const paceUnit = (B) => (B.act === RUN ? (B.unit === 'km' ? 'per km' : 'per mile') : 'per 500m');
 
 /** Plain-language text -> builder fields. Exported for the tests. */
 export function parseNL(s) {
   const t = String(s).toLowerCase().replace(/×/g, 'x').replace(/\s+/g, ' ').trim(), o = {}, tm = (x) => (x.includes(':') ? x : x + ':00');
   const c = [['aerobic', 'Aerobic'], ['steady', 'Aerobic'], ['threshold', 'Threshold'], ['anaerobic', 'Sprint'], ['sprint', 'Sprint'], ['benchmark', 'Benchmark'], ['test', 'Benchmark']].find(([w]) => t.includes(w));
   if (c) o.cat = c[1];
+  if (/\brun(s|ning)?\b/.test(t)) { o.act = RUN; o.unit = /\bkm\b|kilomet/.test(t) ? 'km' : 'mi'; }
   const di = ['mon', 'tue', 'wed', 'thu', 'fri', 'sat', 'sun'].findIndex((d) => new RegExp('\\b' + d).test(t));
   if (di >= 0) o.day = di;
   const parts = t.split(/\bwith\b|\brest\b|@/), nums = parts[0].match(/\d[\d:]*/g) || [];
@@ -37,7 +50,7 @@ export function parseNL(s) {
   }
   if (nums.length === 1) {
     const km = /km/.test(t), isT = nums[0].includes(':') || /\bmin/.test(t);
-    o.type = 'single'; o.by = isT ? 'time' : 'distance'; o.single = isT ? tm(nums[0]) : String(km ? Math.round(parseFloat(nums[0]) * 1000) : nums[0]);
+    o.type = 'single'; o.by = isT ? 'time' : 'distance'; o.single = isT ? tm(nums[0]) : String(km && o.act !== RUN ? Math.round(parseFloat(nums[0]) * 1000) : nums[0]);
     return o;
   }
   return o;
@@ -46,10 +59,13 @@ export function parseNL(s) {
 /** The builder state -> the pieces the Sheet saves, or { err } in plain words. Exported for the tests. */
 export function buildPieces(B) {
   const tim = B.by === 'time', zone = ZONE_OF[B.cat] || '';
-  const bad = tim ? 'Type the time as minutes:seconds, like 30:00.' : 'Type the distance in meters, like 2000.';
-  const ok = (v) => (tim ? tsec(v) !== null : dnum(v) !== null);
+  const run = B.act === RUN;
+  const bad = tim ? 'Type the time as minutes:seconds, like 30:00.' : run ? `Type the distance in ${B.unit === 'km' ? 'kilometers' : 'miles'}, like 3.1.` : 'Type the distance in meters, like 2000.';
+  const ok = (v) => (tim ? tsec(v) !== null : distNum(B, v) !== null);
   const wt = tim ? 'Time' : 'Distance';
-  const piece = (work, rest, reps = 1) => ({ workType: wt, reps: String(reps), work: tim ? work.trim() : clean(work), rest: rest || '', startEvery: '', zone, base: '', lowPct: '', highPct: '', rate: '' });
+  if (B.paceOn && !paceOk(B.pace)) return { err: `Type the pace target as minutes:seconds ${paceUnit(B)}, like ${run ? '8:00' : '1:45.0'}.` };
+  const piece = (work, rest, reps = 1) => ({ workType: wt, reps: String(reps), work: tim ? work.trim() : String(toMeters(B, clean(work))), rest: rest || '', startEvery: '', zone, base: '', lowPct: '', highPct: '', rate: '',
+    ...(run ? { activity: RUN, ...(tim ? {} : { unit: B.unit === 'km' ? 'km' : 'mi' }) } : {}), ...(B.paceOn ? { pace: B.pace.trim() } : {}) });
   if (B.type === 'single') {
     if (!ok(B.single)) return { err: bad };
     return { pieces: [piece(B.single, '')] };
@@ -74,15 +90,16 @@ export function buildPieces(B) {
 export function previewOf(B) {
   const b = buildPieces(B);
   if (b.err) return { err: b.err };
-  const tim = B.by === 'time', fmtTot = (n) => (tim ? hms(n) : n.toLocaleString('en-US') + ' m');
-  const w = (x) => (tim ? tsec(x) : dnum(x));
-  if (B.type === 'single') { const n = w(B.single); return { text: tim ? hms(n) : n + ' m', note: 'One continuous piece' }; }
+  const tim = B.by === 'time', fmtTot = (n) => (tim ? hms(n) : B.act === RUN ? Math.round(n * 100) / 100 + (B.unit === 'km' ? ' km' : ' mi') : n.toLocaleString('en-US') + ' m');
+  const w = (x) => (tim ? tsec(x) : distNum(B, x));
+  const goal = B.paceOn ? ` · Goal pace ${B.pace.trim()} ${paceUnit(B).replace('per ', '/').replace('mile', 'mi').replace('500m', '500m')}` : '';
+  if (B.type === 'single') { const n = w(B.single); return { text: (B.act === RUN ? 'Run · ' : '') + (tim ? hms(n) : distText(B, n)), note: 'One continuous piece' + goal }; }
   if (B.type === 'intervals') {
     const n = +B.n, ww = w(B.work), r = tsec(B.rest);
-    return { text: `${n} × ${tim ? hms(ww) : ww + ' m'} / ${hms(r)}`, note: `Total work ${fmtTot(n * ww)} · ${n - 1} rest${n === 2 ? '' : 's'} of ${hms(r)}` };
+    return { text: `${B.act === RUN ? 'Run · ' : ''}${n} × ${tim ? hms(ww) : distText(B, ww)} / ${hms(r)}`, note: `Total work ${fmtTot(n * ww)} · ${n - 1} rest${n === 2 ? '' : 's'} of ${hms(r)}${goal}` };
   }
   const rows = B.rows[B.by], ws = rows.map((x) => w(x.w)), rs = rows.filter((x) => x.r.trim() !== '').map((x) => hms(tsec(x.r)));
-  return { text: ws.map((x) => (tim ? hms(x) : x)).join(' / ') + (tim ? '' : ' m') + (rs.length ? ' · rest ' + rs.join(' / ') : ''), note: `${rows.length} intervals · Total work ${fmtTot(ws.reduce((a, b) => a + b, 0))}` };
+  return { text: (B.act === RUN ? 'Run · ' : '') + ws.map((x) => (tim ? hms(x) : x)).join(' / ') + (tim ? '' : B.act === RUN ? (B.unit === 'km' ? ' km' : ' mi') : ' m') + (rs.length ? ' · rest ' + rs.join(' / ') : ''), note: `${rows.length} intervals · Total work ${fmtTot(ws.reduce((a, b) => a + b, 0))}${goal}` };
 }
 
 // Dates are handled as YYYY-MM-DD text; arithmetic goes through UTC so a daylight change never moves a day.
@@ -97,21 +114,30 @@ export function fromPieces(pieces, name = '') {
   if (!Array.isArray(pieces) || !pieces.length || pieces.length > 12) return null;
   const types = new Set(pieces.map((p) => p.workType));
   if (types.size !== 1 || !['Time', 'Distance'].includes(pieces[0].workType)) return null;
-  if (pieces.some((p) => p.startEvery || p.base || p.lowPct || p.highPct || p.rate || p.notes || (p.activity && p.activity !== 'Erg (RowErg)'))) return null;
+  if (pieces.some((p) => p.startEvery || p.base || p.lowPct || p.highPct || p.rate || p.notes)) return null;
+  const acts = new Set(pieces.map((p) => p.activity || ERG)), paces = new Set(pieces.map((p) => p.pace || ''));
+  const units = new Set(pieces.map((p) => p.unit || ''));
+  if (acts.size !== 1 || paces.size !== 1 || ![ERG, RUN].includes([...acts][0])) return null;
+  const act = [...acts][0], pace = [...paces][0], unit = act === RUN ? ([...units][0] === 'km' ? 'km' : 'mi') : '';
+  if (act === ERG && [...units][0]) return null;
+  if (pace && !paceOk(pace)) return null;
   const zones = new Set(pieces.map((p) => p.zone || ''));
   if (zones.size !== 1) return null;
-  const by = pieces[0].workType === 'Time' ? 'time' : 'distance', ok = (v) => (by === 'time' ? tsec(v) !== null : dnum(v) !== null);
+  const by = pieces[0].workType === 'Time' ? 'time' : 'distance';
+  const ok = (v) => (by === 'time' ? tsec(v) !== null : dnum(v) !== null);
   const cat = { Aerobic: 'Aerobic', Threshold: 'Threshold', Anaerobic: 'Sprint', '': 'Other' }[[...zones][0]];
   if (!cat || pieces.some((p) => !ok(p.work || '') || (p.rest && tsec(p.rest) === null))) return null;
-  const reps = (p) => +(p.reps || 1), o = { name, cat, by };
+  // A run by distance is kept in meters; show it back in the unit the coach typed.
+  const shown = (p) => (by === 'time' ? p.work : act === RUN ? String(Math.round(+clean(p.work) / (unit === 'km' ? 1000 : MILE) * 100) / 100) : clean(p.work));
+  const reps = (p) => +(p.reps || 1), o = { name, cat, by, act, unit: unit || 'mi', paceOn: !!pace, pace };
   if (pieces.length === 1) {
     const p = pieces[0];
-    if (reps(p) === 1 && !p.rest) return { ...o, type: 'single', single: by === 'time' ? p.work : clean(p.work) };
+    if (reps(p) === 1 && !p.rest) return { ...o, type: 'single', single: shown(p) };
     if (!p.rest || tsec(p.rest) === null || reps(p) < 1 || reps(p) > 99) return null;
-    return { ...o, type: 'intervals', n: String(reps(p)), work: by === 'time' ? p.work : clean(p.work), rest: p.rest };
+    return { ...o, type: 'intervals', n: String(reps(p)), work: shown(p), rest: p.rest };
   }
   if (pieces.some((p) => reps(p) !== 1)) return null;
-  return { ...o, type: 'variable', rows: pieces.map((p) => ({ w: by === 'time' ? p.work : clean(p.work), r: p.rest || '' })) };
+  return { ...o, type: 'variable', rows: pieces.map((p) => ({ w: shown(p), r: p.rest || '' })) };
 }
 
 export function openPlan(v, ctx) {
@@ -120,7 +146,7 @@ export function openPlan(v, ctx) {
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
-    open: false, edit: null, day: '', also: [], useId: '', pick: '',
+    open: false, edit: null, day: '', also: [], useId: '', pick: '', act: ERG, unit: 'mi', paceOn: false, pace: '',
     notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
     rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice', published: false,
     week: startWeek()
@@ -132,7 +158,7 @@ export function openPlan(v, ctx) {
   const seg = (items, cur, attr, cls = '') => `<div class="seg fill ${cls}" role="group">${items.map(([k, l]) => `<button type="button" ${attr}="${k}" aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
   const bad = (ok) => (ok ? '' : ' bad');
   const tim = () => B.by === 'time';
-  const okW = (x) => (tim() ? tsec(x) !== null : dnum(x) !== null);
+  const okW = (x) => (tim() ? tsec(x) !== null : distNum(B, x) !== null);
   const input = (k, val, o = {}) => `<input class="in${o.big ? ' bigv' : ''}${bad(o.ok !== false)}" data-k="${k}"${o.i !== undefined ? ` data-i="${o.i}"` : ''} value="${esc(val)}" inputmode="${o.mode || 'text'}" autocomplete="off"${o.ph ? ` placeholder="${esc(o.ph)}"` : ''}${o.aria ? ` aria-label="${esc(o.aria)}"` : ''}>`;
   const fld = (label, k, val, o) => `<label class="f">${label}${input(k, val, o)}</label>`;
   const lib = (id) => data.library.find((w) => w.id === id);
@@ -140,16 +166,19 @@ export function openPlan(v, ctx) {
   const sameKey = (a, b) => a && b && a.day === b.day && a.workoutId === b.workoutId && a.squad === b.squad && a.session === b.session;
 
   const byseg = () => `<div class="f">Work by${seg([['distance', 'Distance'], ['time', 'Time']], B.by, 'data-by', 'tall')}</div>`;
+  const run = () => B.act === RUN;
+  const dLabel = () => (run() ? `Distance (${B.unit === 'km' ? 'kilometers' : 'miles'})` : 'Distance (meters)');
+  const wLabel = (t) => (t ? 'Time (min : sec)' : dLabel());
   const fields = () => {
     const t = tim();
-    if (B.type === 'single') return `<div class="fgrid">${byseg()}${fld(t ? 'Time (min : sec)' : 'Distance (meters)', 'single', B.single, { big: 1, ok: okW(B.single) })}</div>`;
+    if (B.type === 'single') return `<div class="fgrid">${byseg()}${fld(wLabel(t), 'single', B.single, { big: 1, ok: okW(B.single), mode: run() && !t ? 'decimal' : 'text' })}</div>`;
     if (B.type === 'intervals') {
       return `<div class="fgrid">${fld('Intervals', 'n', B.n, { big: 1, mode: 'numeric', ok: /^\d{1,2}$/.test(B.n.trim()) && +B.n >= 1 })}${byseg()}</div>
-        <div class="fgrid">${fld(t ? 'Work time (min : sec)' : 'Work distance (meters)', 'work', B.work, { big: 1, ok: okW(B.work) })}${fld('Rest (min : sec)', 'rest', B.rest, { big: 1, ok: tsec(B.rest) !== null })}</div>`;
+        <div class="fgrid">${fld(t ? 'Work time (min : sec)' : 'Work ' + dLabel().toLowerCase(), 'work', B.work, { big: 1, ok: okW(B.work), mode: run() && !t ? 'decimal' : 'text' })}${fld('Rest (min : sec)', 'rest', B.rest, { big: 1, ok: tsec(B.rest) !== null })}</div>`;
     }
     const rows = B.rows[B.by];
     return `<div class="fgrid">${byseg()}<div></div></div>
-      <div class="vrows"><div class="vrow hd"><span></span><span>${t ? 'Work (min : sec)' : 'Work (meters)'}</span><span>Rest after (min : sec)</span><span></span></div>
+      <div class="vrows"><div class="vrow hd"><span></span><span>${t ? 'Work (min : sec)' : run() ? 'Work (' + (B.unit === 'km' ? 'km' : 'miles') + ')' : 'Work (meters)'}</span><span>Rest after (min : sec)</span><span></span></div>
       ${rows.map((x, i) => `<div class="vrow"><span class="ix">${i + 1}</span>${input('rw', x.w, { big: 1, i, aria: `Interval ${i + 1} work`, ok: okW(x.w) })}${input('rr', x.r, { big: 1, i, aria: `Interval ${i + 1} rest`, ph: 'none', ok: x.r.trim() === '' || tsec(x.r) !== null })}<button type="button" class="xbtn" data-delrow="${i}" aria-label="Remove interval ${i + 1}">×</button></div>`).join('')}</div>
       <div class="chips"><button type="button" class="btn ghost sm" data-addrow="1"${rows.length >= 12 ? ' disabled' : ''}>+ Add interval</button><button type="button" class="btn ghost sm" data-clearrows="1">Clear</button></div>`;
   };
@@ -157,7 +186,7 @@ export function openPlan(v, ctx) {
   const pvHtml = () => {
     const p = previewOf(B);
     return p.err ? ['–', `<span class="warn-text">${esc(p.err)}</span>`]
-      : [esc(p.text), esc(p.note) + '. Athletes see this with their own pace window, worked out from a percentage of their 20\' watts.'];
+      : [esc(p.text), esc(p.note) + (B.paceOn ? '. Everyone sees this goal pace.' : B.act === RUN ? '.' : '. Athletes see this with their own pace window, worked out from a percentage of their 20\' watts.')];
   };
 
   const dayShort = (d) => `${fmtDate(d, { weekday: 'short' })} ${toDate(d).getUTCDate()}`;
@@ -166,20 +195,29 @@ export function openPlan(v, ctx) {
   // ---- the week: a card per day, workouts in order, + Add workout under each day ----
   const weekHtml = () => {
     const days = Array.from({ length: 7 }, (_, i) => addDays(B.week, i));
-    return days.map((d) => {
-      const past = d < data.today, there = data.upcoming.map((u, i) => ({ u, i })).filter((x) => x.u.day === d);
-      const cards = there.map(({ u, i }, n) => {
+    // Mon to Fri get a card each; Sat and Sun share one "Weekend" card (David, 2026-11-17: no weekend practice, OYO only).
+    const groups = [...days.slice(0, 5).map((d) => [d]), days.slice(5)];
+    const cardsFor = (d, past) => {
+      const there = data.upcoming.map((u, i) => ({ u, i })).filter((x) => x.u.day === d);
+      return there.map(({ u, i }, n) => {
         const sel = B.open && sameKey(B.edit && B.edit.key, keyOf(u)), sum = (lib(u.workoutId) || {}).summary || '';
         const arrows = past ? '' : `<span class="pmv"><button type="button" class="xbtn sm" data-mv="${i}:-1"${n === 0 || busy ? ' disabled' : ''} aria-label="Move ${esc(u.name || u.workoutId)} earlier">↑</button><button type="button" class="xbtn sm" data-mv="${i}:1"${n === there.length - 1 || busy ? ' disabled' : ''} aria-label="Move ${esc(u.name || u.workoutId)} later">↓</button></span>`;
         return `<div class="pcard${sel ? ' sel' : ''}"><div class="phd"><span class="eyebrow">Workout ${n + 1}</span>${arrows}</div>
           <button type="button" class="pmain" data-edit="${i}"${past ? ' disabled' : ''} aria-label="${past ? '' : 'Edit '}${esc(u.name || u.workoutId)}, ${esc(dayShort(d))}">
             <b>${esc(u.name || u.workoutId)}</b>${sum ? `<span class="num">${esc(sum)}</span>` : ''}
             <small>${esc(u.squad)} · ${esc(u.session)} <span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span></small>${u.notes ? `<small class="pnote">${esc(u.notes)}</small>` : ''}</button></div>`;
-      }).join('');
-      const adding = B.open && !B.edit && B.day === d;
-      return `<section class="pday${adding ? ' pick' : ''}"><header><b>${esc(fmtDate(d, { weekday: 'short' }))}</b> <span class="num">${toDate(d).getUTCDate()}</span><small>${there.length ? `${there.length} planned` : ''}</small></header>
-        ${cards || '<p class="muted">No workouts yet</p>'}
-        <button type="button" class="padd${adding ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${adding ? 'Adding below ↓' : '+ Add workout'}</button></section>`;
+      }).join('') || '<p class="muted">No workouts yet</p>';
+    };
+    return groups.map((g) => {
+      const multi = g.length > 1, adding = B.open && !B.edit && g.includes(B.day);
+      const count = data.upcoming.filter((u) => g.includes(u.day)).length;
+      const head = multi ? `<b>Weekend</b> <span class="num">${toDate(g[0]).getUTCDate()}–${toDate(g[1]).getUTCDate()}</span>` : `<b>${esc(fmtDate(g[0], { weekday: 'short' }))}</b> <span class="num">${toDate(g[0]).getUTCDate()}</span>`;
+      const block = (d) => {
+        const past = d < data.today, on = adding && B.day === d;
+        return `<div class="pdayblock">${multi ? `<div class="eyebrow">${esc(dayShort(d))}</div>` : ''}${cardsFor(d, past)}
+          <button type="button" class="padd${on ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${on ? 'Adding below ↓' : multi ? `+ Add to ${esc(fmtDate(d, { weekday: 'short' }))}` : '+ Add workout'}</button></div>`;
+      };
+      return `<section class="pday${adding ? ' pick' : ''}"><header>${head}<small>${count ? `${count} planned` : ''}</small></header>${g.map(block).join('')}</section>`;
     }).join('');
   };
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
@@ -195,8 +233,12 @@ export function openPlan(v, ctx) {
       : `<div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
         <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
+      <div class="f">Activity${seg([[ERG, 'Erg'], [RUN, 'Run']], B.act, 'data-act')}</div>
+      ${run() && B.by === 'distance' ? `<div class="f">Run distance in${seg([['mi', 'Miles'], ['km', 'Kilometers']], B.unit, 'data-unit')}</div>` : ''}
       ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable']], B.type, 'data-type')}
       ${fields()}
+      <div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
+        ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>
       <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
     const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
     const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}">${esc(dayShort(d))}</button>`).join('')}</div></div>`;
@@ -244,6 +286,9 @@ export function openPlan(v, ctx) {
     if (o.type === 'intervals') { B.n = o.n; B.work = o.work; B.rest = o.rest; }
     if (o.type === 'variable') B.rows[o.by] = o.rows;
     if (o.cat) B.cat = o.cat;
+    if ('act' in o) B.act = o.act;
+    if ('unit' in o) B.unit = o.unit;
+    if ('paceOn' in o) { B.paceOn = o.paceOn; B.pace = o.pace || ''; }
   };
 
   const fill = () => {
@@ -257,7 +302,7 @@ export function openPlan(v, ctx) {
   };
 
   const resetBuilder = () => {
-    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', also: [] });
+    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', also: [], act: ERG, unit: 'mi', paceOn: false, pace: '' });
     B.rows = { distance: PRESET.distance(), time: PRESET.time() };
     nameTouched = false; nlMsg = null; asking = false;
   };
@@ -284,6 +329,9 @@ export function openPlan(v, ctx) {
     app.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => openEdit(Number(b.dataset.edit)); });
     app.querySelectorAll('[data-mv]').forEach((b) => { b.onclick = () => { const [i, d] = b.dataset.mv.split(':').map(Number); act({ move: { key: keyOf(data.upcoming[i]), dir: d } }, 'move', '').then(() => draw()); }; });
     app.querySelectorAll('[data-type]').forEach((b) => { b.onclick = () => { B.type = b.dataset.type; draw(); }; });
+    app.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => { B.act = b.dataset.act; draw(); }; });
+    app.querySelectorAll('[data-unit]').forEach((b) => { b.onclick = () => { B.unit = b.dataset.unit; draw(); }; });
+    const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; draw(); };
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });
     app.querySelectorAll('[data-pub]').forEach((b) => { b.onclick = () => { B.published = b.dataset.pub === 'published'; draw(); }; });
     app.querySelectorAll('[data-also]').forEach((b) => { b.onclick = () => { const d = b.dataset.also, i = B.also.indexOf(d); if (i >= 0) B.also.splice(i, 1); else B.also.push(d); B.also.sort(); draw(); }; });

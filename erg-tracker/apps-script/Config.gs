@@ -63,7 +63,10 @@ HEADERS[TABS.CHANGE_LOG] = [
 // by coaches (like Settings) and parsed with parseTime when read.
 HEADERS[TABS.WORKOUTS] = [
   'Workout ID', 'Name', 'Piece #', 'Reps', 'Work type', 'Work', 'Rest', 'Start every',
-  'Activity', 'Zone', 'Base', 'Target low %', 'Target high %', 'Rate', 'Notes'
+  'Activity', 'Zone', 'Base', 'Target low %', 'Target high %', 'Rate', 'Notes',
+  // Unit: mi or km for a Run by distance (Work is still stored in meters). Pace target: a custom goal pace typed
+  // by the coach, m:ss per 500m (m:ss per mile or km for a Run); it replaces the % target on that piece.
+  'Unit', 'Pace target'
 ];
 // One row per session per day. Published = No keeps it hidden from athletes.
 // Order = position within the day (1, 2, 3...); blank rows sort warm up, the work, cool down (WorkoutBuilder.gs).
@@ -91,7 +94,7 @@ TEXT_COLUMNS[TABS.SETTINGS] = ['Value'];
 TEXT_COLUMNS[TABS.ROSTER] = ['Slack member ID'];
 TEXT_COLUMNS[TABS.SQUAD_HISTORY] = ['School year'];
 TEXT_COLUMNS[TABS.RACES] = ['Time', '1st time', '2nd time', '3rd time'];
-TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate'];
+TEXT_COLUMNS[TABS.WORKOUTS] = ['Workout ID', 'Work', 'Rest', 'Start every', 'Rate', 'Pace target'];
 TEXT_COLUMNS[TABS.SCHEDULE] = ['Workout ID'];
 TEXT_COLUMNS[TABS.LOGBOOK_RAW] = ['Result ID', 'JSON'];
 

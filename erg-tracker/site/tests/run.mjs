@@ -2553,15 +2553,29 @@ test('weights page: coaches only, goes to the Sheet with the feed key, weight ne
 });
 
 test('plan page: a saved workout loads back into the builder, or says it cannot', () => {
-  const round = (B) => fromPieces(buildPieces(B).pieces, 'x');
+  const plain = { act: 'Erg (RowErg)', unit: 'mi', paceOn: false, pace: '' };
+  const round = (B) => fromPieces(buildPieces({ ...plain, ...B }).pieces, 'x');
   const base = { cat: 'Threshold', by: 'distance', rows: { distance: [{ w: '2000', r: '8:00' }, { w: '1500', r: '' }], time: [] } };
-  assert.deepStrictEqual(round({ ...base, type: 'intervals', n: '8', work: '500', rest: '2:00' }), { name: 'x', cat: 'Threshold', by: 'distance', type: 'intervals', n: '8', work: '500', rest: '2:00' });
-  assert.deepStrictEqual(round({ ...base, by: 'time', type: 'single', single: '30:00' }), { name: 'x', cat: 'Threshold', by: 'time', type: 'single', single: '30:00' });
-  assert.deepStrictEqual(round({ ...base, type: 'variable' }), { name: 'x', cat: 'Threshold', by: 'distance', type: 'variable', rows: [{ w: '2000', r: '8:00' }, { w: '1500', r: '' }] });
+  assert.deepStrictEqual(round({ ...base, type: 'intervals', n: '8', work: '500', rest: '2:00' }), { ...plain, name: 'x', cat: 'Threshold', by: 'distance', type: 'intervals', n: '8', work: '500', rest: '2:00' });
+  assert.deepStrictEqual(round({ ...base, by: 'time', type: 'single', single: '30:00' }), { ...plain, name: 'x', cat: 'Threshold', by: 'time', type: 'single', single: '30:00' });
+  assert.deepStrictEqual(round({ ...base, type: 'variable' }), { ...plain, name: 'x', cat: 'Threshold', by: 'distance', type: 'variable', rows: [{ w: '2000', r: '8:00' }, { w: '1500', r: '' }] });
+  // A run by distance is stored in meters and comes back in the unit typed; a custom pace target survives the round trip.
+  const runB = { ...base, act: 'Run', type: 'single', by: 'distance', single: '3.1', unit: 'mi', paceOn: true, pace: '8:00' };
+  const runPieces = buildPieces(runB).pieces;
+  assert.deepStrictEqual({ w: runPieces[0].work, a: runPieces[0].activity, u: runPieces[0].unit, p: runPieces[0].pace }, { w: '4989', a: 'Run', u: 'mi', p: '8:00' });
+  assert.deepStrictEqual({ ...round(runB) }, { name: 'x', cat: 'Threshold', by: 'distance', act: 'Run', unit: 'mi', paceOn: true, pace: '8:00', type: 'single', single: '3.1' });
+  assert.strictEqual(round({ ...runB, unit: 'km', single: '5' }).single, '5', 'kilometers come back as typed');
+  assert.strictEqual(buildPieces({ ...runB, pace: '7' }).err.startsWith('Type the pace target'), true);
+  assert.ok(buildPieces({ ...runB, single: 'far' }).err);
+  assert.strictEqual(buildPieces({ ...base, type: 'single', by: 'time', single: '8:00', ...plain, paceOn: false }).pieces[0].pace, undefined, 'no pace unless the box is ticked');
+  const test2k = buildPieces({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).pieces[0];
+  assert.strictEqual(test2k.pace, '1:45.0');
+  assert.strictEqual(previewOf({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).note.includes('Goal pace 1:45.0'), true);
+  assert.strictEqual(parseNL('5k run threshold').act, 'Run');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '1', work: '20:00', lowPct: '80' }]), null, 'targets the builder cannot show');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '3', work: '20:00' }]), null, 'intervals with no rest');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '2', work: '20:00', rest: '1:00' }, { workType: 'Time', reps: '1', work: '10:00' }]), null, 'mixed reps');
-  assert.strictEqual(fromPieces([{ workType: 'Time', work: '5:00', activity: 'Run' }]), null, 'other activities');
+  assert.strictEqual(fromPieces([{ workType: 'Time', work: '5:00', activity: 'Swim' }]), null, 'other activities');
   assert.strictEqual(fromPieces([]), null);
 });
 

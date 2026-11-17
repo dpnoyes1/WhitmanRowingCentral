@@ -557,7 +557,12 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .btn.sm { min-height: 40px; padding: 6px 14px; }
 .wkhead { display: flex; align-items: center; gap: 10px; }
 .wkhead .eyebrow { flex: 1; }
-.pweek { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px; margin-bottom: 8px; }
+.pweek { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 8px; }
+@media (min-width: 720px) { .pweek { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+.pdayblock { display: flex; flex-direction: column; gap: 8px; }
+.pdayblock + .pdayblock { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
+.chk { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: .95rem; min-height: 44px; }
+.chk input { width: 22px; height: 22px; flex: none; }
 .pday { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
 .pday.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
 .pday header { display: flex; align-items: baseline; gap: 8px; }

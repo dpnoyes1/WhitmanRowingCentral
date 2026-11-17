@@ -88,7 +88,9 @@ function workoutPieces(workoutRows, workoutId) {
         lowPct: r['Target low %'] === '' || r['Target low %'] === undefined ? null : Number(r['Target low %']),
         highPct: r['Target high %'] === '' || r['Target high %'] === undefined ? null : Number(r['Target high %']),
         rate: String(r.Rate || '').trim(),
-        notes: String(r.Notes || '').trim()
+        notes: String(r.Notes || '').trim(),
+        unit: String(r.Unit || '').trim(),
+        paceS: String(r['Pace target'] === undefined ? '' : r['Pace target']).trim() ? parseTime(r['Pace target']) : null
       };
       if (type === 'Time') piece.workS = parseTime(r.Work);
       else if (type === 'Distance') piece.workM = Number(String(r.Work).replace(/\s*m$/i, ''));
@@ -98,14 +100,31 @@ function workoutPieces(workoutRows, workoutId) {
     });
 }
 
+/** Metres in a mile, for run distances kept in metres and shown in miles. */
+var METERS_PER_MILE = 1609.344;
+
+/** "3 mi" or "5 km" for a Run piece kept in metres, else "500m". Pure. */
+function pieceDistanceText_(p) {
+  if (p.activity === 'Run' && p.unit === 'km') return Math.round(p.workM / 10) / 100 + ' km';
+  if (p.activity === 'Run') return Math.round(p.workM / METERS_PER_MILE * 100) / 100 + ' mi';
+  return p.workM + 'm';
+}
+
+/** A coach's custom goal pace as text: "1:45.0 /500m", or "8:00 /mi" for a Run. '' when none. Pure. */
+function pieceGoalText_(p) {
+  if (!p.paceS) return '';
+  return formatTime(p.paceS).replace(/\.0$/, '') + (p.activity === 'Run' ? (p.unit === 'km' ? ' /km' : ' /mi') : ' /500m');
+}
+
 /** "3 x 20:00 r2:00 Aerobic" style label for one piece row. */
 function pieceLabel(p) {
-  var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : p.workM + 'm';
+  var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : pieceDistanceText_(p);
   var rest = p.startEveryS ? ' start every ' + formatTime(p.startEveryS).replace(/\.0$/, '')
     : p.restUndefined ? ' r undefined'
     : p.restS ? ' r' + formatTime(p.restS).replace(/\.0$/, '') : '';
   var rate = p.rate ? ' @ r' + p.rate : '';
-  return (p.reps > 1 ? p.reps + ' x ' : '') + work + rest + (p.zone ? ' ' + p.zone : '') + rate;
+  var goal = p.paceS ? ' goal ' + pieceGoalText_(p) : '';
+  return (p.activity === 'Run' ? 'Run ' : '') + (p.reps > 1 ? p.reps + ' x ' : '') + work + rest + (p.zone ? ' ' + p.zone : '') + rate + goal;
 }
 
 /**
@@ -115,6 +134,7 @@ function pieceLabel(p) {
  */
 function pieceTargetPct(p, settings) {
   if (p.activity !== 'Erg (RowErg)') return null;
+  if (p.paceS) return null;   // the coach typed a goal pace: that is the target, no % of her test
   // Sprint work (the builder's Sprint category = Anaerobic zone) never gets a target (David, 2026-11-16).
   if (p.zone === 'Anaerobic') return null;
   // Aerobic zones work like cycling power zones off FTP: % of her 20' watts first, the 2k only when she has no 20' (David, 2026-11-16).
@@ -243,6 +263,7 @@ function buildWeekPlan(opts) {
       var bases = {};
       Object.keys(bests).forEach(function (b) { if (bests[b]) bases[b] = bests[b].watts; });
       var targets = pieces.map(function (p) {
+        if (p.paceS) return { label: pieceLabel(p), text: pieceGoalText_(p) };   // custom goal pace: the same for everyone
         var pct = pieceTargetPct(p, s);
         if (!pct) return { label: pieceLabel(p), text: '' };
         var t = pieceTargetFromBases(p, bases, s);
