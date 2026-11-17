@@ -4,7 +4,7 @@
 [build]
   publish = "erg-tracker/site/public"
   functions = "erg-tracker/site/functions"
-  command = "node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs"
+  command = "node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs && node erg-tracker/site/tests/water.mjs"
   # Save deploy credits (David, 2026-10-23). Exit 0 = skip the build:
   # - no deploy previews: PRs are tested locally and only merges build;
   # - production only when something the site serves changed (not Apps Script or docs only).

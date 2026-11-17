@@ -20,6 +20,8 @@ Source of truth is `HEADERS` in `apps-script/Config.gs`. Times are seconds (`…
 ## Entries (one row per session)
 Entry ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Session type (Practice / OYO / Make-up), Make-up for date, Status (Full / Modified / Out; practice and make-up only), Activity, Warmup s, Work s, Rest s, Cooldown s, Work m, Rest m, Main set, Zone (Aerobic / Threshold / Anaerobic), RPE (1-10), Avg HR, Drag factor, Intervals (count), Coach note, Source (Form / Slack / Logbook), Review status (blank, Rejected, or Pending... for a Logbook session waiting for the athlete; Pending rows are left out of the site feed), Response ID ("logbook:<result id>" for Logbook rows, the dedupe key), Benchmark ID (set when the session was a benchmark test), Warmup m, Cooldown m (optional meters; blank if not known; added 2026-10-25), Photo link (Drive link to the ~150 KB copy of the erg-screen photo behind the entry; blank when none; added 2026-10-28; coach-only, the feed says only whether one exists). Then, from the Concept2 Logbook API (added 2026-11-11, blank for Form and Slack rows): Calories, Stroke count, HR min, HR max, HR ending, HR rest, HR recovery (the average goes in Avg HR), Logbook type (workout_type), Logbook source, Verified, Ranked, Timezone, Date UTC, Privacy, Logbook comments, Rest s total, Rest m total, Splits JSON (splits of a non-interval workout), Targets JSON. Logbook's weight class is NOT a column (rule 3); it stays only in the hidden Logbook raw tab.
 
+Water rows (on-water plan, 2027): Session type Practice, Status Full, Activity Water, Source SpeedCoach, Work s = the boat's moving time, Work m = its full distance, Main set "Water: <boat> (<class>)", Entry ID "WTR-<session>-<athlete>", Response ID "water:<session>:<athlete>" (the key a re-import or lineup change updates). A coxswain's row has no Work s or Work m (attendance only).
+
 Work s / Rest s / Work m / Rest m are sums of the Intervals rows, stored for convenience. Weighted minutes are never stored. Rest is stored but never counts toward minutes or total meters.
 
 ## Intervals
@@ -72,6 +74,15 @@ School year (text, e.g. 2025-26), Athlete ID, Athlete, Squad. Filled by "Save sq
 
 ## Races (coach-only)
 Date, Regatta, Championship (checkbox), Event, Boat (8+ / 4+), Round, Time, Place, 1st time, 2nd time, 3rd time, Seat 1 … Seat 8, Cox, Notes. Times are typed as m:ss.0 text and parsed when read. Seat 1 = bow, Seat 8 = stroke; a 4+ uses Seats 1-4. Seats are Roster names.
+
+## Lineups (coach-only, on-water plan Step 1)
+Lineup ID ("L<yyyymmdd>-<n>"), Date, Shift (Early / Late / Other), Boat name (the shell), Boat class (8+ / 4+ / 4x / 4- / 2x / 2- / 1x), Seat 1 … Seat 8 (Athlete IDs; Seat 1 = bow; a 4+ uses Seats 1-4), Cox (Athlete ID), From piece (blank; for mid-practice switches later), Saved by, Saved at. Written only by the site's Lineups page; saving a date and shift replaces that practice's rows and keeps each boat's Lineup ID.
+
+## Water sessions (coach-only, on-water plan Step 2)
+Session ID ("WS-<unit>-<start Unix seconds>"), Date, Shift, Unit (SpeedCoach serial, or CoxBox number from the file name), Boat name, Boat class, Lineup ID, Start time (UTC ISO text), Elapsed s, Moving s, Meters, Avg split s, Avg rate, Strokes, Pieces, Kind (Practice / Pieces / Race), File name, File link (private Drive copy of the FIT file), Curve JSON (best split by duration: { all, r20, r24, r28 }), Imported by, Imported at.
+
+## Water pieces (coach-only, on-water plan Step 2)
+Piece ID ("<session>-P<n>"), Session ID, Piece #, Start time (UTC ISO text), Work s, Meters, Avg split s, Avg rate, Strokes, Match group (blank; matching is done when the results page reads), Lineup ID.
 
 ## Change log
 Timestamp, Who, Tab, Cell, Row ID, Field, Old value, New value, Note.
