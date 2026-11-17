@@ -11,6 +11,14 @@ export function paceText(timeS, meters) {
   return `Pace ${per(1609.344)} per mile, ${per(1000)} per km.`;
 }
 
+/** The phone number pad has no colon, so digits typed alone get one: 2530 -> 25:30, 10230 -> 1:02:30. One or two digits stay as minutes; anything with a colon is left as typed. */
+export function autoClock(t) {
+  const s = String(t).trim();
+  if (!/^\d{3,6}$/.test(s)) return s;
+  const sec = s.slice(-2), min = s.slice(-4, -2), h = s.slice(0, -4);
+  return s.length <= 4 ? `${s.slice(0, -2)}:${sec}` : `${h}:${min}:${sec}`;
+}
+
 /** "25:00", "1:02:30" or "25" (minutes) -> seconds, or null. */
 export function parseDuration(t) {
   const s = String(t).trim();
@@ -36,7 +44,8 @@ export function openLogMine(ctx) {
           <label class="f">Was it<select class="in" data-f="type"><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>On my own</option><option value="practice"${S.type === 'practice' ? ' selected' : ''}>At practice</option></select></label></div>
         <div class="lf-row">${field('Distance', 'dist', 'inputmode="decimal" placeholder="3.1"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
-          ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
+          ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30" aria-describedby="lm-timehint"')}</div>
+        <p class="muted small" id="lm-timehint">Type the digits and the colon is added: 2530 becomes 25:30.</p>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Note for coaches (optional)', 'note')}
         <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
@@ -45,7 +54,7 @@ export function openLogMine(ctx) {
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save'}</button></div></form>`;
     const f = app.querySelector('#logmine');
     f.querySelectorAll('[data-f]').forEach((el) => {
-      el.oninput = () => { S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
+      el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
       if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; };
     });
     const pick = f.querySelector('#lm-photo');

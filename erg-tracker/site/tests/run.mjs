@@ -15,7 +15,7 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
-import { paceText, parseDuration } from '../public/logmine.mjs';
+import { autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
 import { handlePassword } from '../functions/password.mjs';
@@ -2519,6 +2519,8 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25:30'), 1530);
   assert.strictEqual(parseDuration('1:02:30'), 3750);
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
+  [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
+  assert.strictEqual(parseDuration(autoClock('2530')), 1530);
   ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
   assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
   assert.strictEqual(paceText(0, 5000), '');

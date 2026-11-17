@@ -78,7 +78,11 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   await signInAthlete(page, server.url, server.athlete, '#/logrun');
   assert.equal(await page.textContent('#app h1'), 'Log activity');
   await page.fill('[data-f=dist]', '3.1');
-  await page.fill('[data-f=time]', '25:30');
+  await page.locator('[data-f=time]').pressSequentially('2530');   // the phone number pad has no colon
+  assert.equal(await page.inputValue('[data-f=time]'), '25:30');
+  await page.fill('[data-f=time]', '');
+  await page.locator('[data-f=time]').pressSequentially('25:30');   // a typed colon (desktop) is left alone
+  assert.equal(await page.inputValue('[data-f=time]'), '25:30');
   assert.match(await page.textContent('#lm-pace'), /\d:\d\d/);
   await page.click('#logmine button[type=submit]');
   await page.waitForSelector('#logmine .notice');
