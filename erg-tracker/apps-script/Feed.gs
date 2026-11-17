@@ -397,16 +397,17 @@ function feedWeekResults_(sessions, inputs, start) {
     var rowErg = activity === '' || /rowerg|bikeerg/i.test(activity);
     var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
       .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
-    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s);
+    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s, activity);
+    var isRun = activity === 'Run';
     var test = String(e['Benchmark ID'] || '') !== '';
     sn.results.push({
       athleteId: String(e['Athlete ID']), entryId: String(e['Entry ID']), date: feedDay_(e.Date),
       type: String(e['Session type'] || ''), status: String(e.Status || ''), activity: activity, test: test,
-      matches: c.matches, reason: c.reason, hit: rowErg && !test ? c.hit : null, flag: planFlag(e, c),
+      matches: c.matches, reason: c.reason, hit: (rowErg || isRun) && !test ? c.hit : null, flag: planFlag(e, c),
       intervals: c.intervals.map(function (r, i) {
         var ws = feedNum_(ivs[i]['Work s']), wm = feedNum_(ivs[i]['Work m']);
         return rowErg ? { n: r.n, splitS: ws && wm ? Math.round((ws * 5000) / wm) / 10 : null, status: test ? '' : r.status }
-          : { n: r.n, splitS: null, status: '' };
+          : { n: r.n, splitS: null, status: isRun ? r.status : '' };
       })
     });
   });
@@ -440,20 +441,21 @@ function feedLogged_(inputs, yearStart, s) {
         if (best) bases[b] = best.watts;
       });
     }
-    var c = planned ? checkAgainstPlan(ivs, pieces, bases, s) : null;
+    var c = planned ? checkAgainstPlan(ivs, pieces, bases, s, activity) : null;
+    var isRun = activity === 'Run';
     var owner = [];   // piece index for each planned interval, in order
     pieces.forEach(function (p, pi) { for (var k = 0; k < p.reps; k++) owner.push(pi); });
     out.push({
       id: String(e['Entry ID']), athleteId: e['Athlete ID'], date: feedDay_(e.Date),
       workout: pieces.length ? pieces[0].name : '', rowErg: rowErg, test: test,
-      matches: c ? c.matches : null, reason: c ? c.reason : '', hit: c && rowErg && !test ? c.hit : null,
+      matches: c ? c.matches : null, reason: c ? c.reason : '', hit: c && (rowErg || isRun) && !test ? c.hit : null,
       pieces: pieces.map(function (p) {
         var t = pieceTargetFromBases(p, bases, s);
-        return { label: pieceLabel(p), target: rowErg && !test && t ? formatTarget(t) : null };
+        return { label: pieceLabel(p), target: p.paceS ? pieceGoalText_(p) : rowErg && !test && t ? formatTarget(t) : null };
       }),
       intervals: ivs.map(function (iv, i) {
         var ws = feedNum_(iv['Work s']), wm = feedNum_(iv['Work m']);
-        var row = c && rowErg && !test ? c.intervals[i] : null;
+        var row = c && (rowErg || isRun) && !test ? c.intervals[i] : null;
         return {
           n: i + 1, piece: i < owner.length ? owner[i] : null, workS: ws, workM: wm,
           splitS: rowErg && ws && wm ? Math.round((ws * 5000) / wm) / 10 : null,

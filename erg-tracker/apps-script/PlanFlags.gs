@@ -43,7 +43,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
         var best = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, planned.Date, inp.settings.school_year_start);
         if (best) bases[b] = best.watts;
       });
-      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[id] || [], e.Activity), pieces, bases, inp.settings);
+      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[id] || [], e.Activity), pieces, bases, inp.settings, e.Activity);
       var flag = planFlag(e, c);
       if (flag) out.push({ entryId: id, athlete: e.Athlete, date: e.Date, sessionType: e['Session type'], flag: flag,
         detail: planFlagDetail(e, byEntry[id] || [], pieces) });

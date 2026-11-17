@@ -329,7 +329,12 @@ function rowEquivalentIntervals(intervals, activity) {
  * status is 'in' | 'below' | 'above' | '' (no target). hit is null when no
  * piece had a target. Computed at display, never stored.
  */
-function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
+function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
+  // A planned run is matched loosely: reasonably close or longer counts, and its goal pace (if any) is checked (David, 2026-11-17).
+  if (String(activity || '') === 'Run' && pieces.length && pieces.every(function (p) { return p.activity === 'Run'; })) {
+    var loose = checkRunAgainstPlan_(intervals, pieces, settings);
+    if (loose) return loose;
+  }
   var planned = [];
   pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
   var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
@@ -353,8 +358,14 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
         out.matches = false;
         out.reason = 'Interval ' + (i + 1) + ' is not ' + pieceLabel(Object.assign({}, p, { reps: 1 }));
       }
+      var goalW = p.paceS && p.activity === 'Erg (RowErg)' ? wattsFromSplit(p.paceS) : null;
       var t = pieceTargetFromBases(p, baseWatts, settings);
-      if (t && watts) {
+      if (goalW && watts) {
+        // A custom goal pace is met at that pace or faster, or within the tolerance of it.
+        anyTarget = true;
+        row.status = watts >= goalW * (1 - tol) ? 'in' : 'below';
+        if (row.status !== 'in') allIn = false;
+      } else if (t && watts) {
         anyTarget = true;
         var lo = t.range ? t.lowW : t.lowW * (1 - tol);
         var hi = t.range ? t.highW : t.highW * (1 + tol);
@@ -365,6 +376,44 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings) {
     out.intervals.push(row);
   });
   out.hit = anyTarget ? allIn : null;
+  return out;
+}
+
+/**
+ * A logged run against a planned run. It matches when the logged total is at least 90% of the planned total
+ * (time for a plan by time, meters for one by distance); longer always counts. A goal pace is met at that pace
+ * or faster, or within the single-target tolerance. Null when the plan mixes time and distance (the usual check runs).
+ */
+function checkRunAgainstPlan_(intervals, pieces, settings) {
+  var byTime = pieces.every(function (p) { return p.workType === 'Time'; });
+  var byDist = pieces.every(function (p) { return p.workType === 'Distance'; });
+  if (!byTime && !byDist) return null;
+  var tol = Number(settings['target.single_tolerance_pct'] || 2) / 100;
+  var planned = [];
+  pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
+  var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
+  var planS = 0, planM = 0, ws = 0, wm = 0;
+  planned.forEach(function (p) { planS += p.workS || 0; planM += p.workM || 0; });
+  done.forEach(function (iv) { ws += Number(iv['Work s']) || 0; wm += Number(iv['Work m']) || 0; });
+  var out = { matches: true, reason: '', hit: null, logged: done.length, planned: planned.length, intervals: [] };
+  var plan = byTime ? planS : planM, got = byTime ? ws : wm;
+  if (got > 0 && plan > 0 && got < plan * 0.9) {
+    out.matches = false;
+    out.reason = 'Run is ' + Math.round(got / plan * 100) + '% of the plan';
+  }
+  var anyGoal = false, allIn = true;
+  done.forEach(function (iv, i) {
+    var p = planned[Math.min(i, planned.length - 1)], row = { n: i + 1, watts: null, status: '' };
+    var s = Number(iv['Work s']), m = Number(iv['Work m']);
+    if (p && p.paceS && s > 0 && m > 0) {
+      anyGoal = true;
+      var pace = s / (m / (p.unit === 'km' ? 1000 : METERS_PER_MILE));   // seconds per mile or km
+      row.status = pace <= p.paceS * (1 + tol) ? 'in' : 'below';
+      if (row.status !== 'in') allIn = false;
+    }
+    out.intervals.push(row);
+  });
+  out.hit = anyGoal ? allIn : null;
   return out;
 }
 

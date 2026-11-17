@@ -1642,6 +1642,30 @@ test('workout builder: ids, piece rows validated by the plan parser, schedule ro
   assert.strictEqual(g.pieceTargetPct(t2k, { 'target.Threshold.2000m': '95' }), null, 'a goal pace replaces the % target');
   ['0:20', '40:00', 'fast'].forEach(x => assert.ok(g.workoutBuildRows_('W9', { name: 'n', pieces: [{ workType: 'Time', work: '20:00', pace: x }] }).error, 'bad pace ' + x));
   assert.ok(g.workoutBuildRows_('W9', { name: 'n', pieces: [{ workType: 'Time', work: '20:00', unit: 'mi' }] }).error, 'a unit is for runs only');
+  // Run plan matching and goal checks.
+  const J2 = (x) => JSON.parse(JSON.stringify(x));
+  const runPlan = (spec) => g.workoutPieces(g.workoutBuildRows_('WR', { name: 'Run', pieces: [spec] }).rows, 'WR');
+  const logRun = (s, m) => [{ 'Interval #': 1, 'Work s': s, 'Work m': m }];
+  const timeRun = runPlan({ workType: 'Time', work: '30:00', activity: 'Run' });
+  assert.strictEqual(g.checkAgainstPlan(logRun(1750, 5000), timeRun, {}, {}, 'Run').matches, true, 'a bit short of 30:00 is close enough');
+  assert.strictEqual(g.checkAgainstPlan(logRun(2400, 7000), timeRun, {}, {}, 'Run').matches, true, 'longer always counts');
+  const shortRun = g.checkAgainstPlan(logRun(1200, 3500), timeRun, {}, {}, 'Run');
+  assert.strictEqual(shortRun.matches, false);
+  assert.match(shortRun.reason, /67% of the plan/);
+  const distRun = runPlan({ workType: 'Distance', work: '4989', activity: 'Run', unit: 'mi' });
+  assert.strictEqual(g.checkAgainstPlan(logRun(1800, 4600), distRun, {}, {}, 'Run').matches, true, '92% of 3.1 mi');
+  assert.strictEqual(g.checkAgainstPlan(logRun(1800, 4000), distRun, {}, {}, 'Run').matches, false);
+  const goalRun = runPlan({ workType: 'Distance', work: '4989', activity: 'Run', unit: 'mi', pace: '8:00' });
+  assert.strictEqual(g.checkAgainstPlan(logRun(1440, 4989), goalRun, {}, {}, 'Run').hit, true, 'about 7:44/mi is faster than 8:00');
+  assert.strictEqual(g.checkAgainstPlan(logRun(1860, 4989), goalRun, {}, {}, 'Run').hit, false, 'about 10:00/mi misses 8:00');
+  assert.strictEqual(g.checkAgainstPlan(logRun(1860, 4989), goalRun, {}, {}, 'Run').intervals[0].status, 'below');
+  assert.strictEqual(g.checkAgainstPlan(logRun(1600, 4989), timeRun, {}, {}, 'Run').hit, null, 'no goal, no verdict');
+  // Erg goal pace: at the goal or faster is met; clearly slower is not.
+  const goal2k = runPlan({ workType: 'Distance', work: '2000', pace: '1:45.0' });
+  const erg = (s) => [{ 'Interval #': 1, 'Work s': s, 'Work m': 2000 }];
+  assert.strictEqual(g.checkAgainstPlan(erg(416), goal2k, {}, {}).hit, true, '6:56 beats 7:00');
+  assert.strictEqual(g.checkAgainstPlan(erg(420), goal2k, {}, {}).hit, true, 'exactly the goal');
+  assert.strictEqual(g.checkAgainstPlan(erg(440), goal2k, {}, {}).hit, false);
   // Saves reuse an identical saved workout instead of copying it.
   const lib = [{ 'Workout ID': 'W1', Name: 'Tue 20s', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '', 'Start every': '', Activity: 'Erg (RowErg)', Zone: '', Base: '', 'Target low %': '', 'Target high %': '', Rate: '', Notes: '' }];
   const same = g.workoutBuildRows_('W9', { name: 'Tue 20s', pieces: [{ workType: 'Time', reps: 3, work: '20:00' }] });
