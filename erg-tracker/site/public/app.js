@@ -606,7 +606,7 @@ async function showAthlete(id) {
       ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
       ${tile('Practice streak', v.streaks.practices, 'in a row')}
       ${tile('OYO goal streak', v.streaks.oyoWeeks, v.streaks.oyoWeeks === 1 ? 'week' : 'weeks in a row')}
-      ${tile('Season training', fmtMin(s.trainingMin), fmtNum(s.meters) + ' m')}
+      ${tile('Season training', fmtMin(s.trainingMin).replace(/m$/, ' min'), fmtNum(s.meters) + ' meters')}
       ${v.insights ? monthTile(v.insights.month, v.today) : ''}
     </div>
     ${makeups}${madeUp}
@@ -754,27 +754,32 @@ function loadNote(ins, coach) {
     ${flagged.length ? `<b>${flagged.length} week${flagged.length > 1 ? 's' : ''} flagged.</b>` : 'No jumps in these weeks.'}</p>`;
 }
 
-function changeText(d, lowerBetter) {
+function changeText(d, lowerBetter, r) {
   if (d === null || d === undefined) return '';
   if (d === 0) return '<span class="muted">same</span>';
   const better = lowerBetter ? d < 0 : d > 0;
   const amt = lowerBetter ? `${Math.abs(d).toFixed(1)}s` : `${fmtNum(Math.abs(d))} m`;
-  return `<span class="${better ? 'good-text' : 'muted'}">${better ? '▲' : '▼'} ${amt} ${lowerBetter ? (better ? 'faster' : 'slower') : (better ? 'more' : 'less')}</span>`;
+  // Split difference (David, 2026-11-17): a 2k's split moves by a quarter of the time; a 20' compares the two splits.
+  // The arrow and green/red say better or worse, so no "faster" or "more" words.
+  let sd = null;
+  if (lowerBetter) sd = Math.abs(d) / 4;
+  else if (r && r.meters && r.meters - d > 0) sd = Math.abs(600000 / (r.meters - d) - 600000 / r.meters);
+  const splitTxt = sd !== null && sd >= 0.05 ? `<div class="small">${sd.toFixed(1)} splits</div>` : '';
+  return `<span class="${better ? 'good-text' : 'bad-text'}">${better ? '▲' : '▼'} ${amt}${splitTxt}</span>`;
 }
 
 function progressCard(ins, coach) {
-  const who = coach ? 'her' : 'your';
   const t = ins.splitTrend;
   const trend = !t ? '<p class="muted">No trend yet.</p>'
     : `<p>${Math.abs(t.changeS) < 0.5 ? 'About the same as' : `<b>${Math.abs(t.changeS).toFixed(1)}s/500m ${t.changeS < 0 ? 'faster' : 'slower'}</b> than`} ${t.weeksEach > 1 ? `the ${t.weeksEach} weeks before` : 'the week before'}
       <span class="muted">(${fmtTime(t.earlierS)} → ${fmtTime(t.recentS)})</span></p>`;
-  const rows = (test) => ins.progress[test].map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}<div class="muted small">${split(r)}</div></td>
-      <td class="r">${changeText(r.change, test === '2000m')}</td></tr>`).join('');
+  const rows = (test) => ins.progress[test].slice().reverse().map((r) => `<tr><td>${fmtDate(r.date)}</td><td class="r">${fmtResult(r)}<div class="muted small">${split(r)}</div></td>
+      <td class="r">${changeText(r.change, test === '2000m', r)}</td></tr>`).join('');
   const table = (test) => ins.progress[test].length ? `<div><h3>${TEST_LABELS[test]}</h3><div class="table-wrap"><table>
       <tr><th>Date</th><th class="r">Result / split</th><th class="r">Change</th></tr>${rows(test)}</table></div></div>`
     : `<div><h3>${TEST_LABELS[test]}</h3><p class="muted">None this school year.</p></div>`;
   const p = ins.projected2k;
-  const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> <span class="muted">from ${who} 20' on ${fmtDate(p.from.date)} (${fmtNum(p.from.meters)} m)${p.last2k ? `; last real 2k ${fmtTime(p.last2k.timeS)} on ${fmtDate(p.last2k.date)}` : ''}. An estimate only: ${who} next 2k test is the real answer.</span></p>` : '';
+  const proj = p ? `<p><b>Estimated 2k: ${fmtTime(p.timeS)}</b> (${fmtTime(p.timeS / 4)})</p>` : '';
   return `<div class="card"><h2>Progress</h2>
     <h3>Steady-state split (Aerobic on the erg)</h3>${trend}
     ${lineChart(ins.steady.map((w) => ({ weekStart: w.weekStart, value: w.splitS })), { caption: 'Steady-state split by week, faster is higher', fmt: fmtTime, invert: true, pad: 1, tipLabel: 'Average split' })}
