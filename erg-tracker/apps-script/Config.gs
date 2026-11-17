@@ -92,7 +92,9 @@ HEADERS[TABS.LINEUPS] = [
 // splits in seconds per 500 m, Start time as UTC ISO text. The original file is in a private Drive folder (File link).
 HEADERS[TABS.WATER_SESSIONS] = [
   'Session ID', 'Date', 'Unit', 'Boat name', 'Boat class', 'Lineup ID', 'Start time', 'Elapsed s', 'Moving s', 'Meters',
-  'Avg split s', 'Avg rate', 'Strokes', 'Pieces', 'Kind', 'File name', 'File link', 'Curve JSON', 'Imported by', 'Imported at'
+  'Avg split s', 'Avg rate', 'Strokes', 'Pieces', 'Kind', 'File name', 'File link', 'Curve JSON', 'Imported by', 'Imported at',
+  // A coach's choice for the day on Water results: blank (automatic: even lineups only), Count or Leave out ("Who wins", 2026-11-16).
+  'Ratings use'
 ];
 HEADERS[TABS.WATER_PIECES] = [
   'Piece ID', 'Session ID', 'Piece #', 'Start time', 'Work s', 'Meters', 'Avg split s', 'Avg rate', 'Strokes', 'Match group', 'Lineup ID'

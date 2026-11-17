@@ -8,7 +8,7 @@ import { handleLineupsSaved, cleanLineupsBody } from '../functions/lineups-saved
 import { saveBody, boatsFromSaved, todayET } from '../public/lineups.mjs';
 import { handleWater, suggestFor, easternDay } from '../functions/water.mjs';
 import { clock, lineupFor, creditLine } from '../public/water.mjs';
-import { waterReportView } from '../lib/waterreport.mjs';
+import { waterReportView, gatePieces } from '../lib/waterreport.mjs';
 import { athleteView, isWater } from '../lib/views.mjs';
 import * as S from '../lib/stats.mjs';
 import { createRequire } from 'node:module';
@@ -270,7 +270,7 @@ test('Adjusted rating: optional shell and coxswain effects; sculling and unmatch
 });
 
 test('Adjusted rating: nothing to rate gives empty lists, not an error', () => {
-  assert.deepEqual(W.adjustedRatings([]), { rowers: [], shells: [], coxes: [], together: [], pieces: 0 });
+  assert.deepEqual(W.adjustedRatings([]), { rowers: [], shells: [], coxes: [], together: [], pieces: 0, lineups: 0, enough: false, slope: null });
 });
 
 test('Saved lineups API: coaches only, Sheet through the feed key, only known fields sent', async () => {
@@ -436,7 +436,13 @@ test('Water report: day boats, matched pieces with crews, season curves by boat,
       if (d !== 3) for (let n = 1; n <= 2; n++) pieces.push({ pieceId: `${sid}-P${n}`, sessionId: sid, n, start: `2027-02-0${d}T21:${n}0:${b}5Z`, workS: (split * 2) + n, meters: 1000, splitS: split + n / 10, rate: 32, lineupId: lid });
     });
   }
-  const v = waterReportView({ sessions, pieces, lineups }, '2027-02-02', 'all');
+  const even = Object.fromEntries(Object.keys(names).map((id) => [id, 100]));   // every boat the same average GMS: every piece counts
+  const v = waterReportView({ sessions, pieces, lineups }, '2027-02-02', 'all', { gms: even });
+  assert.ok(v.groups.every((g) => g.rating.counts) && v.dayOverride === 'Automatic');
+  const none = waterReportView({ sessions, pieces, lineups }, '2027-02-02', 'all');
+  assert.ok(none.ratings.pieces === 0 && !none.ratings.gmsKnown && none.ratings.leftOut['a boat has too many rowers with no GMS %'] === 4, 'no GMS: nothing can be judged even');
+  const over = waterReportView({ sessions: sessions.map((x) => (x.date === '2027-02-01' ? { ...x, ratingsUse: 'Leave out' } : x)), pieces, lineups }, '2027-02-01', 'all', { gms: even });
+  assert.ok(over.dayOverride === 'Leave out' && over.ratings.pieces === 2 && over.ratings.leftOut['left out by a coach'] === 2);
   assert.deepStrictEqual(v.days, ['2027-02-03', '2027-02-02', '2027-02-01']);
   assert.strictEqual(v.boats.length, 2);
   assert.deepStrictEqual(v.boats[0].crew.names.length, 8);
@@ -480,6 +486,80 @@ test('Moving time never exceeds the monitor timer (real race files ran 2 s over 
   const s = W.summarize(f);
   assert.ok(s.movingS <= f.session.timerS, s.movingS + ' vs timer ' + f.session.timerS);
   assert.strictEqual(s.kind, 'Race');
+});
+
+
+test('Who wins counts only even lineups: GMS gap, missing GMS, same crews on 3+ days, and the coach override', () => {
+  const eight = (p) => Array.from({ length: 8 }, (_, i) => p + i);
+  const piece = (gid, day, a, b) => [
+    { groupId: gid, day, boatClass: '8+', rowers: a, marginPct: 0.5, place: 1 },
+    { groupId: gid, day, boatClass: '8+', rowers: b, marginPct: -0.5, place: 2 }];
+  const A = eight('a'), B = eight('b');
+  const gms = Object.fromEntries([...A.map((id) => [id, 100]), ...B.map((id) => [id, 98])]);   // 2.0 points apart
+  const res = [...piece('G1', 'D1', A, B)];
+  let g = gatePieces(res, gms);
+  assert.deepStrictEqual([g.pieces.G1.counts, g.pieces.G1.gap], [true, 2]);
+  g = gatePieces(res, { ...gms, ...Object.fromEntries(B.map((id) => [id, 96])) });
+  assert.match(g.pieces.G1.reason, /not even: boats 4 GMS points apart/);
+  assert.strictEqual(g.used.length, 0);
+  const missing = { ...gms }; delete missing.b0; delete missing.b1;
+  assert.match(gatePieces(res, missing).pieces.G1.reason, /no GMS/, 'two rowers in one boat with no GMS');
+  delete missing.b1; missing.b1 = 98;
+  assert.ok(gatePieces(res, missing).pieces.G1.counts, 'one missing is fine');
+  const three = [...piece('G1', 'D1', A, B), ...piece('G2', 'D2', A, B), ...piece('G3', 'D3', A, B)];
+  assert.match(gatePieces(three, gms).pieces.G3.reason, /same crews on 3 days \(progression\)/, 'even in GMS but the same crews 3 days running');
+  assert.ok(gatePieces(three.slice(0, 4), gms).pieces.G2.counts, 'two days is fine');
+  // "Even 8s + lower 4": the two 8s are even, the 4+ is 6 points lower; the 8s still count, re-centered between themselves
+  const F = ['f0', 'f1', 'f2', 'f3'], g4 = { ...gms, ...Object.fromEntries(F.map((id) => [id, 93])) };
+  const withFour = [...piece('G9', 'D9', A, B), { groupId: 'G9', day: 'D9', boatClass: '4+', rowers: F, marginPct: 0, place: 2, shell: 'Severn' }];
+  withFour[0].shell = 'Hudson'; withFour[1].shell = 'Potomac';
+  const gf = gatePieces(withFour, g4);
+  assert.ok(gf.pieces.G9.counts && gf.pieces.G9.boats.Severn === false && gf.pieces.G9.boats.Hudson === true, gf.pieces.G9.reason);
+  assert.match(gf.pieces.G9.reason, /left out: Severn/);
+  assert.deepStrictEqual(gf.used.map((r) => [r.shell, r.marginPct]).sort(), [['Hudson', 0.5], ['Potomac', -0.5]]);
+  const ov = gatePieces(three, gms, { D2: 'Count', D1: 'Leave out' });
+  assert.deepStrictEqual([ov.pieces.G1.counts, ov.pieces.G2.counts, ov.pieces.G3.counts], [false, true, false]);
+  assert.strictEqual(ov.pieces.G2.reason, 'counted by a coach');
+});
+
+test('GMS slope: learned from all pieces (uneven ones pin it down), then held fixed for the even-lineup ratings', () => {
+  let s = 3; const rand = () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32);
+  const ids = Array.from({ length: 16 }, (_, i) => 'R' + i), gms = Object.fromEntries(ids.map((id, i) => [id, 90 + i]));
+  const truth = (id) => 0.5 * (gms[id] - 97.5);   // 0.5% per GMS point, no technique
+  const res = []; let g = 0;
+  for (let d = 0; d < 20; d++) { const o = [...ids].sort(() => rand() - 0.5), boats = [o.slice(0, 8), o.slice(8)];
+    for (let p = 0; p < 2; p++) { g++; const raw = boats.map((b) => b.reduce((a, id) => a + truth(id), 0) / 8 + (rand() - 0.5) * 0.4), avg = (raw[0] + raw[1]) / 2;
+      boats.forEach((b, i) => res.push({ groupId: 'G' + g, day: 'D' + d, boatClass: '8+', rowers: b, marginPct: raw[i] - avg, place: raw[i] > avg ? 1 : 2 })); } }
+  const fit = W.gmsSlope(res, gms);
+  assert.ok(Math.abs(fit.slope - 0.5) < 0.12, 'slope ' + fit.slope);
+  assert.ok(fit.uneven >= 6);
+  const r = W.adjustedRatings(res, { gms, slope: fit.slope, resamples: 20 });
+  assert.ok(r.rowers.every((x) => Math.abs(x.rating) < 0.6), 'nothing much beyond erg when erg explains it all');
+  const top = r.rowers.find((x) => x.id === 'R15');
+  assert.ok(top.fromErg > 3 && Math.abs(top.overall - top.fromErg - top.rating) < 0.11, 'overall = from erg + beyond erg');
+  assert.strictEqual(r.days, 20);
+  assert.strictEqual(W.gmsSlope(res.slice(0, 8), gms).slope, null, 'too few uneven pieces: not learned');
+  const few = W.adjustedRatings(res.slice(0, 16), { resamples: 0 });
+  assert.ok(few.rowers.every((x) => x.status === 'too early' || x.status === 'early') && few.enough === false);
+});
+
+
+test("Water API: the day's Who wins choice is coaches only and goes to the Sheet", async () => {
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const fetchImpl = async (url, init) => { const b = JSON.parse(init.body); calls.push(b); return new Response(JSON.stringify(b.action === 'water-ratings-use' ? { status: 'ok', date: b.date, use: b.use } : { status: 'ok', sessions: [], pieces: [], lineups: [] })); };
+  const post = (cookie, body) => new Request('https://x/api/water/ratings-use', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  assert.strictEqual((await handleWater(post(athlete, { date: '2027-02-03', use: 'Count' }), env, { fetchImpl })).status, 403);
+  const res = await handleWater(post(coach, { date: '2027-02-03', use: 'Leave out' }), env, { fetchImpl });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(calls[0], { action: 'water-ratings-use', date: '2027-02-03', use: 'Leave out', coachName: 'Pat Example', key: 'fake-key' });
+  assert.strictEqual((await handleWater(post(coach, { date: '2027-02-03', use: 'Maybe' }), env, { fetchImpl })).status, 400);
+  // the report reads each rower's GMS % from the feed
+  const feedish = async (url, init) => { const b = JSON.parse(init.body); return new Response(JSON.stringify(b.action ? { status: 'ok', sessions: [], pieces: [], lineups: [] } : feed)); };
+  const rep = await (await handleWater(new Request('https://x/api/water/report?date=2026-10-23', { headers: { cookie: coach } }), env, { fetchImpl: feedish, shared: null })).json();
+  assert.strictEqual(rep.ratings.gmsKnown, true);
 });
 
 for (const [name, fn] of tests) {

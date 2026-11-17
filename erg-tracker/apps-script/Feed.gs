@@ -34,6 +34,7 @@ function doPost(e) {
   if (body.action === WATER_CONTEXT_ACTION) return feedJson_(processWaterContext_(body));
   if (body.action === WATER_SAVE_ACTION) return feedJson_(processWaterSave_(body));
   if (body.action === WATER_REPORT_ACTION) return feedJson_(processWaterReport_(body));
+  if (body.action === WATER_RATINGS_USE_ACTION) return feedJson_(processWaterRatingsUse_(body));
   if (body.action === SETTINGS_GET_ACTION) return feedJson_(processSettingsGet_());
   if (body.action === SETTINGS_SAVE_ACTION) return feedJson_(processSettingsSave_(body));
   if (body.action === 'logbook-pending') return feedJson_(processLogbookPending_(body));

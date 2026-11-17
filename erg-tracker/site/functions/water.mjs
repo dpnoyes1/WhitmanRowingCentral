@@ -4,12 +4,16 @@
 //   credits. The file is read again here on save, so the numbers never come from the browser.
 // GET  /api/water?date=YYYY-MM-DD -> what is already imported that day, and its saved lineups.
 // GET  /api/water/report?date=YYYY-MM-DD&rate=all|r20|r24|r28 -> the coaches' results page (Steps 3 and 4) for the season up to that date.
+//      Each rower's season GMS % comes from the feed (the Lineups page's numbers) for the even-lineup rule and the erg part of "Who wins".
+// POST /api/water/ratings-use { date, use: 'Automatic' | 'Count' | 'Leave out' } -> a coach's choice for whether that day counts in "Who wins".
 import { liveSession } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { readFit } from '../lib/fit.mjs';
 import { summarize } from '../lib/water.mjs';
 import { waterReportView, RATE_KEYS } from '../lib/waterreport.mjs';
 import { schoolYearStart } from '../lib/stats.mjs';
+import { getFeed } from '../lib/feed.mjs';
+import { lineupsView } from '../lib/views.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) => Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
@@ -105,7 +109,24 @@ export async function handleWater(req, envFn, deps = {}) {
       return json({ error: 'The Sheet did not answer. Try again in a minute.' }, 502);
     }
     if (raw.status !== 'ok') return json({ error: raw.message || 'The Sheet could not read the water data.' }, 502);
-    return json(waterReportView(raw, q.get('date') ? date : '', rate));
+    let gms = {};
+    try {
+      const feed = (await getFeed(envFn, deps)).data;
+      for (const a of lineupsView(feed, date).rowers) if (a.gmsPct != null) gms[a.id] = a.gmsPct;
+    } catch (err) { console.error('water report feed error:', err.message); gms = {}; }   // without GMS, nothing can be judged even: the page says so
+    return json(waterReportView(raw, q.get('date') ? date : '', rate, { gms }));
+  }
+  if (req.method === 'POST' && path === '/api/water/ratings-use') {
+    const body = await readBody(req);
+    if (!body || !DAY.test(String(body.date || '')) || !['Automatic', 'Count', 'Leave out'].includes(body.use)) return json({ error: 'Bad request.' }, 400);
+    let out;
+    try { out = await callSheet(envFn, fetchImpl, { action: 'water-ratings-use', date: body.date, use: body.use, coachName: who.name || 'Coach' }); } catch (err) {
+      console.error('water ratings-use error:', err.message);
+      return json({ error: 'The Sheet did not answer, so nothing was saved. Try again in a minute.' }, 502);
+    }
+    if (out.status === 'invalid') return json({ error: out.message }, 422);
+    if (out.status !== 'ok') return json({ error: 'The Sheet could not save that.' }, 502);
+    return json({ date: out.date, use: out.use });
   }
   if (req.method !== 'POST' || !['/api/water/preview', '/api/water/save'].includes(path)) return json({ error: 'Not found' }, 404);
   const body = await readBody(req);
@@ -151,4 +172,4 @@ export async function handleWater(req, envFn, deps = {}) {
 
 export default (req) => handleWater(req, env);
 
-export const config = { path: ['/api/water', '/api/water/preview', '/api/water/save', '/api/water/report'], method: ['GET', 'POST'] };
+export const config = { path: ['/api/water', '/api/water/preview', '/api/water/save', '/api/water/report', '/api/water/ratings-use'], method: ['GET', 'POST'] };

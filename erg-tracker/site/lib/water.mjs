@@ -19,6 +19,12 @@ export const WATER = {
   boatFactor: { '8+': 1, '4+': 1.13 },   // a 4+ takes 1.13 x an 8+'s time (David, 2026-11-12, same as the Lineups page). Sweep only for comparisons.
   minPieces: 8,          // a rating shows only after about 8 compared pieces...
   minLineups: 4,         // ...across at least 4 different lineups (plan section 5)
+  // Which pieces count toward "Who wins" (David + Fable review, 2026-11-16): only generally even lineups, so progression lineups (the same
+  // 1V vs 2V for weeks) cannot push borderline rowers toward where the coach put them. Simulated: random mixed lineups are mostly under 2.6
+  // GMS points apart, progression 1V vs 2V about 4.6.
+  evenGmsPts: 2.5,       // the boats' average GMS % within this many points
+  progressionDays: 3,    // the exact same crews racing each other on this many practice days is a progression lineup, even if close in GMS
+  maxMissingGms: 1,      // a boat with more rowers than this missing a GMS % cannot be judged even, so the piece is left out
 };
 
 const round1 = (x) => (x == null || !Number.isFinite(x) ? null : Math.round(x * 10) / 10);
@@ -267,7 +273,9 @@ function solve(A, b, lambda) {
 // Seeded random numbers, so ranges are the same every run.
 function rng(seed) { let s = seed >>> 0 || 1; return () => ((s = (s * 1664525 + 1013904223) >>> 0) / 2 ** 32); }
 
-function fitEffects(groups, cols, ridge) {
+// slope (optional): % boat speed per GMS point, held fixed; each boat's margin first has slope x its average GMS taken off, so what is left is
+// what the crew did beyond its erg standard.
+function fitEffects(groups, cols, ridge, slope = null) {
   const n = cols.length, idx = new Map(cols.map((c, i) => [c, i]));
   const A = Array.from({ length: n }, () => new Array(n).fill(0)), b = new Array(n).fill(0);
   for (const g of groups) {
@@ -278,7 +286,8 @@ function fitEffects(groups, cols, ridge) {
       for (const id of r.rowers) x.set('r:' + id, (x.get('r:' + id) || 0) + 1 / r.rowers.length);
       if (r.shell && idx.has('s:' + r.shell)) x.set('s:' + r.shell, 1);
       if (r.cox && idx.has('c:' + r.cox)) x.set('c:' + r.cox, 1);
-      return { x, y: r.marginPct };
+      if (idx.has('z') && r.z != null) x.set('z', r.z);   // fitting the GMS slope: the boat's average GMS % is one more column
+      return { x, y: r.marginPct - (slope != null && r.z != null ? slope * r.z : 0) };
     });
     const avg = new Map();
     for (const { x } of rows) for (const [k, v] of x) avg.set(k, (avg.get(k) || 0) + v / rows.length);
@@ -295,27 +304,45 @@ function fitEffects(groups, cols, ridge) {
   return solve(A, b, ridge * diag);
 }
 
+const withGms = (rs, gms) => (gms ? rs.map((r) => { const v = r.rowers.map((id) => gms[id]).filter((x) => x != null); return { ...r, z: v.length ? mean(v) : null }; }) : rs);
+const groupsOf = (rs) => [...rs.reduce((m, r) => m.set(r.groupId, [...(m.get(r.groupId) || []), r]), new Map()).values()].filter((g) => g.length >= 2);
+
+/** How much boat speed one GMS point is worth on the water (% per point), learned from every compared piece, progression included: boats far
+ *  apart in GMS are what pin it down (Fable review, 2026-11-16). null when fewer than minUneven pieces had boats at least 1.5 points apart. */
+export function gmsSlope(results, gms, { minUneven = 6, ridge = 0.05 } = {}, o = WATER) {
+  const groups = groupsOf(withGms(usable(results, o), gms));
+  const uneven = groups.filter((g) => { const z = g.map((r) => r.z).filter((x) => x != null); return z.length >= 2 && Math.max(...z) - Math.min(...z) >= 1.5; }).length;
+  if (uneven < minUneven) return { slope: null, uneven };
+  const rowers = [...new Set(groups.flat().flatMap((r) => r.rowers))].sort();
+  const cols = [...rowers.map((id) => 'r:' + id), ...[...new Set(groups.flat().map((r) => r.shell).filter(Boolean))].map((x) => 's:' + x), 'z'];
+  const est = fitEffects(groups, cols, ridge);
+  return { slope: Math.round(est[cols.length - 1] * 1000) / 1000, uneven };
+}
+
 /** Adjusted rating (method 2, like adjusted plus-minus): each boat's margin is the average of its rowers' effects (+ shell and cox effects when
  *  asked), fitted over every compared piece at once, so who you sat with is accounted for. rating is in margin %: a boat of rowers like her would
- *  beat the field by that much. range is the 10th to 90th percentile over 200 resamples of the pieces; a gap inside it means nothing.
- *  status 'too early' until minPieces pieces across minLineups lineups. together lists rowers who always sat together and cannot be told apart. */
+ *  beat the field by that much. With gms ({ id: GMS % }) and slope (from gmsSlope), rating is what she adds beyond her erg, fromErg is what her GMS
+ *  predicts, and overall is the two together. range is the 10th to 90th percentile over 200 resamples of practice DAYS (pieces on one day share a
+ *  lineup, so resampling pieces would make ranges too narrow). status: 'too early' under minPieces pieces or minLineups lineups for her; 'early'
+ *  while the whole set has fewer distinct lineups than rowers rated (enough: false). together lists rowers who always sat together. */
 export function adjustedRatings(results, opts = {}, o = WATER) {
-  const { shells = false, coxes = false, ridge = 0.05, resamples = 200, seed = 7 } = opts;
-  const rs = usable(results, o);
-  const groups = [...rs.reduce((m, r) => m.set(r.groupId, [...(m.get(r.groupId) || []), r]), new Map()).values()].filter((g) => g.length >= 2);
+  const { shells = false, coxes = false, ridge = 0.05, resamples = 200, seed = 7, gms = null, slope = null } = opts;
+  const rs = withGms(usable(results, o), gms);
+  const groups = groupsOf(rs);
   const rowers = [...new Set(groups.flat().flatMap((r) => r.rowers))].sort();
   const cols = [...rowers.map((id) => 'r:' + id),
     ...(shells ? [...new Set(groups.flat().map((r) => r.shell).filter(Boolean))].map((s) => 's:' + s) : []),
     ...(coxes ? [...new Set(groups.flat().map((r) => r.cox).filter(Boolean))].map((c) => 'c:' + c) : [])];
-  if (!cols.length) return { rowers: [], shells: [], coxes: [], together: [], pieces: 0 };
-  const est = fitEffects(groups, cols, ridge);
+  if (!cols.length) return { rowers: [], shells: [], coxes: [], together: [], pieces: 0, lineups: 0, enough: false, slope };
+  const est = fitEffects(groups, cols, ridge, slope);
 
+  const days = [...groups.reduce((m, g) => { const k = g[0].day || g[0].groupId; return m.set(k, [...(m.get(k) || []), g]); }, new Map()).values()];
   const rand = rng(seed), boot = cols.map(() => []);
   for (let k = 0; k < resamples; k++) {
-    const sample = groups.map(() => groups[Math.floor(rand() * groups.length)]);
-    fitEffects(sample, cols, ridge).forEach((v, i) => boot[i].push(v));
+    const sample = days.map(() => days[Math.floor(rand() * days.length)]).flat();
+    fitEffects(sample, cols, ridge, slope).forEach((v, i) => boot[i].push(v));
   }
-  const pct = (xs, q) => { const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
+  const pct = (xs, q) => { if (!xs.length) return null; const s = [...xs].sort((a, b) => a - b); return s[Math.min(s.length - 1, Math.max(0, Math.round(q * (s.length - 1))))]; };
 
   // rowers who appear in exactly the same boat results cannot be separated
   const seen = new Map();
@@ -325,16 +352,23 @@ export function adjustedRatings(results, opts = {}, o = WATER) {
   const together = [...bySig.values()].filter((g) => g.length >= 2).map((g) => g.sort());
   const twinOf = new Map(together.flatMap((g) => g.map((id) => [id, g.filter((x) => x !== id)])));
 
+  const rec0 = new Map(winRecord(rs, o).map((w) => [w.id, w]));
+  const rated = rowers.filter((id) => { const w = rec0.get(id); return w && w.pieces >= o.minPieces && w.lineups >= o.minLineups; }).length;
+  const lineups = new Set(groups.flat().map(lineupKey)).size, enough = rated > 0 && lineups >= rated;   // vs the rowers actually rated
+  const known = gms && slope != null ? rowers.map((id) => gms[id]).filter((v) => v != null) : [];
+  const gmsMid = known.length ? mean(known) : null;
   const rec = new Map(winRecord(rs, o).map((w) => [w.id, w]));
   const row = (c, i) => ({ rating: round1(est[i]), range: [round1(pct(boot[i], 0.1)), round1(pct(boot[i], 0.9))] });
+  const status = (x) => (x === 'too early' ? 2 : x === 'early' ? 1 : 0);
   return {
-    pieces: groups.length,
+    pieces: groups.length, days: days.length, lineups, enough, slope,
     rowers: rowers.map((id) => {
-      const i = cols.indexOf('r:' + id), w = rec.get(id);
-      const early = w.pieces < o.minPieces || w.lineups < o.minLineups;
-      return { id, ...row('r:' + id, i), pieces: w.pieces, lineups: w.lineups, wins: w.wins, avgMarginPct: w.avgMarginPct,
-        status: early ? 'too early' : 'ok', sameAs: twinOf.get(id) || [] };
-    }).sort((a, b) => (a.status === b.status ? b.rating - a.rating : a.status === 'ok' ? -1 : 1)),
+      const i = cols.indexOf('r:' + id), w = rec.get(id), r = row('r:' + id, i);
+      const fromErg = gmsMid != null && gms[id] != null ? round1(slope * (gms[id] - gmsMid)) : null;
+      const st = w.pieces < o.minPieces || w.lineups < o.minLineups ? 'too early' : enough ? 'ok' : 'early';
+      return { id, ...r, fromErg, overall: fromErg != null ? round1(r.rating + fromErg) : r.rating, pieces: w.pieces, lineups: w.lineups, wins: w.wins,
+        avgMarginPct: w.avgMarginPct, status: st, sameAs: twinOf.get(id) || [] };
+    }).sort((a, b) => status(a.status) - status(b.status) || b.overall - a.overall),
     shells: cols.map((c, i) => [c, i]).filter(([c]) => c.startsWith('s:')).map(([c, i]) => ({ shell: c.slice(2), ...row(c, i) })),
     coxes: cols.map((c, i) => [c, i]).filter(([c]) => c.startsWith('c:')).map(([c, i]) => ({ cox: c.slice(2), ...row(c, i) })),
     together,

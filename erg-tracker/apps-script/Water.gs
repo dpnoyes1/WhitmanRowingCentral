@@ -14,6 +14,8 @@
 var WATER_CONTEXT_ACTION = 'water-context';
 var WATER_SAVE_ACTION = 'water-save';
 var WATER_REPORT_ACTION = 'water-report';
+var WATER_RATINGS_USE_ACTION = 'water-ratings-use';
+var WATER_RATINGS_USES = ['', 'Count', 'Leave out'];
 var WATER_ACTIVITY = 'Water';
 var WATER_SOURCE = 'SpeedCoach';
 var WATER_FOLDER_PROP = 'WATER_FOLDER_ID';
@@ -54,7 +56,8 @@ function waterSessionsFromRows_(rows) {
       boatName: String(r['Boat name'] || '').trim(), boatClass: String(r['Boat class'] || '').trim(), lineupId: String(r['Lineup ID'] || '').trim(),
       start: String(r['Start time'] || ''), movingS: feedNum_(r['Moving s']), elapsedS: feedNum_(r['Elapsed s']), meters: feedNum_(r.Meters),
       avgSplitS: feedNum_(r['Avg split s']), avgRate: feedNum_(r['Avg rate']), strokes: feedNum_(r.Strokes), pieces: feedNum_(r.Pieces),
-      kind: String(r.Kind || ''), fileName: String(r['File name'] || ''), curve: waterCurve_(waterJson_(r['Curve JSON'])), importedBy: String(r['Imported by'] || '') };
+      kind: String(r.Kind || ''), fileName: String(r['File name'] || ''), curve: waterCurve_(waterJson_(r['Curve JSON'])), importedBy: String(r['Imported by'] || ''),
+      ratingsUse: String(r['Ratings use'] || '').trim() };
   });
 }
 
@@ -161,11 +164,11 @@ function waterCleanSave_(body) {
 }
 
 /** Water sessions and pieces rows for a cleaned save. Pure (Date stays YYYY-MM-DD). */
-function waterSessionRow_(c, fileLink, by, at) {
+function waterSessionRow_(c, fileLink, by, at, ratingsUse) {
   return { 'Session ID': c.sessionId, Date: c.date, Unit: c.unit, 'Boat name': c.boatName, 'Boat class': c.boatClass,
     'Lineup ID': c.lineupId, 'Start time': c.start, 'Elapsed s': c.elapsedS, 'Moving s': c.movingS, Meters: c.meters,
     'Avg split s': c.avgSplitS, 'Avg rate': c.avgRate, Strokes: c.strokes, Pieces: c.pieces.length, Kind: c.kind,
-    'File name': c.fileName, 'File link': fileLink || '', 'Curve JSON': JSON.stringify(c.curve), 'Imported by': by, 'Imported at': at };
+    'File name': c.fileName, 'File link': fileLink || '', 'Curve JSON': JSON.stringify(c.curve), 'Imported by': by, 'Imported at': at, 'Ratings use': ratingsUse || '' };
 }
 function waterPieceRows_(c) {
   return c.pieces.map(function (p) {
@@ -280,6 +283,37 @@ function processWaterReport_(body) {
     lineups: lineupsFromRows_(readObjects_(TABS.LINEUPS), roster).filter(function (l) { return inRange(l.date); }) };
 }
 
+/** Pure: { date, use } -> the cleaned choice or { error }. use: '' (automatic), 'Count' or 'Leave out'. */
+function waterCleanRatingsUse_(body) {
+  var date = String(body.date || ''), use = body.use === 'Automatic' ? '' : String(body.use || '');
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return { error: 'Pick the day.' };
+  if (WATER_RATINGS_USES.indexOf(use) < 0) return { error: 'Pick Automatic, Count or Leave out.' };
+  return { date: date, use: use };
+}
+
+/** body: { date, use, coachName }. Sets the day's "Who wins" choice on every water session of that date. */
+function processWaterRatingsUse_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var c = waterCleanRatingsUse_(body);
+    if (c.error) return { status: 'invalid', message: c.error };
+    var sheet = tab_(TABS.WATER_SESSIONS), headers = HEADERS[TABS.WATER_SESSIONS], last = lastDataRow_(sheet, headers.length);
+    var dCol = headers.indexOf('Date'), uCol = headers.indexOf('Ratings use'), n = 0;
+    if (last >= 2) sheet.getRange(2, 1, last - 1, headers.length).getValues().forEach(function (v, i) {
+      if (feedDay_(v[dCol]) === c.date) { sheet.getRange(i + 2, uCol + 1).setValue(c.use); n++; }
+    });
+    if (!n) return { status: 'invalid', message: 'No water files imported for that day.' };
+    var by = String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach';
+    logChange_({ Who: by, Tab: TABS.WATER_SESSIONS, 'Row ID': c.date, Field: 'Ratings use', 'Old value': '', 'New value': c.use || 'Automatic', Note: 'site Water results' });
+    return { status: 'ok', date: c.date, use: c.use || 'Automatic', sessions: n };
+  } catch (err) {
+    return { status: 'error', error: err.message };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
 /** body: { dates: [YYYY-MM-DD] }. What the import page needs to suggest boats and lineups for those days. */
 function processWaterContext_(body) {
   var dates = (Array.isArray(body.dates) ? body.dates : []).filter(function (d) { return /^\d{4}-\d{2}-\d{2}$/.test(String(d)); }).slice(0, 14);
@@ -312,7 +346,7 @@ function processWaterSave_(body) {
     var before = beforeRow ? waterSessionsFromRows_([beforeRow])[0] : null;
     var link = waterKeepFile_(c.sessionId, c.fileName, body.file && body.file.base64, beforeRow ? String(beforeRow['File link'] || '') : '');
     var now = new Date();
-    waterReplaceRows_(TABS.WATER_SESSIONS, 'Session ID', [c.sessionId], [waterSessionRow_(c, link, by, now)]);
+    waterReplaceRows_(TABS.WATER_SESSIONS, 'Session ID', [c.sessionId], [waterSessionRow_(c, link, by, now, beforeRow ? String(beforeRow['Ratings use'] || '') : '')]);   // a re-import keeps the coach's choice
     waterReplaceRows_(TABS.WATER_PIECES, 'Session ID', [c.sessionId], waterPieceRows_(c));
     var credits = waterCredits_(c, lineup, roster, String(body.coachName || '').trim(), now);
     var plan = waterWriteCredits_(c.sessionId, credits);

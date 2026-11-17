@@ -1758,4 +1758,14 @@ test('Water: entries reach the feed with their minutes and meters but never the 
   assert.ok(!JSON.stringify(feed.weeks || []).includes('WTR-X-'), 'not in any week result');
 });
 
+test("Water: the day's Who wins choice, kept on a re-import", () => {
+  deq(g.waterCleanRatingsUse_({ date: '2027-02-03', use: 'Automatic' }), { date: '2027-02-03', use: '' });
+  deq(g.waterCleanRatingsUse_({ date: '2027-02-03', use: 'Leave out' }), { date: '2027-02-03', use: 'Leave out' });
+  assert.match(g.waterCleanRatingsUse_({ date: '2027-02-03', use: 'Sometimes' }).error, /Automatic, Count or Leave out/);
+  assert.ok(g.HEADERS[g.TABS.WATER_SESSIONS].includes('Ratings use'));
+  const c = g.waterCleanSave_({ session: { sessionId: 'WS-1-2', date: '2027-02-03', kind: 'Pieces', boatName: 'Hudson', boatClass: '8+', movingS: 600, meters: 3000 }, pieces: [] });
+  assert.strictEqual(g.waterSessionRow_(c, 'link', 'Coach Pat', 'now', 'Count')['Ratings use'], 'Count');
+  assert.strictEqual(g.waterSessionsFromRows_([{ 'Session ID': 'WS-1-2', 'Ratings use': 'Leave out' }])[0].ratingsUse, 'Leave out');
+});
+
 console.log(`${passed} tests passed`);

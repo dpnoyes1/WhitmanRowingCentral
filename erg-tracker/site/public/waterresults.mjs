@@ -54,8 +54,10 @@ function dayTab(v) {
       ${curveChart(v.boats.map((b) => ({ label: b.boatName + ' ' + b.boatClass, points: b.curve })), v.durations)}
       ${curveTable(v.boats.map((b) => ({ ...b, points: b.curve })), v.durations, 'Boat', (b) => `<b>${esc(b.boatName)}</b> <span class="muted">${esc(b.boatClass)}</span>`)}</div>
     <div class="card"><h2>Pieces side by side</h2><p class="muted small">Pieces that started within a minute of each other over the same distance or time. Splits on the 8+ scale (a 4+ at 1.13), margin against the piece's average; + is faster. Sculling boats are listed but not compared.</p>
-      ${v.groups.length ? v.groups.map((g) => `<div class="wr-piece"><h3>${at(g.start)} · ${fmtNum(g.results[0].meters)} m</h3><div class="table-wrap"><table><thead><tr><th>#</th><th>Boat</th><th class="r">Split</th><th class="r">8+ scale</th><th class="r">Margin</th><th class="r">Rate</th></tr></thead><tbody>
-        ${g.results.map((r) => `<tr><td>${r.place ?? '–'}</td><td class="wr-who"><b>${esc(r.boatName)}</b> <span class="muted">${esc(r.boatClass)}</span><br><small class="muted">${crew(r.crew)}</small></td><td class="r num">${fmtTime(r.splitS)}</td><td class="r num">${r.adjSplitS ? fmtTime(r.adjSplitS) : '–'}</td>
+      ${v.groups.length ? `<div class="wr-use"><label>This day in Who wins <select data-wruse="1">${['Automatic', 'Count', 'Leave out'].map((u) => `<option${u === v.dayOverride ? ' selected' : ''}>${u}</option>`).join('')}</select></label>
+          <span class="muted small">Automatic counts a piece only when the boats are within ${v.ratings.evenGmsPts} GMS points and the same crews have not raced on ${v.ratings.progressionDays}+ days. Change it if a day is mislabeled.</span></div>` : ''}
+      ${v.groups.length ? v.groups.map((g) => `<div class="wr-piece"><h3>${at(g.start)} · ${fmtNum(g.results[0].meters)} m <span class="pill ${g.rating.counts ? 'good' : 'warn'}">${!g.rating.counts ? 'Left out of Who wins' : Object.values(g.rating.boats || {}).every(Boolean) ? 'Counts in Who wins' : 'Counts in Who wins (some boats)'}</span></h3><p class="muted small">${esc(g.rating.reason)}</p><div class="table-wrap"><table><thead><tr><th>#</th><th>Boat</th><th class="r">Split</th><th class="r">8+ scale</th><th class="r">Margin</th><th class="r">Rate</th></tr></thead><tbody>
+        ${g.results.map((r) => `<tr><td>${r.place ?? '–'}</td><td class="wr-who"><b>${esc(r.boatName)}</b> <span class="muted">${esc(r.boatClass)}</span>${g.rating.counts && g.rating.boats && g.rating.boats[r.boatName] === false ? ' <span class="pill">not counted</span>' : ''}<br><small class="muted">${crew(r.crew)}</small></td><td class="r num">${fmtTime(r.splitS)}</td><td class="r num">${r.adjSplitS ? fmtTime(r.adjSplitS) : '–'}</td>
           <td class="r num ${r.marginPct > 0 ? 'good-text' : r.marginPct < 0 ? 'warn-text' : ''}">${pct(r.marginPct)}</td><td class="r num">${r.rate ?? '–'}</td></tr>`).join('')}</tbody></table></div></div>`).join('')
         : `<p class="muted">No pieces rowed side by side this day.${v.unmatchedPieces ? ` ${v.unmatchedPieces} piece${v.unmatchedPieces === 1 ? '' : 's'} had no match: upload every boat's file on set-piece days.` : ' Comparisons come from set-piece days with every boat\'s file uploaded.'}</p>`}</div>`;
 }
@@ -72,13 +74,18 @@ function seasonTab(v) {
 
 function winsTab(v) {
   const { esc } = ctx, r = v.ratings;
-  const range = (x) => `${pct(x.range[0])} to ${pct(x.range[1])}`;
+  const range = (x) => (x.range[0] == null ? '' : `${pct(x.range[0])} to ${pct(x.range[1])}`);
+  const out = Object.entries(r.leftOut).map(([why, n]) => `${n} ${esc(why)}`).join('; ');
+  const erg = r.slope != null;
   return `<div class="card"><h2>Who generally wins</h2>
-      <p class="muted small">From ${r.pieces} compared piece${r.pieces === 1 ? '' : 's'} in sweep boats this season. <b>Rating</b>: how much faster than the field a boat of rowers like her would be, after accounting for who she sat with. The range is where the number would land 80% of the time with other pieces; ratings whose ranges overlap can't be told apart. A rating shows once she has ${r.minPieces} compared pieces across ${r.minLineups} different lineups. It sorts the top and bottom well and the middle poorly, and supports seat racing; it doesn't replace it.</p>
-      ${r.rowers.length ? `<div class="table-wrap"><table><thead><tr><th>Rower</th><th class="r">Rating</th><th class="r">Range</th><th class="r">Pieces</th><th class="r">Lineups</th><th class="r">Won</th><th class="r">Avg margin</th></tr></thead><tbody>
-        ${r.rowers.map((x) => `<tr class="${x.status === 'ok' ? '' : 'muted'}"><td class="wr-who"><b>${esc(x.name)}</b>${x.sameAs.length ? `<br><small class="warn-text">always with ${esc(x.sameAs.join(', '))}</small>` : ''}</td>
-          <td class="r num">${x.status === 'ok' ? `<b>${pct(x.rating)}</b>` : 'too early'}</td><td class="r num">${x.status === 'ok' ? range(x) : ''}</td>
-          <td class="r num">${x.pieces}</td><td class="r num">${x.lineups}</td><td class="r num">${x.wins}</td><td class="r num">${pct(x.avgMarginPct)}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No compared pieces yet. Set-piece days with every boat\'s file and a saved lineup for each boat give results.</p>'}
+      <p class="small">From <b>${r.pieces}</b> piece${r.pieces === 1 ? '' : 's'} in even lineups (boats within ${r.evenGmsPts} GMS points) on ${r.days} day${r.days === 1 ? '' : 's'}, <b>${r.lineups}</b> different lineup${r.lineups === 1 ? '' : 's'}.${out ? ` Left out: ${out}.` : ''}</p>
+      ${!r.gmsKnown ? '<p class="small warn-text">No GMS % could be read, so no lineup can be judged even yet.</p>' : ''}
+      ${r.rowers.length && !r.enough ? `<p class="small warn-text">Early: ${r.lineups} different lineups for ${r.rowers.filter((x) => x.status !== 'too early').length} rated rowers. Numbers settle once there are about as many different lineups as rowers. Swapping rowers between boats between pieces helps most.</p>` : ''}
+      <p class="muted small"><b>From erg</b>: what her GMS % predicts (${erg ? `1 GMS point is worth about ${r.slope.toFixed(2)}% of boat speed on the water, learned from ${r.slopeBasis} uneven pieces` : 'not learned yet: needs some pieces with boats at least 1.5 GMS points apart, so ratings are not split yet'}). <b>Beyond erg</b>: what she adds on the water beyond that, after accounting for who she sat with. <b>Overall</b> is the two together. Differences inside the range are not real. Rowers who have not swapped boats against each other cannot be separated. Use this as one input alongside seat races.</p>
+      ${r.rowers.length ? `<div class="table-wrap"><table><thead><tr><th>Rower</th><th class="r">Overall</th><th class="r">From erg</th><th class="r">Beyond erg</th><th class="r">Range</th><th class="r">Pieces</th><th class="r">Lineups</th><th class="r">Won</th></tr></thead><tbody>
+        ${r.rowers.map((x) => `<tr class="${x.status === 'too early' ? 'muted' : ''}"><td class="wr-who"><b>${esc(x.name)}</b>${x.status === 'early' ? ' <span class="pill">early</span>' : ''}${x.sameAs.length ? `<br><small class="warn-text">always with ${esc(x.sameAs.join(', '))}</small>` : ''}</td>
+          ${x.status === 'too early' ? '<td class="r num" colspan="4">too early</td>' : `<td class="r num"><b>${pct(x.overall)}</b></td><td class="r num">${x.fromErg == null ? '–' : pct(x.fromErg)}</td><td class="r num">${pct(x.rating)}</td><td class="r num">${range(x)}</td>`}
+          <td class="r num">${x.pieces}</td><td class="r num">${x.lineups}</td><td class="r num">${x.wins}</td></tr>`).join('')}</tbody></table></div>` : '<p class="muted">No pieces count yet. Set-piece days in even lineups, with every boat\'s file and a saved lineup for each boat, give results.</p>'}
       ${r.together.length ? `<p class="small warn-text">Always in the same boat, so not separable: ${r.together.map((g) => esc(g.join(' and '))).join('; ')}. Mix them into different boats to tell them apart.</p>` : ''}</div>
     ${r.shells.length > 1 || r.coxes.length > 1 ? `<div class="card"><h2>Shells and coxswains</h2><p class="muted small">The same fit also estimates what each shell and coxswain adds. Treat it the same way: ranges that overlap mean no difference.</p>
       <div class="table-wrap"><table><tbody>${r.shells.map((s) => `<tr><td>Shell <b>${esc(s.shell)}</b></td><td class="r num">${pct(s.rating)}</td><td class="r num">${range(s)}</td></tr>`).join('')}
@@ -91,6 +98,13 @@ async function load() {
   const out = await res.json().catch(() => ({}));
   if (!res.ok) throw new Error(out.error || 'Could not load the water results.');
   return out;
+}
+
+async function saveUse(use) {
+  const res = await fetch('/api/water/ratings-use', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ date: state.date, use }) });
+  const out = await res.json().catch(() => ({}));
+  if (!res.ok) alert(out.error || 'Could not save that.');
+  draw();
 }
 
 async function draw() {
@@ -111,7 +125,7 @@ function wire() {
   if (wired) return; wired = true;
   const on = () => !!ctx && !!document.querySelector('.wresults');
   document.addEventListener('change', (e) => { const t = on() && e.target; if (!t || !t.dataset) return;
-    if (t.dataset.wrdate) { state.date = t.value; draw(); } else if (t.dataset.wrrate) { state.rate = t.value; draw(); } });
+    if (t.dataset.wrdate) { state.date = t.value; draw(); } else if (t.dataset.wrrate) { state.rate = t.value; draw(); } else if (t.dataset.wruse) saveUse(t.value); });
   document.addEventListener('click', (e) => { const b = on() && e.target.closest && e.target.closest('[data-wrtab]'); if (!b) return; state.tab = b.dataset.wrtab; draw(); });
 }
 
