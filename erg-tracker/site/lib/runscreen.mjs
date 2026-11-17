@@ -13,6 +13,7 @@ Rules:
 - Copy numbers exactly as shown, as text, with their unit words. Do not round, convert or fix them.
 - "distance" is the total distance of the run. Put the number in "distance" and the unit printed next to it in "distance_unit": "mi", "km", "m" or "" if none is shown. A bare number on a US screen is usually miles, but only say so if the unit is printed.
 - Garmin Connect (phone app) overview: a big distance number with its unit (mi, km or m) under or beside the word "Distance"; then Avg Heart Rate and Avg Pace (unit printed after the number: "12:12 /mi"); then Total Time and Total Calories. An older layout has three circles (Time, Distance with "(mi)" in its label, Calories) and a row "Pace (min/mi)" where the unit is only in the label. The phone Home screen card "Today's Activity" shows no labels: "6.22 mi", then "55:15 • 8:53 /mi" meaning time then pace. In meters, a decimal comma can appear ("800,00 m" is 800 meters).
+- Apple Fitness (phone) workout summary: Distance in capitals ("11.38KM", "4.00MI"; a decimal comma is possible: "3,22KM"), Total Time or Workout Time as H:MM:SS with a leading zero hour ("0:41:39"), sometimes Elapsed Time beside Workout Time (Workout Time is the moving time), and Avg. Pace written 6'32"/KM or 10'24''/MI. "Elevation Gain 81M" is meters of climb, never the distance. Apple Watch Summary screen: "TOTAL TIME 0:53:06" and "TOTAL DISTANCE 5.26MI". A live Apple Watch workout screen has no labels for time and distance: the big yellow clock (41:57.00) is the time, the number ending in MI or KM is the distance, "AVERAGE PACE" is the pace, and "ROLLING MILE" is a live pace to ignore; add the flag "live screen, not finished". The Splits table lists one row per mile or km with a short last row (for example 00:06): never use it as the total.
 - The activity title and notes (for example "3.25mi Easy Run" or "W7 Mon") are a plan or a name, not a result. Never take a distance or time from the title. The map, temperature, calories, heart rate and elevation are not the distance or time.
 - "moving_time" is the time labeled Total Time, Moving Time, Workout Time, Time, Duration, Active Time or Timer. "elapsed_time" is the time labeled Elapsed Time or Total Time, only when the screen shows both. If only one time is shown, put it in "moving_time" and use "" for the other. Times look like 54:32, 1:02:15 or 0:25:30. Copy them as shown.
 - "avg_pace" is the average pace for the whole run, labeled Avg Pace, Pace or Avg. Pace, as shown (for example 8:30, 8'30" or 5:12). "pace_unit" is "/mi", "/km" or "" if not shown (a label such as "Pace (min/mi)" means "/mi"). Ignore current or live pace, best pace, and any single lap or split.
@@ -98,8 +99,11 @@ export function compareRun(read, typed) {
   const dErr = meters != null && typed.meters > 0 ? pct(meters, typed.meters) : null;
   const tErr = times.length && typed.timeS > 0 ? Math.min(...times.map((t) => Math.abs(t - typed.timeS) / Math.max(typed.timeS * 0.03, 15))) : null; // 1 = at the limit
   if (read.paceS && read.paceMeters && typed.meters > 0 && typed.timeS > 0) {
+    // The average pace is over the moving time; if the athlete typed the (longer) elapsed time, scale the pace the same way.
+    const near = times.length ? times.reduce((a, b) => (Math.abs(b - typed.timeS) < Math.abs(a - typed.timeS) ? b : a)) : null;
+    const scale = near && read.movingS > 0 ? near / read.movingS : 1;
     const typedPace = typed.timeS / typed.meters * read.paceMeters;
-    if (pct(read.paceS, typedPace) > 0.10) notes.push('Average pace on the photo differs from the typed distance and time.');
+    if (pct(read.paceS * scale, typedPace) > 0.10) notes.push('Average pace on the photo differs from the typed distance and time.');
   }
   if (dErr == null && tErr == null) return { verdict: 'unreadable', notes: ['Nothing on the photo could be compared.'] };
   const dOk = dErr == null || dErr <= 0.05, tOk = tErr == null || tErr <= 1;

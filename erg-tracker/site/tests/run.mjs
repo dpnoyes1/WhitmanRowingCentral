@@ -2902,11 +2902,20 @@ test('run photo check (built, switched off): reading and comparing a run screen'
     [{ distance: '5.18', distance_unit: 'km', moving_time: '32:26', avg_pace: '6:16', pace_unit: '/km' }, 5180, 1946],
     [{ distance: '6.22', distance_unit: 'mi', moving_time: '55:15', avg_pace: '8:53', pace_unit: '/mi' }, 10010, 3315],
   ];
+  // Apple Fitness and Apple Watch screens David sent (2026-11-17)
+  garmin.push(
+    [{ distance: '11.38', distance_unit: 'km', moving_time: '1:14:23', avg_pace: `6'32"`, pace_unit: '/km' }, 11380, 4463],
+    [{ distance: '5.26', distance_unit: 'mi', moving_time: '0:53:06', avg_pace: '', pace_unit: '' }, 8465, 3186],
+    [{ distance: '4.00', distance_unit: 'mi', moving_time: '0:41:39', avg_pace: `10'24''`, pace_unit: '/mi' }, 6437, 2499],
+    [{ distance: '4.96', distance_unit: 'mi', moving_time: '41:57.00', avg_pace: `8'27"`, pace_unit: '/mi' }, 7982, 2517],
+    [{ distance: '3,22', distance_unit: 'km', moving_time: '0:30:48', elapsed_time: '0:36:36', avg_pace: `9'34"`, pace_unit: '/km' }, 3220, 1848],
+  );
   for (const [g, m, t] of garmin) {
     const r = normalizeRunRead({ app: 'Garmin Connect', activity: 'Running', date: '', elapsed_time: '', flags: [], ...g });
     assert.deepStrictEqual([r.meters, r.movingS], [m, t], g.distance);
     assert.strictEqual(compareRun(r, { meters: m, timeS: t }).verdict, 'match', g.distance + ' pace agrees with distance and time');
   }
+  assert.strictEqual(compareRun(normalizeRunRead({ app: 'Apple', activity: 'Run', date: '', distance: '3,22', distance_unit: 'km', moving_time: '0:30:48', elapsed_time: '0:36:36', avg_pace: `9'34"`, pace_unit: '/km', flags: [] }), { meters: 3220, timeS: 2196 }).verdict, 'match', 'typed the elapsed time: pace is scaled too');
   assert.strictEqual(parsePace("8'30\""), 510);
   assert.strictEqual(parsePace('5:12'), 312);
   const raw = { app: 'Strava', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:40', elapsed_time: '27:05', avg_pace: '8:17', pace_unit: '/mi', flags: [] };
