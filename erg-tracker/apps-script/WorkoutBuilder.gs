@@ -12,6 +12,7 @@ var WORKOUT_LIST_ACTION = 'workout-list';
 var WORKOUT_DELETE_ACTION = 'workout-delete';
 var WORKOUT_UPDATE_ACTION = 'workout-update';
 var WORKOUT_MOVE_ACTION = 'workout-move';
+var WORKOUT_UNSAVE_ACTION = 'workout-unsave';
 var WORKOUT_MAX_PIECES = 12;
 var WORKOUT_SQUADS = ['All', 'Varsity', 'Novice'];
 var WORKOUT_SESSIONS = ['Practice', 'OYO'];
@@ -88,6 +89,7 @@ function workoutBuildRows_(workoutId, body) {
   for (var i = 0; i < pieces.length; i++) {
     var r = workoutPieceRow_(workoutId, name, i + 1, pieces[i] || {});
     if (r.error) return r;
+    r['Saved'] = body.keep === true ? 'Yes' : 'No';
     rows.push(r);
   }
   try { workoutPieces(rows, workoutId); } catch (e) { return { error: String(e.message || e) }; }
@@ -125,11 +127,6 @@ function workoutListView_(workouts, schedule, fromDay) {
     if (!(id in names)) { names[id] = String(w.Name || '').trim(); pieces[id] = []; order.push(id); }
     pieces[id].push(w);
   });
-  var library = order.map(function (id) {
-    var label = '';
-    try { label = workoutPieces(pieces[id], id).map(pieceLabel).join(' + '); } catch (e) { label = ''; }
-    return { id: id, name: names[id], summary: label, pieces: pieces[id].map(workoutPieceCompact_) };
-  }).reverse();
   var until = dayKey_(new Date(Number(fromDay.slice(0, 4)), Number(fromDay.slice(5, 7)) - 1, Number(fromDay.slice(8, 10)) + 28));
   var nameOf = function (id) { return names[String(id).trim()] || ''; };
   var upcoming = scheduleSorted_(schedule, nameOf).filter(function (r) {
@@ -140,7 +137,33 @@ function workoutListView_(workouts, schedule, fromDay) {
     return { day: feedDay_(r.Date), squad: String(r.Squad || 'All').trim() || 'All', session: String(r.Session || 'Practice').trim() || 'Practice',
       workoutId: id, name: names[id] || '', published: isActive_(r.Published), notes: String(r.Notes || '') };
   });
+  // The saved list holds saved workouts only; a one-off still shows when a coming session uses it (the editor needs its pieces).
+  var used = {};
+  upcoming.forEach(function (u) { used[u.workoutId] = true; });
+  var library = order.filter(function (id) { return workoutGroupSaved_(pieces[id]) || used[id]; }).map(function (id) {
+    var label = '';
+    try { label = workoutPieces(pieces[id], id).map(pieceLabel).join(' + '); } catch (e) { label = ''; }
+    return { id: id, name: names[id], summary: label, saved: workoutGroupSaved_(pieces[id]), pieces: pieces[id].map(workoutPieceCompact_) };
+  }).reverse();
   return { library: library, upcoming: upcoming };
+}
+
+/** True unless the workout was made as a one-off (Saved = No). Blank, as on older rows, counts as saved. Pure. */
+function workoutGroupSaved_(rows) {
+  return !rows.some(function (w) { return String(w['Saved'] === undefined || w['Saved'] === null ? '' : w['Saved']).trim().toLowerCase() === 'no'; });
+}
+
+/** Sets Saved = Yes (or No when `yes` is false) on all rows of a workout. */
+function workoutMarkSaved_(id, yes) {
+  var sheet = tab_(TABS.WORKOUTS), vals = sheet.getDataRange().getValues(), heads = vals[0].map(String);
+  var idc = heads.indexOf('Workout ID'), sc = heads.indexOf('Saved');
+  if (idc < 0 || sc < 0) return;
+  for (var r = 1; r < vals.length; r++) if (String(vals[r][idc]).trim() === id) sheet.getRange(r + 1, sc + 1).setValue(yes === false ? 'No' : 'Yes');
+}
+
+/** True when the library workout `id` is a one-off (so a "keep" request should flip it to saved). */
+function workoutIsOneOff_(existing, id) {
+  return !workoutGroupSaved_(existing.filter(function (w) { return String(w['Workout ID']).trim() === id; }));
 }
 
 /** One Workouts row for the site's editor: only the filled-in fields, as text. Pure. */
@@ -191,7 +214,7 @@ function scheduleSorted_(rows, nameOf) {
 /** True when two workouts (arrays of Workouts-row objects) are the same name and pieces, whatever their IDs. Pure. */
 function workoutRowsSame_(a, b) {
   if (a.length !== b.length) return false;
-  var keys = HEADERS[TABS.WORKOUTS].filter(function (k) { return k !== 'Workout ID'; });
+  var keys = HEADERS[TABS.WORKOUTS].filter(function (k) { return k !== 'Workout ID' && k !== 'Saved'; });
   for (var i = 0; i < a.length; i++) {
     for (var j = 0; j < keys.length; j++) {
       var x = a[i][keys[j]], y = b[i][keys[j]];
@@ -217,7 +240,7 @@ function workoutFindSame_(existing, newRows) {
 /** Makes sure the Workouts tab has its Unit and Pace target headers (older Sheets get them on first save). */
 function workoutsEnsureColumns_() {
   var sheet = tab_(TABS.WORKOUTS), heads = HEADERS[TABS.WORKOUTS];
-  ['Unit', 'Pace target'].forEach(function (h) {
+  ['Unit', 'Pace target', 'Saved'].forEach(function (h) {
     var col = heads.indexOf(h) + 1;
     if (sheet.getMaxColumns() < col) sheet.insertColumnsAfter(sheet.getMaxColumns(), col - sheet.getMaxColumns());
     var cell = sheet.getRange(1, col);
@@ -242,6 +265,26 @@ function scheduleNextOrder_(schedule, nameOf, days) {
   schedule.forEach(function (r, i) { var d = feedDay_(r.Date); if (d in out && keys[i] > out[d]) out[d] = keys[i]; });
   days.forEach(function (d) { out[d] += 1; });
   return out;
+}
+
+/** body: { workoutId, coachName }. Takes a workout off the saved list. Days already planned keep it; nothing is deleted. */
+function processWorkoutUnsave_(body) {
+  var lock = LockService.getScriptLock();
+  lock.waitLock(30000);
+  try {
+    var id = String(body.workoutId || '').trim();
+    var existing = readObjects_(TABS.WORKOUTS);
+    var rows = existing.filter(function (w) { return String(w['Workout ID']).trim() === id; });
+    if (!rows.length) return { status: 'invalid', message: 'That workout is no longer in the library.' };
+    if (workoutGroupSaved_(rows)) {
+      workoutsEnsureColumns_();
+      workoutMarkSaved_(id, false);
+      logChange_({ Who: String(body.coachName || 'Coach').trim().slice(0, 60) || 'Coach', Tab: TABS.WORKOUTS, 'Row ID': id, Field: 'Saved', 'Old value': 'Yes', 'New value': 'No', Note: 'site Plan page (removed from saved workouts)' });
+    }
+    return processWorkoutList_();
+  } finally {
+    lock.releaseLock();
+  }
 }
 
 function processWorkoutList_() {
@@ -271,7 +314,7 @@ function processWorkoutSave_(body) {
       var b = workoutBuildRows_(id, body);
       if (b.error) return { status: 'invalid', message: b.error };
       var same = workoutFindSame_(existing, b.rows);   // already saved: reuse it, no copy
-      if (same) id = same; else wrows = b.rows;
+      if (same) { id = same; if (body.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id, true); } } else wrows = b.rows;
     }
     var schedule = readObjects_(TABS.SCHEDULE);
     var names = workoutNameMap_(existing.concat(wrows));
@@ -386,7 +429,7 @@ function processWorkoutUpdate_(body) {
       var b = workoutBuildRows_(id, to);
       if (b.error) return { status: 'invalid', message: b.error };
       var same = workoutFindSame_(existing, b.rows);
-      if (same) id = same; else wrows = b.rows;
+      if (same) { id = same; if (to.keep === true && workoutIsOneOff_(existing, id)) { workoutsEnsureColumns_(); workoutMarkSaved_(id, true); } } else wrows = b.rows;
     } else if (to.workoutId) {
       id = String(to.workoutId).trim();
       if (!existing.some(function (w) { return String(w['Workout ID']).trim() === id; })) return { status: 'invalid', message: 'That workout is not in the library.' };

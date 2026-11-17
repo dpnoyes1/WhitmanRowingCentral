@@ -146,12 +146,12 @@ export function openPlan(v, ctx) {
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
-    open: false, edit: null, day: '', also: [], useId: '', pick: '', act: ERG, unit: 'mi', paceOn: false, pace: '',
+    open: false, edit: null, day: '', also: [], useId: '', keep: false, pick: '', act: ERG, unit: 'mi', paceOn: false, pace: '',
     notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
     rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice', published: false,
     week: startWeek()
   };
-  B.pick = data.library[0] ? data.library[0].id : '';
+  { const f = data.library.find((w) => w.saved !== false); B.pick = f ? f.id : ''; }
   let nameTouched = false;
 
   const opt = (list, cur) => list.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('');
@@ -223,10 +223,18 @@ export function openPlan(v, ctx) {
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
 
   // ---- the editor: opens under the week, names its day ----
+  const libraryHtml = () => {
+    const items = data.library.filter((w) => w.saved !== false);
+    if (!items.length) return '';
+    return `<div class="card" id="plib"><div class="eyebrow">Saved workouts</div>
+      <p class="note">Your list for "Start from a saved workout". Removing one only takes it off this list; days already planned keep it.</p>
+      <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
+  };
   const editorHtml = () => {
     if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap “+ Add workout” under a day to build one for that day, or tap a workout to change it.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
-    const saved = data.library.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${data.library.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
+    const picks = data.library.filter((w) => w.saved !== false);
+    const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
     const using = B.useId ? lib(B.useId) : null;
     const builder = B.useId
       ? `<div class="card"><div class="eyebrow">Using saved workout</div><div class="big num">${esc(using ? using.name : B.useId)}</div><p class="note">${esc(using ? using.summary : '')} Used exactly as saved.</p><button type="button" class="btn ghost sm" data-ownbuild="1">Build my own instead</button></div>`
@@ -239,6 +247,7 @@ export function openPlan(v, ctx) {
       ${fields()}
       <div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
         ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>
+      <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my saved workouts (to reuse later)</label><span class="sub">Leave this off for a one-off. It is still planned for the day.</span></div>
       <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
     const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
     const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}">${esc(dayShort(d))}</button>`).join('')}</div></div>`;
@@ -262,10 +271,11 @@ export function openPlan(v, ctx) {
   const draw = () => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>Plan workouts</h1></div>
         <div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div></div>
-      <div id="pnotice">${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
+      <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
       <div class="pweek">${weekHtml()}</div>
       <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
-      ${editorHtml()}`;
+      ${editorHtml()}
+      ${libraryHtml()}`;
     wire();
     if (scrollTo) { const el = app.querySelector(scrollTo); scrollTo = ''; if (el && el.scrollIntoView) el.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   };
@@ -302,7 +312,7 @@ export function openPlan(v, ctx) {
   };
 
   const resetBuilder = () => {
-    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', also: [], act: ERG, unit: 'mi', paceOn: false, pace: '' });
+    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', keep: false, also: [], act: ERG, unit: 'mi', paceOn: false, pace: '' });
     B.rows = { distance: PRESET.distance(), time: PRESET.time() };
     nameTouched = false; nlMsg = null; asking = false;
   };
@@ -314,23 +324,44 @@ export function openPlan(v, ctx) {
     B.open = true; B.edit = { key: keyOf(u) }; B.day = u.day;
     B.squad = u.squad; B.session = u.session; B.notes = u.notes || ''; B.published = !!u.published; B.name = u.name || '';
     if (parsed) { apply(parsed); nameTouched = true; } else B.useId = u.workoutId;
+    B.keep = !l || l.saved !== false;
     scrollTo = '#peditor'; draw();
   };
   const usePick = () => {
     const l = lib(B.pick); if (!l) return;
+    B.keep = false;
     const parsed = fromPieces(l.pieces, l.name);
     if (parsed) { apply(parsed); B.name = l.name; B.useId = ''; nameTouched = true; nlMsg = { t: `Loaded “${l.name}”. Change anything, then save.` }; }
     else { B.useId = l.id; nlMsg = null; }
     draw();
   };
 
+  // Reorder at once on screen, then confirm with the Sheet; put the old order back if it fails.
+  const moveSession = async (i, d) => {
+    if (busy) return;
+    const u = data.upcoming[i]; if (!u) return;
+    const j = (() => { for (let x = i + d; x >= 0 && x < data.upcoming.length; x += d) { if (data.upcoming[x].day === u.day) return x; } return -1; })();
+    if (j < 0) return;
+    const before = data.upcoming.slice(), key = keyOf(u);
+    const next = before.slice(); [next[i], next[j]] = [next[j], next[i]];
+    data = { ...data, upcoming: next };
+    const ok = await act({ move: { key, dir: d } }, 'move', '');
+    if (!ok) data = { ...data, upcoming: before };
+    draw();
+  };
+
   function wire() {
     app.querySelectorAll('[data-add]').forEach((b) => { b.onclick = () => openAdd(b.dataset.add); });
     app.querySelectorAll('[data-edit]').forEach((b) => { b.onclick = () => openEdit(Number(b.dataset.edit)); });
-    app.querySelectorAll('[data-mv]').forEach((b) => { b.onclick = () => { const [i, d] = b.dataset.mv.split(':').map(Number); act({ move: { key: keyOf(data.upcoming[i]), dir: d } }, 'move', '').then(() => draw()); }; });
+    app.querySelectorAll('[data-mv]').forEach((b) => { b.onclick = () => { const [i, d] = b.dataset.mv.split(':').map(Number); moveSession(i, d); }; });
     app.querySelectorAll('[data-type]').forEach((b) => { b.onclick = () => { B.type = b.dataset.type; draw(); }; });
     app.querySelectorAll('[data-act]').forEach((b) => { b.onclick = () => { B.act = b.dataset.act; draw(); }; });
     app.querySelectorAll('[data-unit]').forEach((b) => { b.onclick = () => { B.unit = b.dataset.unit; draw(); }; });
+    app.querySelectorAll('[data-unsave]').forEach((b) => { b.onclick = async () => {
+      const l = lib(b.dataset.unsave), ok = await act({ unsave: { workoutId: b.dataset.unsave } }, 'unsave', () => `Removed “${l ? l.name : 'workout'}” from your saved workouts.`);
+      if (ok) { const f = data.library.find((w) => w.saved !== false); if (!lib(B.pick) || (lib(B.pick) || {}).saved === false) B.pick = f ? f.id : ''; }
+      scrollTo = '#pnotice'; draw(); }; });
+    const kp = app.querySelector('[data-keep]'); if (kp) kp.onchange = () => { B.keep = kp.checked; };
     const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; draw(); };
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });
     app.querySelectorAll('[data-pub]').forEach((b) => { b.onclick = () => { B.published = b.dataset.pub === 'published'; draw(); }; });
@@ -366,7 +397,7 @@ export function openPlan(v, ctx) {
     const built = buildPieces(B);
     if (!B.name.trim()) return { err: 'Give the workout a name.' };
     if (built.err) return { err: 'Fix the numbers first. ' + built.err };
-    return { part: { name: B.name.trim(), pieces: built.pieces } };
+    return { part: { name: B.name.trim(), pieces: built.pieces, keep: B.keep } };
   };
 
   // One call to /api/workouts; every answer carries the Sheet's fresh week.

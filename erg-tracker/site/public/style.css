@@ -855,3 +855,5 @@ td.nowrap { white-space: nowrap; }
 }
 /* U14: when nobody has a 100m test, the Sprint column shrinks to its note */
 @media (min-width: 561px) { .bal-list.no-sprint .bal-row { grid-template-columns: minmax(150px, 1.2fr) 9.5em 8em minmax(0, 2.5fr) 44px; } }
+
+.plib{list-style:none;margin:0;padding:0}.plib li{display:flex;gap:12px;align-items:center;justify-content:space-between;padding:8px 0;border-top:1px solid rgba(255,255,255,.1)}.plib li:first-child{border-top:0}.plib .pmain{min-width:0;overflow-wrap:anywhere}

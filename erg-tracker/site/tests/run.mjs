@@ -2634,12 +2634,17 @@ test('workout builder: coaches only, whitelisted fields go to the Sheet, errors 
   assert.strictEqual(calls[n1 + 1].to.notes, undefined, 'notes stay as they are unless sent');
   await handleWorkouts(post(coach, { move: { key, dir: 1 } }), env, { fetchImpl: sheet(ok) });
   assert.deepStrictEqual(calls[n1 + 2], { action: 'workout-move', ...key, dir: 1, coachName: 'Pat Example', key: 'fake-key' });
+  await handleWorkouts(post(coach, { unsave: { workoutId: 'W7', evil: 1 } }), env, { fetchImpl: sheet(ok) });
+  assert.deepStrictEqual(calls[n1 + 3], { action: 'workout-unsave', workoutId: 'W7', coachName: 'Pat Example', key: 'fake-key' });
+  assert.strictEqual((await handleWorkouts(post(coach, { unsave: {} }), env, { fetchImpl: sheet(ok) })).status, 400);
   const n2 = calls.length;
   for (const bad of [{ move: { key, dir: 2 } }, { move: { key: {}, dir: 1 } }, { update: { key } }, { update: { key: {}, to: { notes: 'x' } } }, { update: { key, to: [] } }]) {
     assert.strictEqual((await handleWorkouts(post(coach, bad), env, { fetchImpl: sheet(ok) })).status, 400);
   }
   assert.strictEqual((await handleWorkouts(post(athlete, { update: { key, to: { notes: 'x' } } }), env, { fetchImpl: sheet(ok) })).status, 403);
   assert.strictEqual(calls.length, n2, 'bad edits never reach the Sheet');
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', keep: true, pieces: [] }).keep, true);
+  assert.strictEqual(cleanWorkoutBody({ name: 'x', keep: 'yes', pieces: [] }).keep, undefined);
   assert.strictEqual(cleanWorkoutBody({ name: 'x', pieces: new Array(13).fill({}) }), null);
   assert.strictEqual(cleanWorkoutBody({ name: 'x', dates: new Array(32).fill('2026-11-17'), pieces: [] }), null);
 });
