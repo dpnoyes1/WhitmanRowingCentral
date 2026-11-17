@@ -263,6 +263,7 @@ input[type="password"], input[type="search"], .login input, select {
 .flag-label { fill: var(--warn); color: var(--warn); font-size: 11px; font-weight: 600; }
 .legend .tick-key { display: inline-block; width: 14px; height: 0; border-top: 2px solid var(--text); border-radius: 0; vertical-align: middle; background: none; }
 .good-text { color: var(--good); }
+.bad-text { color: var(--bad); }
 h3 { font-size: .95rem; margin: 14px 0 8px; }
 table.insights td, table.insights th { white-space: nowrap; }
 .legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: .85rem; color: var(--text-2); margin-bottom: 8px; }

@@ -759,12 +759,13 @@ function changeText(d, lowerBetter, r) {
   if (d === 0) return '<span class="muted">same</span>';
   const better = lowerBetter ? d < 0 : d > 0;
   const amt = lowerBetter ? `${Math.abs(d).toFixed(1)}s` : `${fmtNum(Math.abs(d))} m`;
-  // Split difference per 500m (David, 2026-11-17): a 2k's split moves by a quarter of the time; a 20' compares the two splits.
+  // Split difference (David, 2026-11-17): a 2k's split moves by a quarter of the time; a 20' compares the two splits.
+  // The arrow and green/red say better or worse, so no "faster" or "more" words.
   let sd = null;
   if (lowerBetter) sd = Math.abs(d) / 4;
   else if (r && r.meters && r.meters - d > 0) sd = Math.abs(600000 / (r.meters - d) - 600000 / r.meters);
-  const splitTxt = sd !== null && sd >= 0.05 ? `<div class="small">${sd.toFixed(1)}s/500m ${better ? 'faster' : 'slower'}</div>` : '';
-  return `<span class="${better ? 'good-text' : 'muted'}">${better ? '▲' : '▼'} ${amt} ${lowerBetter ? (better ? 'faster' : 'slower') : (better ? 'more' : 'less')}${splitTxt}</span>`;
+  const splitTxt = sd !== null && sd >= 0.05 ? `<div class="small">${sd.toFixed(1)} splits</div>` : '';
+  return `<span class="${better ? 'good-text' : 'bad-text'}">${better ? '▲' : '▼'} ${amt}${splitTxt}</span>`;
 }
 
 function progressCard(ins, coach) {
