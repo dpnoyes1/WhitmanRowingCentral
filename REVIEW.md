@@ -6,7 +6,8 @@ David's standing rules. Every thread checks these before it opens a PR, and a re
 
 1. `node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs` both pass.
 2. If you changed anything under `erg-tracker/site/public/` (pages, CSS, markup): also run `node erg-tracker/site/tests/browser/run.mjs`. It needs Playwright (cloud sessions have it). It opens every page at 320, 360, 390, 768, 820 and 1280 px as an athlete and a coach on fake data, and clicks through sign-in, planning a workout and logging an activity. See "Browser checks" below.
-3. Look at your change on a phone-width and a desktop-width screenshot of fake data when the page's look changed.
+3. Preview it locally on fake data: `node tools/preview.mjs` (Mac and phone; see `plans/local-preview-how-to.md`). No Netlify build is used.
+4. Look at your change on a phone-width and a desktop-width screenshot of fake data when the page's look changed.
 
 ## David's rules
 
