@@ -1654,11 +1654,13 @@ async function showOyo() {
   const render = () => {
     const rows = v.rowers.map((r) => (which === 'now' ? r : { ...r, ...r.lastWeek }))
       .sort((x, y) => y.minutes / y.required - x.minutes / x.required || x.name.localeCompare(y.name));
+    // An athlete sees their own row first, then everyone else ranked high to low (David, 2026-11-17). Coaches keep the plain ranking.
+    if (mine) rows.sort((x, y) => (y.id === mine.id) - (x.id === mine.id));
     const metNow = v.rowers.filter((r) => r.status !== 'short').length, metLast = v.rowers.filter((r) => r.lastWeek.status !== 'short').length;
     const elite = rows.filter((r) => r.status === 'elite').length;
     // One scale for every bar, so the Required and Elite marks line up down the board.
     // Capped at 150% of the largest Elite goal: a bar stops growing past that, so one big week can't shrink everyone else's.
-    const max = Math.max(1, ...rows.map((r) => r.elite * 1.5));
+    const max = Math.max(1, ...rows.map((r) => (r.required ? (r.elite / r.required) * 1.5 : 0)));
     const avg = rows.length ? rows.reduce((n, r) => n + r.minutes, 0) / rows.length : 0;
     const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
@@ -1666,12 +1668,14 @@ async function showOyo() {
       <div class="tiles">${tile('Goal met, this week', `${metNow}/${v.rowers.length}`, 'so far')}${tile('Goal met, last week', `${metLast}/${v.rowers.length}`, '')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
+        // Bars show percent of Required (the ranking measure), so they run largest to smallest down the list.
+        const pct = r.required ? r.minutes / r.required : 0, eliteAt = r.required ? r.elite / r.required : 1;
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
           <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}</div>${which === 'now' && r.streak > 1 ? `<div class="sub">${r.streak} wk streak</div>` : ''}</div>
-          <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * r.minutes) / max)}%"></div>
-            <div class="mark" style="left:${(100 * r.required) / max}%"></div><div class="mark" style="left:${(100 * r.elite) / max}%"></div></div>
+          <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * pct) / max)}%"></div>
+            <div class="mark" style="left:${100 / max}%"></div><div class="mark" style="left:${(100 * eliteAt) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
-      }).join('')}<p class="note">Marks: Required, Elite. Bars cap at 150% of Elite. Weighted minutes.</p></div>${footer(v.meta)}`;
+      }).join('')}<p class="note">Bars show percent of Required. Marks: Required, Elite. Bars cap at 150% of Elite. Weighted minutes.</p></div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
