@@ -331,6 +331,23 @@ test('team view: three groups, averages only', () => {
   assert.ok(t.athletes.every((a) => Object.keys(a).join() === 'id,name,squad,grade,stars'));
 });
 
+test('athlete view: partial practices (Modified) are tallied, and Modified wins for a day', () => {
+  const a = feed.athletes.find((x) => x.active && x.role === 'Rower' && S.practiceRecord(x, feed, TODAY).some((r) => r.how === 'Full' && r.date >= athleteView(feed, x.id, TODAY).yearStart));
+  const yearStart = athleteView(feed, a.id, TODAY).yearStart;
+  const fullDays = new Set(S.practiceRecord(a, feed, TODAY).filter((r) => r.how === 'Full' && r.date >= yearStart).map((r) => r.date));
+  const full = feed.entries.find((e) => e.athleteId === a.id && e.type === 'Practice' && e.status === 'Full' && fullDays.has(e.date));
+  assert.ok(full, 'a completed practice this season');
+  const before = athleteView(feed, a.id, TODAY).season;
+  assert.strictEqual(typeof before.partials, 'number');
+  // A second, Modified entry on the same day (one of two workouts cut short) makes the day partial, whatever the order.
+  for (const order of [[full, { ...full, id: 'E-FAKE-2', status: 'Modified' }], [{ ...full, id: 'E-FAKE-2', status: 'Modified' }, full]]) {
+    const f2 = { ...feed, entries: feed.entries.filter((e) => e !== full).concat(order) };
+    const after = athleteView(f2, a.id, TODAY).season;
+    assert.strictEqual(after.partials, before.partials + 1);
+    assert.strictEqual(after.practicesDone, before.practicesDone, 'a partial still counts as attended');
+  }
+});
+
 test('athlete view: bests, streaks, make-ups; GMS kept in its own field', () => {
   feed.athletes.forEach((a) => {
     const v = athleteView(feed, a.id, TODAY);

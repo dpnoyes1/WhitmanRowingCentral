@@ -603,7 +603,7 @@ async function showAthlete(id) {
       </div></div>
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
-      ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
+      ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}${s.partials === undefined ? '' : `<br>${s.partials} partial${s.partials === 1 ? '' : 's'}`}`)}
       ${tile('Practice streak', v.streaks.practices, 'in a row')}
       ${tile('OYO goal streak', v.streaks.oyoWeeks, v.streaks.oyoWeeks === 1 ? 'week' : 'weeks in a row')}
       ${tile('Season training', fmtMin(s.trainingMin).replace(/m$/, ' min'), fmtNum(s.meters) + ' meters')}

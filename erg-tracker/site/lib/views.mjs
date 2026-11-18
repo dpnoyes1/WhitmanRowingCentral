@@ -151,7 +151,9 @@ export function athleteView(feed, id, today) {
       practicesDone: season.filter((r) => r.done).length, practicesExpected: season.length,
       completionPct: pct(season.filter((r) => r.done).length, season.length),
       trainingMin: round(seasonMin), meters: round(seasonMeters),
-      makeupsDone: season.filter((r) => r.how === 'Make-up').length
+      makeupsDone: season.filter((r) => r.how === 'Make-up').length,
+      // Practices done as Modified (partial: cut short, different or a workout skipped; David, 2026-11-17).
+      partials: season.filter((r) => r.how === 'Modified').length
     },
     streaks: { practices: practiceStreak(record), oyoWeeks: oyoWeekStreak(a, feed, today) },
     openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays).map((m) => ({ ...m, sessions: dayPlan(feed, m.date, a) })),
