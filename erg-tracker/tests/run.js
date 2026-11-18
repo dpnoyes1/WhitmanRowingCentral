@@ -497,7 +497,8 @@ test('plan check: make-up uses missed date, interval match and target hit', () =
   assert.strictEqual(c.hit, false);
   c = g.checkAgainstPlan([iv(1, 1200, metersAt(132)), iv(2, 1200, metersAt(132))], pieces, {}, s);
   assert.strictEqual(c.matches, false);
-  assert.match(c.reason, /2 intervals logged, plan has 3/);
+  assert.match(c.reason, /^2 of 3 pieces done$/);
+  assert.strictEqual(c.short, true);
   assert.strictEqual(c.hit, null, 'no benchmark, no target check');
   // 8 x 500 on a start clock: rest is ignored, single target within 2%
   const s8 = g.workoutPieces(WORKOUTS, 'S8');
@@ -577,12 +578,14 @@ test('profile: roster columns appended and formulas reference them', () => {
   }
 });
 
-test('plan flag: Full but short of plan asks about Modified', () => {
+test('plan flag: Full but not the planned workout is flagged', () => {
   assert.strictEqual(g.planFlag({ Status: 'Full' }, { matches: false, logged: 5, planned: 8, reason: '5 intervals logged, plan has 8' }),
-    'Logged Full, short of plan (5 of 8): Modified?');
+    '5 of 8 pieces logged');
+  assert.strictEqual(g.planFlag({ Status: 'Full' }, { matches: false, short: true, logged: 4, planned: 4, reason: 'Piece 4 stopped at 11:32 of 15:00' }),
+    'Piece 4 stopped at 11:32 of 15:00');
   assert.strictEqual(g.planFlag({ Status: 'Modified' }, { matches: false, logged: 5, planned: 8 }), '');
   assert.strictEqual(g.planFlag({ Status: 'Full' }, { matches: true, logged: 8, planned: 8 }), '');
-  assert.ok(/does not match plan \(Interval 2 is not/.test(g.planFlag({ Status: 'Full' }, { matches: false, logged: 8, planned: 8, reason: 'Interval 2 is not 500m' })));
+  assert.ok(/^Not the planned workout \(Interval 2 is not/.test(g.planFlag({ Status: 'Full' }, { matches: false, logged: 8, planned: 8, reason: 'Interval 2 is not 500m' })));
   const c = g.checkAgainstPlan([], [], {}, {});
   assert.strictEqual(c.logged, 0); assert.strictEqual(c.planned, 0);
 });
@@ -901,14 +904,15 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.strictEqual(pending(full, all).length, 0, 'matches the plan: no flag');
   const hit = pending(full, short);
   assert.strictEqual(hit.length, 1);
-  assert.ok(/short of plan/.test(hit[0].flag) && hit[0].entryId === full['Entry ID'], hit[0].flag);
+  assert.ok(new RegExp('^' + short.length + ' of ' + all.length + ' pieces done$').test(hit[0].flag) && hit[0].entryId === full['Entry ID'], hit[0].flag);
+  assert.deepStrictEqual(Array.from(hit[0].entryIds), [full['Entry ID']]);
   assert.strictEqual(pending(full, short, [full['Entry ID']]).length, 0, 'posted once');
   assert.strictEqual(pending(Object.assign({}, full, { 'Review status': 'Reviewed, Full' }), short).length, 0, 'decided');
   assert.strictEqual(pending(Object.assign({}, full, { Status: 'Modified' }), short).length, 0, 'already Modified');
   assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 10) }), short).length, 0, 'too old');
   assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 25) }), short).length, 0, 'in the future');
   const msg = g.planFlagMessage(hit[0], 'https://sheet.example/#gid=1');
-  assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Logged Full, short of plan/.test(msg.text), msg.text);
+  assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Marked Modified: \d+ of \d+ pieces done\./.test(msg.text), msg.text);
   // The coach sees the plan and what was logged, so the decision can be made from Slack.
   const lines = msg.text.split('\n');
   assert.ok(/^\*Planned:\* \S/.test(lines[1]) && !/not found/.test(lines[1]), lines[1]);
@@ -926,10 +930,84 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.strictEqual(g.planFlagPieceLabel_(mk({ workType: 'Time', workS: 1200, workM: null, zone: 'Threshold' })), '20:00, Threshold');
   assert.ok(g.planFlagDetail(full, Array(200).fill(all[0]), []).length <= 2400, 'stays inside Slack\'s block limit');
   const ids = msg.blocks[1].elements.map(b => b.action_id);
-  assert.deepStrictEqual(Array.from(ids), ['plan_modified', 'plan_reviewed', 'plan_open']);
+  assert.deepStrictEqual(Array.from(ids), ['plan_confirm', 'plan_full', 'plan_open']);
   assert.strictEqual(msg.blocks[1].elements[0].value, full['Entry ID']);
   assert.strictEqual(msg.blocks[1].elements[2].url, 'https://sheet.example/#gid=1');
   assert.ok(g.OPS_TRIGGERS.indexOf('sweepPlanFlags') >= 0);
+});
+
+test('incomplete workouts (David, 2026-11-17): stopped early, best of several workouts, skipped workout, auto Modified', () => {
+  const s = planSettings();
+  const W = [
+    { 'Workout ID': 'X4', Name: '4x15', 'Piece #': 1, Reps: 4, 'Work type': 'Time', Work: '15:00', Rest: '2:00', Zone: 'Aerobic' },
+    { 'Workout ID': 'X20', Name: '20 min steady', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '20:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'X40', Name: '40 min steady', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '40:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'XW', Name: 'Warm up', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '10:00', Rest: '', Zone: 'Aerobic' }
+  ];
+  const iv = (n, sec, m) => ({ 'Interval #': n, 'Work s': sec, 'Work m': m || Math.round(sec * 500 / 125) });
+  const x4 = g.workoutPieces(W, 'X4');
+  // Scenario 1: 3 of 4, no 4th piece.
+  let c = g.checkAgainstPlan([iv(1, 900), iv(2, 900), iv(3, 900)], x4, {}, s);
+  assert.strictEqual(c.matches, false); assert.strictEqual(c.short, true);
+  assert.strictEqual(c.reason, '3 of 4 pieces done');
+  // Scenario 2: 3 full pieces, then 11:32 on the 4th.
+  c = g.checkAgainstPlan([iv(1, 900), iv(2, 900), iv(3, 900), iv(4, 692)], x4, {}, s);
+  assert.strictEqual(c.reason, 'Piece 4 stopped at 11:32 of 15:00'); assert.strictEqual(c.short, true);
+  c = g.checkAgainstPlan([iv(1, 900), iv(2, 692)], x4, {}, s);
+  assert.strictEqual(c.reason, 'Piece 2 stopped at 11:32 of 15:00, 1 of 4 pieces done');
+  // A different workout is not "stopped early": a longer piece, or a short one before the end.
+  c = g.checkAgainstPlan([iv(1, 900), iv(2, 600), iv(3, 900)], x4, {}, s);
+  assert.strictEqual(c.short, false); assert.match(c.reason, /^3 intervals logged, plan has 4/);
+  c = g.checkAgainstPlan([iv(1, 900), iv(2, 900), iv(3, 900), iv(4, 1000)], x4, {}, s);
+  assert.strictEqual(c.short, false); assert.strictEqual(c.matches, false);
+  assert.strictEqual(g.planShortReason_([iv(1, 900), iv(2, 900), iv(3, 900), iv(4, 900)], [1, 2, 3, 4].map(() => x4[0])), '');
+  // Scenario 3: a 20:00 and a 40:00 at one practice. The 40:00 is checked against the 40:00, whatever the order.
+  const day = D(2026, 11, 10);
+  const sched = [
+    { Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': 'XW', Published: true, Order: 1 },
+    { Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': 'X20', Published: true, Order: 2 },
+    { Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': 'X40', Published: true, Order: 3 }
+  ];
+  const e40 = { 'Entry ID': 'E40', 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)' };
+  const ivs40 = [Object.assign(iv(1, 2400), { 'Entry ID': 'E40' })];
+  assert.strictEqual(g.plannedFor(e40, 'Varsity', sched)['Workout ID'], 'XW', 'first in the day');
+  assert.strictEqual(g.plannedBest(e40, 'Varsity', sched, W, ivs40).row['Workout ID'], 'X40');
+  assert.strictEqual(g.plannedBest(e40, 'Varsity', sched.slice().reverse(), W, ivs40).row['Workout ID'], 'X40');
+  assert.strictEqual(g.plannedBest(e40, 'Varsity', sched, W, [iv(1, 1500)]).row['Workout ID'], 'X20', 'closest: 25:00 is nearer 20:00');
+  assert.strictEqual(g.plannedBest(e40, 'Varsity', [], W, ivs40), null);
+  const inp = { schedule: sched, workouts: W, benchmarks: [], settings: s };
+  const squads = { A901: 'Varsity' };
+  const flags = (entries, ivs, today, posted) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, squads, inp, today, posted || [])));
+  assert.deepStrictEqual(flags([e40], ivs40, new Date(2026, 10, 10, 18)), [], 'same day: the 20:00 can still be logged');
+  let f = flags([e40], ivs40, new Date(2026, 10, 11, 9));
+  assert.strictEqual(f.length, 1);
+  assert.deepStrictEqual(f[0].entryIds, ['E40']);
+  assert.strictEqual(f[0].flag, 'Not logged: 20 min steady', 'warm-ups are logged as warmup, never "not logged"');
+  const e20 = Object.assign({}, e40, { 'Entry ID': 'E20' });
+  const both = ivs40.concat([Object.assign(iv(1, 1200), { 'Entry ID': 'E20' })]);
+  assert.deepStrictEqual(flags([e40, e20], both, new Date(2026, 10, 11, 9)), [], 'both logged');
+  assert.deepStrictEqual(flags([e40, Object.assign({}, e20, { Status: 'Out' })], both, new Date(2026, 10, 11, 9)), [], 'an Out that day: no skip flag');
+  assert.deepStrictEqual(flags([e40], ivs40, new Date(2026, 10, 11, 9), ['E40']), [], 'posted once');
+  const draft = sched.map((r) => (r['Workout ID'] === 'X20' ? Object.assign({}, r, { Published: false }) : r));
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([e40], ivs40, squads, Object.assign({}, inp, { schedule: draft }), new Date(2026, 10, 11, 9), []))), [], 'a draft is not a skipped workout');
+  // Stopped early on the 40:00, and the 20:00 skipped: one message for the day.
+  f = flags([e40], [Object.assign(iv(1, 1800), { 'Entry ID': 'E40' })], new Date(2026, 10, 11, 9));
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].flag, 'Piece 1 stopped at 30:00 of 40:00. Not logged: 20 min steady');
+  const msg = g.planFlagMessage(Object.assign({}, f[0], { date: day, entryIds: ['E40', 'E41'] }), 'https://sheet.example');
+  assert.ok(/Marked Modified: Piece 1 stopped at 30:00 of 40:00\. Not logged: 20 min steady\./.test(msg.text), msg.text);
+  assert.strictEqual(msg.blocks[1].elements[0].value, 'E40,E41');
+  // Marking and the buttons.
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }))), { Status: 'Modified', 'Review status': 'Auto Modified' });
+  assert.strictEqual(g.planFlagAutoSet_({ Status: 'Modified', 'Review status': '' }), null);
+  assert.strictEqual(g.planFlagAutoSet_({ Status: 'Full', 'Review status': 'Reviewed, Full' }), null);
+  const auto = { 'Entry ID': 'E40', Status: 'Modified', 'Review status': 'Auto Modified' };
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'confirm', 'U1', ['U1'])), { status: 'ok', set: { 'Review status': 'Reviewed, Modified' } });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'full', 'U1', ['U1'])), { status: 'ok', set: { Status: 'Full', 'Review status': 'Reviewed, Full' } });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'modified', 'U1', ['U1'])), { status: 'ok', set: { 'Review status': 'Reviewed, Modified' } }, 'older message button');
+  assert.strictEqual(g.decidePlanFlagAction(Object.assign({}, auto, { 'Review status': 'Reviewed, Full' }), 'confirm', 'U1', ['U1']).status, 'already');
+  assert.strictEqual(g.decidePlanFlagAction(auto, 'full', 'U9', ['U1']).status, 'forbidden');
 });
 
 test('plan flag buttons: coaches only, first press wins, what each press writes', () => {

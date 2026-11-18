@@ -30,7 +30,14 @@ export async function callSheet(env, fetchImpl, body) {
   return data;
 }
 
-const OPS = { plan_modified: 'modified', plan_reviewed: 'reviewed' };
+// plan_confirm / plan_full since 2026-11-17 (entries are marked Modified first); the other two are on older messages.
+const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_reviewed: 'reviewed' };
+const DONE = {
+  confirm: (n) => `:white_check_mark: Modified confirmed by ${n}`,
+  full: (n) => `:white_check_mark: Set back to Full by ${n}`,
+  modified: (n) => `:white_check_mark: Set to Modified by ${n}`,
+  reviewed: (n) => `:white_check_mark: Looks right, marked by ${n}`
+};
 export const planOp = (actionId) => OPS[actionId] || null;
 
 /** What Slack shows after a press, from the Sheet's answer. `text` is the original message text. */
@@ -41,7 +48,7 @@ export function planFlagReply(result, op, name, text) {
   ] });
   const note = (line) => ({ response_type: 'ephemeral', replace_original: false, text: line });
   if (result.status === 'ok') {
-    return done(op === 'modified' ? `:white_check_mark: Set to Modified by ${name}` : `:white_check_mark: Looks right, marked by ${name}`);
+    return done((DONE[op] || DONE.reviewed)(name));
   }
   if (result.status === 'already') return done(`:information_source: Already decided (${result.reviewStatus}).`);
   if (result.status === 'forbidden') return note('Only the coaches listed in the Sheet can use these buttons.');

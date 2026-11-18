@@ -240,7 +240,7 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     }
     if (status !== 'clean') { await say(`:warning: I can't save this one yet.\n${problemText(issues)}`); return { status }; }
     // Split rows that don't add up (a scrolled list, say): the total row is what counts, so save that and tell the coach.
-    const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum');
+    const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum' || i.code === 'pieces_missing');
     const pieces = unsure ? [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }] : entryPieces(read);
     if (pieces.length > MAX_PIECES) { await say(`:warning: That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { status: 'too_many' }; }
     // The entry takes the date on the screen (David, 2026-11-07). Over 2 weeks from today, or one that can't be read, is asked about.
@@ -402,8 +402,8 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   if (result.status === 'ok') {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
-    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It doesn\'t match the plan, so a plan check was posted.' : '') +
-      (card.check ? ' The split rows on the photo didn\'t add up to the total, so a coach will check it.' : '') +
+    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '') +
+      (card.check ? ' The rows on the photo didn\'t add up to the total, so it was saved from the total row and a coach will check it.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : ''));
   } else if (result.status === 'merged') {
     await done(':white_check_mark: Concept2 Logbook already has this workout for ' + result.athlete + ', so its entry stands' +

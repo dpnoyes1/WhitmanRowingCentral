@@ -871,7 +871,7 @@ function resultPills(r) {
 function sessionBlock(s, withTargets, today = '') {
   const r = s.result;
   const status = r ? `<div class="result-line">${resultPills(r)}${r.matches ? '' : ` <span class="muted small">${esc(r.reason)}</span>`}</div>`
-    : s.missed ? '<div class="result-line"><span class="pill">Not logged</span></div>' : '';
+    : s.missed ? `<div class="result-line"><span class="pill${s.notDone ? ' warn' : ''}">${s.notDone ? 'Not done' : 'Not logged'}</span></div>` : '';
   return `<div class="session"><div class="session-head"><b>${esc(s.workout)}</b>
       ${/^(varsity|novice)$/i.test(s.squad) ? `<span class="pill">${esc(s.squad)}</span>` : ''}${s.session !== 'Practice' ? ` <span class="pill">${esc(s.session)}</span>` : ''}</div>
     ${s.notes ? `<p class="muted small">${esc(s.notes)}</p>` : ''}${status}
@@ -916,7 +916,7 @@ function teamResults(s, today) {
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
       // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
-      const st = x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
+      const st = x.result ? resultPills(x.result) : x.notDone ? '<span class="pill warn">Not done</span>' : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
       return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}" data-target="${(() => { const t = targetPace(x.targets); return t === null ? '' : t; })()}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
       <td class="st-col">${st}</td>
       <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>

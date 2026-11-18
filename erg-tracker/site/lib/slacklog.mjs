@@ -156,7 +156,7 @@ export function logReply(result) {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
     if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
     const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
-    return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It doesn\'t match today\'s plan, so a coach will take a look.' : '');
+    return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '');
   }
   if (result.status === 'duplicate') return ':information_source: That was already saved. Nothing changed.';
   if (result.status === 'not_allowed') return NOT_ON_ROSTER;

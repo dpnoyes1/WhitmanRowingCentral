@@ -230,7 +230,7 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
     SpreadsheetApp.flush();
     var squads = {};
     roster.forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
-    var flagged = pendingPlanFlags([result.entry], result.intervals, squads, planInputs_(), new Date(), []).length > 0;
+    var flagged = planFlagsAfterSave_(result.entry, squads);
     var e = result.entry;
     return { status: 'ok', entryId: e['Entry ID'], athlete: String(athlete.Name).trim(), sessionType: e['Session type'], entryStatus: e.Status,
       activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged, test: result.benchmark ? result.benchmark.Test : '',

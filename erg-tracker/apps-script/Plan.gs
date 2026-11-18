@@ -287,25 +287,93 @@ function buildWeekPlan(opts) {
   return { weekStart: start, sessions: sessions, flags: Object.keys(flags).map(function (k) { return flags[k]; }) };
 }
 
-/** The Schedule row an entry should be checked against, or null. Make-ups use the missed date's practice. */
-function plannedFor(entry, athleteSquad, schedule) {
+/**
+ * Every Schedule row an entry could be checked against, in the day's order (the coach's Order, else warm up,
+ * the work, cool down). Make-ups use the missed date's practice. A day can hold several workouts (David,
+ * 2026-11-17). A novice also gets the Varsity workouts when no Novice workout is scheduled that day and
+ * session. `workouts` is optional (used only to order rows with no Order by name).
+ */
+function planCandidates(entry, athleteSquad, schedule, workouts) {
   var type = entry['Session type'];
   var date = type === 'Make-up' ? entry['Make-up for date'] : entry.Date;
   var session = type === 'OYO' ? 'OYO' : 'Practice';
-  if (!isDate_(date)) return null;
+  if (!isDate_(date)) return [];
   var key = dayKey_(date);
-  var hasNovice = false, varsityRow = null;
+  var hasNovice = false, own = [], varsity = [];
   for (var i = 0; i < schedule.length; i++) {
     var r = schedule[i];
     if (!isDate_(r.Date) || dayKey_(r.Date) !== key) continue;
     if ((r.Session || 'Practice') !== session) continue;
     if (String(r['Workout ID']).trim() === '') continue;
     if (String(r.Squad || '').trim() === 'Novice') hasNovice = true;
-    if (squadMatches_(r.Squad, athleteSquad)) return r;
-    if (!varsityRow && noviceDoesVarsity_(r.Squad, athleteSquad, false)) varsityRow = r;
+    if (squadMatches_(r.Squad, athleteSquad)) own.push(r);
+    else if (noviceDoesVarsity_(r.Squad, athleteSquad, false)) varsity.push(r);
   }
-  // No Novice workout that day: a novice is held to the Varsity one.
-  return varsityRow && !hasNovice ? varsityRow : null;
+  // No Novice workout that day: a novice is held to the Varsity ones.
+  var rows = own.concat(hasNovice ? [] : varsity);
+  if (rows.length < 2) return rows;
+  var names = {};
+  (workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || ''); });
+  var keys = scheduleOrderKeys_(rows, function (id) { return names[String(id).trim()] || ''; });
+  return rows.map(function (r, i) { return i; }).sort(function (a, b) {
+    return (own.indexOf(rows[a]) < 0) - (own.indexOf(rows[b]) < 0) || (keys[a] - keys[b]) || (a - b);
+  }).map(function (i) { return rows[i]; });
+}
+
+/** The first Schedule row for the entry's day (see planCandidates), or null. */
+function plannedFor(entry, athleteSquad, schedule, workouts) {
+  return planCandidates(entry, athleteSquad, schedule, workouts)[0] || null;
+}
+
+/**
+ * How far logged intervals are from a planned workout: 0 is an exact match. Each planned interval adds its
+ * relative difference in time (or meters for a distance piece), capped at 1; a missing or extra interval
+ * adds 1; a run against an erg plan (or the other way) adds 1. Lower is closer. Pure.
+ */
+function planFitScore_(intervals, pieces, activity) {
+  var planned = [];
+  pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
+  var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
+  var score = Math.abs(done.length - planned.length);
+  for (var i = 0; i < Math.min(done.length, planned.length); i++) {
+    var p = planned[i];
+    var got = p.workType === 'Time' ? Number(done[i]['Work s']) : Number(done[i]['Work m']);
+    var want = p.workType === 'Time' ? p.workS : p.workM;
+    score += want > 0 ? Math.min(1, Math.abs((got || 0) - want) / want) : 1;
+  }
+  var isRun = String(activity || '') === 'Run';
+  var planRun = pieces.length > 0 && pieces.every(function (p) { return p.activity === 'Run'; });
+  if (isRun !== planRun) score += 1;
+  return score;
+}
+
+/**
+ * The planned workout a logged session was most likely meant for (David, 2026-11-17: a practice can have a
+ * 20:00 and a 40:00 erg; the 40:00 must be checked against the 40:00). The first one it matches exactly,
+ * else the closest (planFitScore_), ties to the earlier one in the day. `intervals` are the entry's own
+ * Intervals rows (BikeErg meters are halved here). Returns { row, pieces } or null with no plan that day.
+ */
+function plannedBest(entry, athleteSquad, schedule, workouts, intervals) {
+  var rows = planCandidates(entry, athleteSquad, schedule, workouts);
+  if (!rows.length) return null;
+  var ivs = rowEquivalentIntervals(intervals || [], entry.Activity);
+  var best = null;
+  for (var i = 0; i < rows.length; i++) {
+    var pieces;
+    try { pieces = workoutPieces(workouts || [], rows[i]['Workout ID']); } catch (err) { continue; }
+    if (!pieces.length) continue;
+    if (rows.length === 1) return { row: rows[i], pieces: pieces };
+    if (checkAgainstPlan(ivs, pieces, {}, {}, entry.Activity).matches) return { row: rows[i], pieces: pieces };
+    var score = planFitScore_(ivs, pieces, entry.Activity);
+    if (!best || score < best.score) best = { row: rows[i], pieces: pieces, score: score };
+  }
+  if (best) return { row: best.row, pieces: best.pieces };
+  return { row: rows[0], pieces: [] };
+}
+
+/** A warm-up or cool-down scheduled as its own workout. It is logged in the session's warmup and cooldown, so it is never "skipped". */
+function isWarmCoolWorkout_(name) {
+  return /warm|cool/i.test(String(name || ''));
 }
 
 /**
@@ -338,11 +406,13 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
   var planned = [];
   pieces.forEach(function (p) { for (var i = 0; i < p.reps; i++) planned.push(p); });
   var done = intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); });
-  var out = { matches: true, reason: '', hit: null, logged: done.length, planned: planned.length, intervals: [] };
+  var out = { matches: true, reason: '', hit: null, logged: done.length, planned: planned.length, intervals: [], short: false };
   if (done.length !== planned.length) {
     out.matches = false;
     out.reason = done.length + ' intervals logged, plan has ' + planned.length;
   }
+  var cut = planShortReason_(done, planned);
+  if (cut) { out.matches = false; out.short = true; out.reason = cut; }
   var tol = Number(settings['target.single_tolerance_pct'] || 2) / 100;
   var anyTarget = false;
   var allIn = true;
@@ -377,6 +447,35 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
   });
   out.hit = anyTarget ? allIn : null;
   return out;
+}
+
+/** "11:32" for a time, "1450 m" for meters: a short form for reasons. */
+function planShortAmount_(p, iv) {
+  if (p.workType === 'Time') return formatTime(Number(iv['Work s'])).replace(/\.0$/, '') + ' of ' + formatTime(p.workS).replace(/\.0$/, '');
+  return (Number(iv['Work m']) || 0) + ' of ' + p.workM + ' m';
+}
+
+/**
+ * The reason for a workout that stopped early, or '' (David, 2026-11-17): every logged piece matches the plan
+ * except that the last one may be shorter, and there are no more pieces than planned. "3 of 4 pieces done",
+ * "Piece 4 stopped at 11:32 of 15:00", or both. Pure.
+ */
+function planShortReason_(done, planned) {
+  if (!done.length || done.length > planned.length) return '';
+  var sameAt = function (i) {
+    var p = planned[i], ws = Number(done[i]['Work s']), wm = Number(done[i]['Work m']);
+    return p.workType === 'Time' ? Math.abs(ws - p.workS) <= 1 : Math.abs(wm - p.workM) <= Math.max(1, p.workM * 0.005);
+  };
+  for (var i = 0; i < done.length - 1; i++) if (!sameAt(i)) return '';
+  var n = done.length - 1, p = planned[n];
+  var lastShort = !sameAt(n) && (p.workType === 'Time' ? Number(done[n]['Work s']) < p.workS : Number(done[n]['Work m']) < p.workM);
+  if (!lastShort && sameAt(n) && done.length === planned.length) return '';
+  if (!lastShort && !sameAt(n)) return '';
+  var parts = [];
+  if (lastShort) parts.push('Piece ' + done.length + ' stopped at ' + planShortAmount_(p, done[n]));
+  var finished = lastShort ? done.length - 1 : done.length;
+  if (done.length < planned.length) parts.push(finished + ' of ' + planned.length + ' pieces done');
+  return parts.join(', ');
 }
 
 /**
@@ -418,16 +517,15 @@ function checkRunAgainstPlan_(intervals, pieces, settings) {
 }
 
 /**
- * Coach heads-up for a session marked Full that did not match its plan,
- * e.g. 5 of 8 intervals logged without ticking Modified. '' when fine.
- * A coach decides; nothing is changed automatically.
+ * The plan-check flag for a session marked Full that is not exactly what was planned, '' when fine.
+ * Since 2026-11-17 (David) such a session is marked Modified automatically and the coaches are told,
+ * with buttons to confirm Modified or set it back to Full (PlanFlags.gs).
  */
 function planFlag(entry, check) {
   if (check.matches || String(entry.Status) !== 'Full') return '';
-  if (check.logged < check.planned) {
-    return 'Logged Full, short of plan (' + check.logged + ' of ' + check.planned + '): Modified?';
-  }
-  return 'Logged Full, does not match plan (' + check.reason + '): Modified?';
+  if (check.short) return check.reason;
+  if (check.logged < check.planned && /intervals logged/.test(check.reason)) return check.logged + ' of ' + check.planned + ' pieces logged';
+  return 'Not the planned workout (' + check.reason + ')';
 }
 
 /**

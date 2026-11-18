@@ -728,6 +728,18 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
   const prev = weekView(feed, TODAY, null, { offset: -1, results: 'all' });
   assert.strictEqual(prev.weekStart, '2026-10-12');
   assert.ok(prev.days.flatMap((d) => d.sessions).some((s) => s.results.some((x) => x.result)), 'last week has results');
+  // Two workouts on a past day, only one logged: the other is "Not done" (David, 2026-11-17).
+  const pastWeek = (feed.weeks || []).find((w) => w.sessions.some((x) => x.day < TODAY && (x.results || []).some((y) => y.athleteId === rower.id)));
+  const loggedS = pastWeek.sessions.find((x) => x.day < TODAY && (x.results || []).some((y) => y.athleteId === rower.id));
+  const extra = { ...loggedS, workout: 'Fake second workout', workoutId: 'FAKE-2', results: [] };
+  const two = { ...feed, weeks: feed.weeks.map((w) => (w === pastWeek ? { ...w, sessions: [...w.sessions, extra] } : w)) };
+  const off = pastWeek.weekStart === v.weekStart ? 0 : -1;
+  const vd = weekView(two, TODAY, rower.id, { offset: off, results: 'own' }).days.find((d) => d.day === loggedS.day).sessions;
+  assert.strictEqual(vd.find((x) => x.workout === 'Fake second workout').notDone, true);
+  assert.ok(vd.find((x) => x.workout === loggedS.workout).result);
+  const cd = weekView(two, TODAY, null, { offset: off, results: 'all' }).days.find((d) => d.day === loggedS.day).sessions.find((x) => x.workout === 'Fake second workout');
+  assert.strictEqual(cd.results.find((x) => x.id === rower.id).notDone, true);
+  assert.ok(past.filter((x) => x.missed).every((x) => x.notDone === false), 'one workout a day: a miss is "Not logged"');
   // A feed from before results (v2) shows no "Not logged".
   const old = JSON.parse(JSON.stringify(feed));
   old.weeks.forEach((w) => w.sessions.forEach((x) => delete x.results));
@@ -1138,6 +1150,17 @@ test('slack buttons: signature, coach check by the Sheet, first press wins, mess
   await handleSlackAction(press(btn('plan_reviewed')), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'reviewed');
   assert.ok(/Looks right, marked by coach\.one/.test(w.calls[1].body.text));
+
+  // Since 2026-11-17 the entry is already Modified: Confirm Modified or Set back to Full, for one or several entries.
+  w = world({ status: 'ok' });
+  await handleSlackAction(press({ action_id: 'plan_confirm', value: 'E0007,E0008' }), env, w.deps);
+  assert.strictEqual(w.calls[0].body.op, 'confirm');
+  assert.strictEqual(w.calls[0].body.entryId, 'E0007,E0008');
+  assert.ok(/Modified confirmed by coach\.one/.test(w.calls[1].body.text));
+  w = world({ status: 'ok' });
+  await handleSlackAction(press(btn('plan_full')), env, w.deps);
+  assert.strictEqual(w.calls[0].body.op, 'full');
+  assert.ok(/Set back to Full by coach\.one/.test(w.calls[1].body.text));
 
   w = world({ status: 'already', reviewStatus: 'Reviewed, Full' });
   await handleSlackAction(press(btn('plan_modified')), env, w.deps);

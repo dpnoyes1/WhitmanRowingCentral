@@ -665,6 +665,9 @@ export function weekView(feed, today, id = null, opts = {}) {
   const plan = (feed.weeks || []).find((w) => w.weekStart === monday) || { sessions: [] };
   const rowers = activeRowers(feed).sort((x, y) => x.name.localeCompare(y.name));
   let pieces = 0, targeted = 0;
+  // Who logged something for a workout on a day: a workout someone else on that day's plan was logged for
+  // but this one wasn't is "Not done" (skipped at a practice with several workouts; David, 2026-11-17).
+  const loggedOn = (day) => new Set(plan.sessions.filter((s) => s.day === day).flatMap((s) => (s.results || []).map((r) => r.athleteId)));
   const days = Array.from({ length: 6 }, (_, i) => addDays(monday, i)).map((day) => ({
     day,
     sessions: plan.sessions.filter((s) => s.day === day && (!a || inSquadDay(s, a.squad, plan.sessions))).map((s) => {
@@ -679,11 +682,13 @@ export function weekView(feed, today, id = null, opts = {}) {
       if (results === 'own' && a) {
         out.result = of(a.id);
         out.missed = !out.result && day < today;
+        out.notDone = out.missed && !WARM_COOL.test(s.workout || '') && loggedOn(day).has(a.id);
       }
       if (results === 'all') {
         out.results = rowers.filter((r) => inSquadDay(s, r.squad, plan.sessions)).map((r) => {
           const t = (s.athletes || []).find((x) => x.athlete === r.name);
-          return { ...athleteSummary(r), result: of(r.id), targets: t ? t.targets.map((x) => x.target || null) : [] };
+          const result = of(r.id);
+          return { ...athleteSummary(r), result, notDone: !result && day < today && !WARM_COOL.test(s.workout || '') && loggedOn(day).has(r.id), targets: t ? t.targets.map((x) => x.target || null) : [] };
         });
       }
       return out;
@@ -698,6 +703,8 @@ export function weekView(feed, today, id = null, opts = {}) {
   };
 }
 
+/** A warm-up or cool-down planned as its own workout is logged in the session's warmup and cooldown, never "Not done" (isWarmCoolWorkout_ in Plan.gs). */
+const WARM_COOL = /warm|cool/i;
 const inSquad = (s, squad) => !/^(varsity|novice)$/i.test(s.squad) || s.squad.toLowerCase() === squad.toLowerCase();
 /** inSquad, plus: a novice does the Varsity workout when no Novice one is scheduled for that day and session (David, 2026-11-03). */
 const inSquadDay = (s, squad, all) => inSquad(s, squad) ||
