@@ -56,7 +56,9 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
         if (bw) bases[b] = bw.watts;
       });
       var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
-      g.rows.push({ e: e, pieces: best.pieces, flag: planFlag(e, c) });
+      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17).
+      var warmCool = isWarmCoolWorkout_(names[String(best.row['Workout ID']).trim()]);
+      g.rows.push({ e: e, pieces: best.pieces, flag: warmCool ? '' : planFlag(e, c) });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }

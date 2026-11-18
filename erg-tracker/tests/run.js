@@ -990,6 +990,16 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   assert.deepStrictEqual(flags([e40], ivs40, new Date(2026, 10, 11, 9), ['E40']), [], 'posted once');
   const draft = sched.map((r) => (r['Workout ID'] === 'X20' ? Object.assign({}, r, { Published: false }) : r));
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([e40], ivs40, squads, Object.assign({}, inp, { schedule: draft }), new Date(2026, 10, 11, 9), []))), [], 'a draft is not a skipped workout');
+  // A warm-up logged short of plan (14:00 of 15:00) is never flagged; the day's work still is checked.
+  const W15 = W.map((w) => (w['Workout ID'] === 'XW' ? Object.assign({}, w, { Work: '15:00' }) : w));
+  const eW = Object.assign({}, e40, { 'Entry ID': 'EW' });
+  const ivW = [Object.assign(iv(1, 840), { 'Entry ID': 'EW' })];
+  const withWarm = Object.assign({}, inp, { workouts: W15 });
+  assert.strictEqual(g.plannedBest(eW, 'Varsity', sched, W15, ivW).row['Workout ID'], 'XW');
+  const wf = (entries, ivs) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, squads, withWarm, new Date(2026, 10, 11, 9), [])));
+  assert.deepStrictEqual(wf([eW, e40, e20], ivW.concat(both)), [], 'short warm-up, both workouts done: no flag');
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([eW], ivW, squads, withWarm, new Date(2026, 10, 10, 18), []))), [], 'same day, warm-up alone: no flag');
+  assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['EW', 'E40'], 'a skipped workout still flags the day');
   // Stopped early on the 40:00, and the 20:00 skipped: one message for the day.
   f = flags([e40], [Object.assign(iv(1, 1800), { 'Entry ID': 'E40' })], new Date(2026, 10, 11, 9));
   assert.strictEqual(f.length, 1);
