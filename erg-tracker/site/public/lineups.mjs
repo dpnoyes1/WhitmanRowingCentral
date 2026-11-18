@@ -4,11 +4,10 @@
 
 const STANDARD_1500_S = 300;                 // Settings gms.standard_s: the 1v8 1500 m standard (5:00); GMS % is against this
 const SPEED = { 8: 1, 4: 1.13 };             // a 4+ is 13% slower than an 8+ of the same level (David, 2026-11-12)
-const ROLE = { top: 'Top', even: 'Even', low: 'Lower' };
 const MAX_BOATS = 6;
 
-const boat = (n, role) => ({ n, role, s: Array(n).fill(null), pin: Array(n).fill(false) });
-const fresh = () => ({ out: new Set(), boats: [boat(8, 'even'), boat(8, 'even'), boat(4, 'low')], goal: 1, pick: null, sort: 'gms', built: false });
+const boat = (n, pri) => ({ n, pri, s: Array(n).fill(null), pin: Array(n).fill(false) });
+const fresh = () => ({ out: new Set(), boats: [boat(8, 1), boat(8, 1), boat(4, 2)], goal: 1, pick: null, sort: 'gms', built: false });
 let LU = fresh();
 let R = [];            // rowers from /api/lineups
 let ctx = null;        // { app, esc, fmtTime, fmtNum, redraw }
@@ -41,11 +40,13 @@ function short(a) {
   return clash && parts.length > 1 ? `${first} ${parts[parts.length - 1][0]}.` : first;
 }
 
+// Presets only fill in the priority numbers; every number can be typed over afterwards.
 const GOALS = [
-  ['Top 4 + even 8s', 'Best 4 in a 4+ to keep up; everyone else in evenly mixed 8s', (k) => [boat(4, 'top'), ...Array.from({ length: k }, () => boat(8, 'even'))]],
-  ['Even 8s + lower 4', 'Even 8s; the next 4 make a lower 4+', (k) => [...Array.from({ length: k }, () => boat(8, 'even')), boat(4, 'low')]],
-  ['All boats even', 'Keep these boats and make every one even', null],
-  ['Ranked', '1st boat fastest, then 2nd, and so on', null]];
+  ['Top 4 + even 8s', 'Best 4 in a 4+ (priority 1); everyone else in evenly mixed 8s (priority 2)', (k) => [boat(4, 1), ...Array.from({ length: k }, () => boat(8, 2))]],
+  ['Even 8s + lower 4', 'Even 8s (priority 1); the next 4 make a 4+ (priority 2)', (k) => [...Array.from({ length: k }, () => boat(8, 1)), boat(4, 2)]],
+  ['All boats even', 'Every boat priority 1: all share the rowers evenly', null],
+  ['Ranked', 'Priority 1, 2, 3 in order: 1st boat fastest, then 2nd, and so on', null]];
+const PRI_MAX = 9;
 
 const gmsOf = (r) => (r.gmsPct === null || r.gmsPct === undefined ? null : r.gmsPct);
 const tagOf = (r) => (gmsOf(r) === null ? 'no GMS %' : gmsOf(r).toFixed(1) + '%');
@@ -64,44 +65,45 @@ function stats(b) {
   return { n: r.length, k2: avg(k2), k2n: k2.length, m20: avg(m20), m20n: m20.length, g: avg(g), gn: g.length };
 }
 
-/** Pinned seats stay. Open seats are filled from ticked, unpinned rowers. Rowers with no GMS % go to Even boats (else Lower), never Top, and
- *  overflow becomes spares. Ranked rowers: Top boats take the fastest, Lower the slowest, Even share the middle and swap while that narrows the gap. */
+/** Priority numbers (David, 2026-11-18): the lowest number gets the strongest rowers (best GMS %), then the next number, and so on. Boats with the same
+ *  number share their rowers evenly: seats are dealt out in a snake and then swapped while that narrows the gap in average GMS %. Pinned seats stay.
+ *  Open seats are filled from rowers who are present and not pinned. Rowers with no GMS % cannot be ranked: they take whatever seats are left after
+ *  everyone with a GMS % is placed (so the last priority), and overflow becomes spares, the weakest first. */
 function make() {
   LU.boats.forEach((b) => b.s.forEach((x, k) => { if (!b.pin[k]) b.s[k] = null; }));
   const pinned = seated(), pool = R.filter((a) => !LU.out.has(a.id) && !pinned.has(a.id));
-  const open = LU.boats.reduce((s, b) => s + free(b), 0);
   const noG = pool.filter((a) => gmsOf(a) === null), withG = pool.filter((a) => gmsOf(a) !== null).sort((x, y) => gmsOf(y) - gmsOf(x));
-  const of = (r) => LU.boats.filter((b) => b.role === r);
-  const home = of('even').length ? of('even') : of('low');
-  noG.slice(0, open).forEach((a) => { const b = home.filter((x) => free(x) > 0).sort((x, y) => free(y) / y.n - free(x) / x.n)[0]; if (b) put(b, a.id); });
-  const left = LU.boats.reduce((s, b) => s + free(b), 0), ranked = withG.slice(0, left);
-  of('top').forEach((b) => { while (free(b) && ranked.length) put(b, ranked.shift().id); });
-  const jvSeats = of('low').reduce((s, b) => s + free(b), 0), low = ranked.splice(Math.max(0, ranked.length - jvSeats));
-  of('low').forEach((b) => { while (free(b) && low.length) put(b, low.shift().id); });
-  const ev = of('even'); let dir = 1, bi = 0;
-  ranked.forEach((a) => {
-    if (!ev.some((b) => free(b))) return; let guard = 0;
-    while (free(ev[bi]) === 0 && guard++ < 50) { bi += dir; if (bi >= ev.length || bi < 0) { dir = -dir; bi += dir; } }
-    put(ev[bi], a.id); bi += dir; if (bi >= ev.length || bi < 0) { dir = -dir; bi += dir; }
-  });
-  const spread = () => { const v = ev.map((b) => stats(b).g).filter((x) => x !== null); return v.length ? Math.max(...v) - Math.min(...v) : 0; };
-  for (let pass = 0, better = true; better && pass < 200; pass++) {
-    better = false; const base = spread();
-    for (let p = 0; p < ev.length && !better; p++) for (let q = p + 1; q < ev.length && !better; q++) {
-      for (let x = 0; x < ev[p].n && !better; x++) for (let y = 0; y < ev[q].n && !better; y++) {
-        const bp = ev[p], bq = ev[q]; if (bp.pin[x] || bq.pin[y] || bp.s[x] === null || bq.s[y] === null) continue;
-        if (gmsOf(byId(bp.s[x])) === null || gmsOf(byId(bq.s[y])) === null) continue;
-        [bp.s[x], bq.s[y]] = [bq.s[y], bp.s[x]];
-        if (spread() < base - 0.005) better = true; else [bp.s[x], bq.s[y]] = [bq.s[y], bp.s[x]];
+  const tiers = [...new Set(LU.boats.map((b) => b.pri))].sort((x, y) => x - y).map((t) => LU.boats.filter((b) => b.pri === t));
+  const ranked = [...withG];
+  tiers.forEach((boats) => {
+    const seats = boats.reduce((n, b) => n + free(b), 0), group = ranked.splice(0, seats);
+    let dir = 1, bi = 0;
+    group.forEach((a) => {
+      if (!boats.some((b) => free(b))) return; let guard = 0;
+      while (free(boats[bi]) === 0 && guard++ < 50) { bi += dir; if (bi >= boats.length || bi < 0) { dir = -dir; bi += dir; } }
+      put(boats[bi], a.id); bi += dir; if (bi >= boats.length || bi < 0) { dir = -dir; bi += dir; }
+    });
+    const spread = () => { const v = boats.map((b) => stats(b).g).filter((x) => x !== null); return v.length ? Math.max(...v) - Math.min(...v) : 0; };
+    for (let pass = 0, better = true; better && pass < 200; pass++) {
+      better = false; const base = spread();
+      for (let p = 0; p < boats.length && !better; p++) for (let q = p + 1; q < boats.length && !better; q++) {
+        for (let x = 0; x < boats[p].n && !better; x++) for (let y = 0; y < boats[q].n && !better; y++) {
+          const bp = boats[p], bq = boats[q]; if (bp.pin[x] || bq.pin[y] || bp.s[x] === null || bq.s[y] === null) continue;
+          if (gmsOf(byId(bp.s[x])) === null || gmsOf(byId(bq.s[y])) === null) continue;
+          [bp.s[x], bq.s[y]] = [bq.s[y], bp.s[x]];
+          if (spread() < base - 0.005) better = true; else [bp.s[x], bq.s[y]] = [bq.s[y], bp.s[x]];
+        }
       }
     }
-  }
+  });
+  // Untested rowers take the seats still open, filling from the last priority up.
+  for (const boats of [...tiers].reverse()) for (const b of boats) while (free(b) && noG.length) put(b, noG.shift().id);
   LU.built = true;
 }
 
 function setGoal(g) {
   const atN = R.length - LU.out.size, k = Math.min(MAX_BOATS - 1, Math.max(1, Math.floor((atN - 4) / 8))), mk = GOALS[g][2];
-  if (mk) LU.boats = mk(k); else LU.boats.forEach((b) => { b.role = g === 3 ? 'top' : 'even'; });
+  if (mk) LU.boats = mk(k); else LU.boats.forEach((b, i) => { b.pri = g === 3 ? Math.min(PRI_MAX, i + 1) : 1; });
   LU.goal = g; make();
 }
 
@@ -126,16 +128,16 @@ function draw() {
   const { app, esc, fmtTime, fmtNum } = ctx;
   const atP = R.filter((a) => !LU.out.has(a.id)), sd = seated(), spare = atP.filter((a) => !sd.has(a.id)), absent = R.filter((a) => LU.out.has(a.id));
   const seats = LU.boats.reduce((s, b) => s + b.n, 0), st = LU.boats.map(stats);
-  const evI = LU.boats.map((b, i) => (b.role === 'even' ? i : -1)).filter((i) => i >= 0);
-  const gs = (evI.length > 1 ? evI : LU.boats.map((b, i) => i)).map((i) => st[i].g).filter((x) => x !== null);
-  const gap = gs.length > 1 ? (Math.max(...gs) - Math.min(...gs)).toFixed(1) + ' pts' : '–';
+  // Gap: the widest spread in average GMS % among boats that share a priority number (those are meant to be even).
+  const gaps = [...new Set(LU.boats.map((b) => b.pri))].map((t) => LU.boats.map((b, i) => (b.pri === t ? st[i].g : null)).filter((x) => x !== null)).filter((g) => g.length > 1).map((g) => Math.max(...g) - Math.min(...g));
+  const gap = gaps.length ? Math.max(...gaps).toFixed(1) + ' pts' : '–';
   const pickA = LU.pick !== null ? byId(LU.pick) : null;
   const fast8 = LU.boats.map((b, i) => ({ b, g: st[i].g, i })).filter((x) => x.b.n === 8 && x.g).map((x) => ({ p: pace(x.g, 8), name: boatName(x.i) })).sort((x, y) => x.p - y.p)[0];
   const tile = (l, v, sub = '') => `<div class="tile"><div class="label">${l}</div><div class="value">${v}</div>${sub ? `<div class="sub">${sub}</div>` : ''}</div>`;
   const boatCard = (b, bi) => {
     const s = st[bi], p = s.g ? pace(s.g, b.n) : null;
-    return `<div class="card lub"><div class="lu-head"><h2><input class="luname" type="text" data-luname="${bi}" value="${esc(boatName(bi))}" maxlength="24" aria-label="Boat name" spellcheck="false"> <span class="pill ${b.role === 'low' ? 'warn' : ''}">${ROLE[b.role]}</span></h2><span class="muted small num">${s.n}/${b.n} seats</span><button type="button" class="btn ghost sm" data-lurm="${bi}" aria-label="Remove ${esc(boatName(bi))}">Remove</button></div>
-      <div class="lurole"><span class="muted small">Boat goal</span><div class="seg" role="group" aria-label="Goal for ${esc(boatName(bi))}">${Object.keys(ROLE).map((r) => `<button type="button" aria-pressed="${b.role === r}" data-lurole="${bi},${r}">${ROLE[r]}</button>`).join('')}</div></div>
+    return `<div class="card lub"><div class="lu-head"><h2><input class="luname" type="text" data-luname="${bi}" value="${esc(boatName(bi))}" maxlength="24" aria-label="Boat name" spellcheck="false"></h2><span class="muted small num">${s.n}/${b.n} seats</span><button type="button" class="btn ghost sm" data-lurm="${bi}" aria-label="Remove ${esc(boatName(bi))}">Remove</button></div>
+      <div class="lurole"><label class="muted small" for="lupri-${bi}">Priority</label><input class="lupri" id="lupri-${bi}" type="number" inputmode="numeric" min="1" max="${PRI_MAX}" step="1" value="${b.pri}" data-lupri="${bi}"><span class="muted small">${LU.boats.filter((x) => x.pri === b.pri).length > 1 ? 'shares evenly with the other ' + b.pri + 's' : 'lowest number gets the strongest rowers'}</span></div>
       <div class="lus">${b.s.map((x, k) => k).reverse().map((k) => { const x = b.s[k];
         return `<div class="lusr${x === null ? ' empty' : ''}" data-luseat="${bi},${k}"${x === null ? ` tabindex="0" role="button" aria-label="Empty ${seatLabel(b.n, k)} seat in ${esc(boatName(bi))}"` : ''}><span class="lun">${seatLabel(b.n, k)}</span>${x === null ? `<span class="muted">${pickA ? 'Tap to place here' : 'Empty'}</span>`
           : `${chip(byId(x), seatLabel(b.n, k) + ' seat')}<button type="button" class="lupin${b.pin[k] ? ' on' : ''}" data-lupin="${bi},${k}" aria-label="${b.pin[k] ? 'Unpin' : 'Pin'} ${esc(byId(x).name)}" title="${b.pin[k] ? 'Pinned: Auto Lineups keeps them here' : 'Pin to this seat'}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 4h6l-1 6 3 3H7l3-3-1-6ZM12 13v7"/></svg></button>`}</div>`; }).join('')}</div>
@@ -145,10 +147,10 @@ function draw() {
       ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${fast8.name}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${fast8.name}`}</small>` : ''}</div>` : ''}</div>`;
   };
   app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p>${nameNote ? `<p class="error small" role="alert">${esc(nameNote)}</p>` : ''}</div></div>
-    <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile(evI.length > 1 ? 'Gap between even boats' : 'Gap between boats', gap, 'best vs worst avg GMS %')}</div>
+    <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile('Gap, same priority', gap, 'best vs worst avg GMS %')}</div>
     <div class="card"><div class="lu-head"><h2>Absent</h2><span class="muted small num">${LU.out.size}</span></div>
       <div class="lupool luabs" data-luseat="absent">${LU.out.size ? absent.map((a) => chip(a, 'absent')).join('') : `<span class="muted small">${pickA ? 'Tap here to mark ' + esc(short(pickA)) + ' absent.' : 'Drag a name here.'}</span>`}</div></div>
-    <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: you set each boat's goal below"}</p>
+    <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: type a priority number on each boat below"}</p>
       <div class="lugoal">${GOALS.map(([t], g) => `<button type="button" class="btn ${LU.goal === g ? '' : 'ghost '}sm" data-lugoal="${g}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="lu-head"><h2>Not in a boat</h2><div class="seg" role="group" aria-label="Sort"><button type="button" data-lusort="az" aria-pressed="${LU.sort === 'az'}">A–Z</button><button type="button" data-lusort="gms" aria-pressed="${LU.sort === 'gms'}">GMS %</button></div></div><p class="muted small">${pickA ? `Tap a seat for ${esc(short(pickA))}.` : 'Drag or tap a name, then a seat.'}</p>
       <div class="lupool" data-luseat="pool">${spare.length ? spare.sort(LU.sort === 'az' ? (x, y) => x.name.localeCompare(y.name) : (x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>
@@ -170,14 +172,17 @@ function wire() {
     else if (q('[data-lueven]')) { make(); LU.pick = null; }
     else if (q('[data-luadd]')) { if (LU.boats.length < MAX_BOATS) { LU.boats.push(boat(+q('[data-luadd]').dataset.luadd, 'even')); LU.goal = -1; } }
     else if (q('[data-lurm]')) { LU.boats.splice(+q('[data-lurm]').dataset.lurm, 1); LU.goal = -1; }
-    else if (q('[data-lurole]')) { const [bi, r] = q('[data-lurole]').dataset.lurole.split(','); LU.boats[+bi].role = r; LU.goal = -1; }
+    else if (q('[data-lupri]')) return;   // typing in the number box; saved on change
     else if (q('[data-lugoal]')) { setGoal(+q('[data-lugoal]').dataset.lugoal); LU.pick = null; }
     else if (q('[data-luclear]')) { LU.boats.forEach((b) => b.s.forEach((x, k) => { if (!b.pin[k]) b.s[k] = null; })); LU.built = false; }
     else if (q('[data-lusort]')) LU.sort = q('[data-lusort]').dataset.lusort;
     else hit = false;
     if (hit) draw();
   });
-  document.addEventListener('change', (e) => { const el = on() && e.target.closest && e.target.closest('[data-luname]'); if (!el) return;
+  document.addEventListener('change', (e) => {
+    const pr = on() && e.target.closest && e.target.closest('[data-lupri]');
+    if (pr) { const n = Math.round(Number(pr.value)); LU.boats[+pr.dataset.lupri].pri = Number.isFinite(n) ? Math.min(PRI_MAX, Math.max(1, n)) : 1; LU.goal = -1; draw(); return; }
+    const el = on() && e.target.closest && e.target.closest('[data-luname]'); if (!el) return;
     const d = defaultName(+el.dataset.luname), v = el.value.trim();
     if (v && v !== d) NAMES[d] = v; else delete NAMES[d];
     saveNames().then(draw); draw(); });

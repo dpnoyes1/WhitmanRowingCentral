@@ -114,6 +114,34 @@ flow('OYO page: an athlete sees their own row first, a coach sees plain ranking'
   await page.context().close();
 });
 
+flow('lineups: priority numbers rank or share the boats, nothing pins itself, an athlete cannot open the page', async ({ browser, server }) => {
+  let page = await newPage(browser, 1280);
+  await signInCoach(page, server.url, '#/lineups');
+  await page.waitForSelector('.lugrid');
+  const gms = () => page.$$eval('.lub', (cards) => cards.map((c) => parseFloat(c.querySelector('.lua b.acc').textContent)));
+  const build = async (sizes, pris) => {
+    while (await page.locator('[data-lurm]').count()) await page.click('[data-lurm] >> nth=0');
+    for (const n of sizes) await page.click(`[data-luadd="${n}"]`);
+    for (let i = 0; i < pris.length; i++) { await page.fill(`#lupri-${i}`, String(pris[i])); await page.press(`#lupri-${i}`, 'Tab'); }
+    await page.click('[data-lueven]');
+    return gms();
+  };
+  const ranked = await build([8, 8, 8], [1, 2, 3]);
+  assert.ok(ranked[0] > ranked[1] && ranked[1] > ranked[2], '1,2,3 should go strongest to weakest: ' + ranked);
+  const even = await build([8, 8, 8], [1, 1, 1]);
+  assert.ok(Math.max(...even) - Math.min(...even) < 1, '1,1,1 should be even: ' + even);
+  const mixed = await build([4, 4, 4, 8, 8], [1, 1, 1, 2, 2]);
+  assert.ok(Math.min(...mixed.slice(0, 3)) > Math.max(...mixed.slice(3)), 'the three 4+ (priority 1) should beat the 8s (priority 2): ' + mixed);
+  assert.equal(await page.locator('.lupin.on').count(), 0, 'Auto Lineups must not pin anyone');
+  await page.click('.lupin >> nth=0');
+  assert.equal(await page.locator('.lupin.on').count(), 1, 'a tap on the pin button pins one seat');
+  await page.context().close();
+  page = await newPage(browser, 390);
+  await signInAthlete(page, server.url, server.athlete, '#/lineups');
+  assert.equal(await page.locator('.lugrid').count(), 0, 'an athlete should not get the Lineups page');
+  await page.context().close();
+});
+
 export default async function e2e(ctx) {
   let ok = true;
   for (const [name, fn] of flows) {

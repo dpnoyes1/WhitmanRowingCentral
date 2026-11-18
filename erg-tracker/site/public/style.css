@@ -466,7 +466,8 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lu-actions, .lugoal { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .lugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; margin-bottom: 12px; }
 .lurole { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.lurole .seg button { min-height: 44px; }
+.lupri { font: inherit; width: 4.2em; min-height: 44px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; }
+.lupri:focus { outline: none; border-color: var(--accent); }
 .lus { display: flex; flex-direction: column; gap: 6px; }
 .lusr { display: flex; align-items: center; gap: 8px; min-height: 46px; border-radius: 12px; padding: 4px 6px 4px 4px; background: var(--hover); min-width: 0; }
 .lusr.empty { background: transparent; border: 1px dashed var(--border); cursor: pointer; }
