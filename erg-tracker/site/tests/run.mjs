@@ -1471,7 +1471,7 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
           if (body.slackUserId !== 'UC1') return Response.json({ status: 'not_allowed' });
           return Response.json(body.athleteName ? (/^olivia/i.test(body.athleteName) ? { status: 'ok', athlete: 'Olivia Fake' } : { status: 'unknown_name' }) : { status: 'ok' });
         }
-        return Response.json(sheet.save || { status: 'ok', athlete: 'Olivia Fake', flagged: false });
+        return Response.json(typeof sheet.save === 'function' ? sheet.save(body) : sheet.save || { status: 'ok', athlete: 'Olivia Fake', flagged: false });
       }
       if (url === 'https://files.slack.example/p.jpg') return new Response(jpeg, { status: 200 });
       if (url === 'https://api.anthropic.com/v1/messages') return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers[Math.min(ai++, answers.length - 1)]) }], usage: { input_tokens: 1, output_tokens: 1 } });
@@ -1541,6 +1541,37 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
   assert.strictEqual(iv.rpe, '');
   assert.deepStrictEqual(iv.pieces.map((p) => p.restS), [120, 120, 120, 0]);
   assert.deepStrictEqual(iv.pieces.map((p) => p.meters), [500, 500, 500, 500]);
+
+  // a day with no practice and an open make-up: the Sheet asks, the card shows Make-up / OYO, the answer saves (David, 2026-11-18)
+  w = world({ answers: [intervals], sheet: { save: (b) => b.photo.sessionType === 'oyo' ? { status: 'ok', athlete: 'Olivia Fake', sessionType: 'OYO' }
+    : b.photo.sessionType === 'makeup' ? { status: 'ok', athlete: 'Olivia Fake', sessionType: 'Make-up', makeupFor: b.photo.makeupFor }
+    : { status: 'ask_makeup', athlete: 'Olivia Fake', missed: ['2026-10-27', '2026-10-26'] } } });
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const tokMk = w.dms()[0].blocks[1].elements[0].value;
+  out = await handlePhotoButton(press('photo_save', tokMk), env, w.deps);
+  assert.strictEqual(out.status, 'ask_makeup');
+  let qMk = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
+  assert.ok(/There was no practice that day\. Was this a make-up/.test(qMk.text), qMk.text);
+  assert.deepStrictEqual(qMk.blocks[1].elements.map((b) => b.action_id), ['photo_session_mk_0', 'photo_session_mk_1', 'photo_session_oyo', 'photo_cancel']);
+  assert.strictEqual(qMk.blocks[1].elements[0].text.text, 'Make-up for Oct 27, 2026');
+  assert.strictEqual((await handlePhotoButton(press('photo_save', tokMk), env, w.deps)).status, 'asking_session', 'Save alone does not skip the question');
+  const pressMk = (id) => ({ ...press(id, tokMk), message: { ts: '1.2', text: qMk.text } });
+  out = await handlePhotoButton(pressMk('photo_session_mk_1'), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  assert.strictEqual(out.session, 'makeup');
+  const mkBody = w.calls.filter((c) => c.body && c.body.action === 'slack-photo').pop().body.photo;
+  assert.strictEqual(mkBody.sessionType, 'makeup');
+  assert.strictEqual(mkBody.makeupFor, '2026-10-26');
+  qMk = w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body;
+  assert.ok(/Saved for Olivia Fake\. Logged on Oct 28, 2026 as a make-up for Oct 26, 2026\./.test(qMk.text) && !/no practice that day/.test(qMk.text), qMk.text);
+  // OYO answer on another photo
+  await handlePhotoEvent(photoMsg({ text: 'Olivia' }), env, w.deps);
+  const tokOyo = w.dms().pop().blocks[1].elements[0].value;
+  await handlePhotoButton(press('photo_save', tokOyo), env, w.deps);
+  out = await handlePhotoButton(press('photo_session_oyo', tokOyo), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  assert.strictEqual(w.calls.filter((c) => c.body && c.body.action === 'slack-photo').pop().body.photo.sessionType, 'oyo');
+  assert.ok(/as OYO \(on your own\)\./.test(w.calls.filter((c) => c.url === 'https://hooks.slack.example/r').pop().body.text));
   w = world();
   await handlePhotoEvent(photoMsg(), env, w.deps);
   out = await handlePhotoEvent(textMsg('Nobody'), env, w.deps);

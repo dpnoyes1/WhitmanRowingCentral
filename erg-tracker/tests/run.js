@@ -1462,6 +1462,47 @@ test('slack photo: a 2k or 20-minute piece the athlete calls a test writes the B
   assert.strictEqual(g.parseSubmission(g.slackPhotoAnswers({ ...two, benchmark: '' }, 'Jane Smith'), ctxFor()).benchmark, undefined, 'no answer means a normal workout');
 });
 
+test('slack photo: a weekend or no-practice day is OYO unless the athlete has an open make-up (David, 2026-11-18)', () => {
+  // Fake schedule: Girls practice Mon 11/16 (missed), Tue 11/17 (logged), Wed 11/18 canceled; nothing Sat 11/21.
+  const practices = [
+    { date: '2026-11-16', squad: 'Girls', canceled: false },
+    { date: '2026-11-17', squad: 'Girls', canceled: false },
+    { date: '2026-11-18', squad: 'Girls', canceled: true },
+    { date: '2026-11-19', squad: 'Boys', canceled: false }
+  ];
+  const logged = [{ date: '2026-11-17', type: 'Practice', status: 'Full', makeupFor: '' }];
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  const s = (date, entries, chosen, isTest) => g.slackPhotoSession_('Girls', date, practices, entries, chosen, isTest);
+  assert.deepStrictEqual(plain(s('2026-11-17', logged)), { type: 'Practice', makeupFor: '' }, 'a practice day stays Practice');
+  assert.deepStrictEqual(plain(s('2026-11-21', logged)), { ask: true, missed: ['2026-11-16'] }, 'Saturday with a missed Monday asks');
+  const coveredMon = logged.concat([{ date: '2026-11-20', type: 'Make-up', status: 'Full', makeupFor: '2026-11-16' }]);
+  assert.deepStrictEqual(plain(s('2026-11-21', coveredMon)), { type: 'OYO', makeupFor: '' }, 'nothing open: OYO, no question');
+  assert.deepStrictEqual(plain(s('2026-11-18', coveredMon)), { type: 'OYO', makeupFor: '' }, 'a canceled practice day is not a practice day');
+  assert.deepStrictEqual(plain(s('2026-11-19', coveredMon)), { type: 'OYO', makeupFor: '' }, "another squad's practice doesn't count");
+  assert.deepStrictEqual(plain(s('2026-11-28', [])), { type: 'OYO', makeupFor: '' }, 'missed practices over 7 days old are not open');
+  assert.deepStrictEqual(plain(s('2026-11-18', [])), { ask: true, missed: ['2026-11-17', '2026-11-16'] }, 'newest missed first');
+  assert.deepStrictEqual(plain(s('2026-11-21', logged, { sessionType: 'oyo' })), { type: 'OYO', makeupFor: '' });
+  assert.deepStrictEqual(plain(s('2026-11-21', logged, { sessionType: 'makeup', makeupFor: '2026-11-16' })), { type: 'Make-up', makeupFor: '2026-11-16' });
+  assert.throws(() => s('2026-11-21', logged, { sessionType: 'makeup', makeupFor: '2026-11-21' }), /missed practice/);
+  assert.deepStrictEqual(plain(s('2026-11-21', logged, {}, true)), { type: 'OYO', makeupFor: '' }, 'a test never asks');
+  assert.deepStrictEqual(plain(s('2026-11-17', logged, {}, true)), { type: 'Practice', makeupFor: '' });
+
+  const photo = { date: '2026-11-21', machine: 'RowErg', title: '3x15:00', note: 'From erg photo',
+    pieces: [{ timeS: 900, meters: 3600, rate: 20, restS: 120 }, { timeS: 900, meters: 3610, rate: 20, restS: 120 }, { timeS: 900, meters: 3620, rate: 20, restS: 0 }] };
+  const oyo = g.parseSubmission(g.slackPhotoAnswers(photo, 'Jane Smith', '', { type: 'OYO', makeupFor: '' }), ctxFor());
+  assert.strictEqual(oyo.entry['Session type'], 'OYO');
+  assert.ok(!oyo.entry.Status, 'OYO has no practice status');
+  assert.strictEqual(oyo.intervals.length, 3);
+  const mk = g.parseSubmission(g.slackPhotoAnswers(photo, 'Jane Smith', '', { type: 'Make-up', makeupFor: '2026-11-16' }), ctxFor());
+  assert.strictEqual(mk.entry['Session type'], 'Make-up');
+  assert.strictEqual(mk.entry.Status, 'Full');
+  assert.ok(mk.entry['Make-up for date'], 'make-up date saved');
+  const test2k = { ...photo, benchmark: '2000m', title: '2000m', pieces: [{ timeS: 452.3, meters: 2000, rate: 31, restS: 0 }] };
+  const t = g.parseSubmission(g.slackPhotoAnswers(test2k, 'Jane Smith', '', { type: 'OYO', makeupFor: '' }), ctxFor());
+  assert.strictEqual(t.entry['Session type'], 'OYO', 'a test on a day with no practice is on my own');
+  assert.strictEqual(t.benchmark.Test, '2000m');
+});
+
 test('photos: Drive link, same-workout match, Logbook wins, feed says only that a photo exists', () => {
   assert.strictEqual(g.photoFileId_('https://drive.google.com/file/d/1AbCdEfGhIjKlMnOp-_/view?usp=drivesdk'), '1AbCdEfGhIjKlMnOp-_');
   assert.strictEqual(g.photoFileId_('https://drive.google.com/open?id=1AbCdEfGhIjKlMnOp'), '1AbCdEfGhIjKlMnOp');

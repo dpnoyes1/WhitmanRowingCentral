@@ -132,6 +132,21 @@ export function askBlocks(text, token) {
   ];
 }
 
+/**
+ * "Make-up or OYO?" (David, 2026-11-18): a photo from a day with no practice
+ * is OYO, but when the athlete has missed a practice in the last week the
+ * Sheet asks first. One button per open make-up (newest first, up to 3), then OYO.
+ */
+export const sessionQuestion = (missed) => `\nThere was no practice that day. Was this a make-up for ${missed.length > 1 ? 'a missed practice' : 'the practice missed on ' + dateLabel(missed[0])}, or on your own (OYO)?`;
+export function sessionBlocks(text, token, missed) {
+  const btn = (id, label, style) => ({ type: 'button', action_id: id, value: token, text: { type: 'plain_text', text: label }, ...(style ? { style } : {}) });
+  return [
+    { type: 'section', text: { type: 'mrkdwn', text } },
+    { type: 'actions', elements: [...missed.slice(0, 3).map((d, i) => btn('photo_session_mk_' + i, `Make-up for ${dateLabel(d)}`, i === 0 ? 'primary' : undefined)),
+      btn('photo_session_oyo', 'OYO (on my own)'), btn('photo_cancel', 'Cancel')] }
+  ];
+}
+
 export function cardBlocks(text, token) {
   const btn = (id, label, style) => ({ type: 'button', action_id: id, value: token, text: { type: 'plain_text', text: label }, ...(style ? { style } : {}) });
   return [
@@ -375,7 +390,19 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   if (card.dateAsk) { await sendReply(envFn, fetchImpl, payload, note('First confirm the date.')); return { status: 'asking_date' }; }
   let benchmark = card.benchmark || '';
   let yesNo = null;
-  if (id === 'photo_test_yes' || id === 'photo_test_no') {
+  let session = null;
+  if (/^photo_session_/.test(id)) {   // the answer to "Make-up or OYO?"
+    if (!card.sessionAsk) return { ignored: 'not asking' };
+    if (id === 'photo_session_oyo') session = { sessionType: 'oyo', makeupFor: '' };
+    else {
+      const missed = card.sessionAsk[Number(id.replace('photo_session_mk_', ''))];
+      if (!missed) return { ignored: 'unknown button' };
+      session = { sessionType: 'makeup', makeupFor: missed };
+    }
+  } else if (card.sessionAsk) {
+    await sendReply(envFn, fetchImpl, payload, note('First tell me whether this was a make-up or on your own.'));
+    return { status: 'asking_session' };
+  } else if (id === 'photo_test_yes' || id === 'photo_test_no') {
     if (!card.ask) return { ignored: 'not asking' };
     yesNo = id === 'photo_test_yes';
     benchmark = yesNo ? card.ask : '';
@@ -385,7 +412,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
     if (card.ask) { await sendReply(envFn, fetchImpl, payload, note('First tell me whether this was a test.')); return { status: 'asking' }; }
   }
   await store.delete('card:' + token);   // first press wins
-  const base = text.replace(/\nThis is exactly[\s\S]*$/, '').replace(/\nTap Save to log it\.$/, '');
+  const base = text.replace(/\nThis is exactly[\s\S]*$/, '').replace(/\nThere was no practice that day[\s\S]*$/, '').replace(/\nTap Save to log it\.$/, '');
   // Show at once that it is working: the Sheet can take several seconds.
   await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: `${base}\n${SAVING}`,
     blocks: [{ type: 'section', text: { type: 'mrkdwn', text: base } }, { type: 'context', elements: [{ type: 'mrkdwn', text: SAVING }] }] });
@@ -393,7 +420,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   let result;
   try {
     result = await callSheet(envFn, fetchImpl, { action: 'slack-photo', slackUserId: payload.user.id, slackName: name, token, athlete: card.athlete,
-      photo: { benchmark, date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe: '', note: card.note, image: card.image || '' } });
+      photo: { benchmark, date: card.date, machine: card.machine, title: card.title, pieces: card.pieces, rpe: '', note: card.note, image: card.image || '', ...(session || {}) } });
   } catch (err) {
     result = { status: 'error', error: err.message };
   }
@@ -402,19 +429,25 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   if (result.status === 'ok') {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
-    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '') +
+    const kind = result.sessionType === 'OYO' ? ' as OYO (on your own)' : result.sessionType === 'Make-up' && result.makeupFor ? ` as a make-up for ${dateLabel(result.makeupFor)}` : '';
+    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}${kind}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '') +
       (card.check ? ' The rows on the photo didn\'t add up to the total, so it was saved from the total row and a coach will check it.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : ''));
   } else if (result.status === 'merged') {
     await done(':white_check_mark: Concept2 Logbook already has this workout for ' + result.athlete + ', so its entry stands' +
       (result.photo === 'added' ? ' and your photo is kept with it.' : result.photo === 'failed' ? ' (the photo copy could not be kept).' : '.') +
       (benchmark ? ' To count it as a test, mark it on the Logbook card.' : ''));
+  } else if (result.status === 'ask_makeup' && Array.isArray(result.missed) && result.missed.length) {
+    const asking = { ...card, ask: null, benchmark, sessionAsk: result.missed.slice(0, 3) };
+    await store.set('card:' + token, asking);
+    const q = `${base}${sessionQuestion(asking.sessionAsk)}`;
+    await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: q, blocks: sessionBlocks(q, token, asking.sessionAsk) });
   } else if (result.status === 'duplicate') {
     await done(':information_source: Already saved. Nothing changed.');
   } else {
     await store.set('card:' + token, card);   // let her press again
     const line = `:warning: Not saved: ${result.error || result.status}. Press a button to try again.`;
-    await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: `${base}\n${line}`, blocks: (card.ask ? askBlocks : cardBlocks)(`${base}\n${line}`, token) });
+    await sendReply(envFn, fetchImpl, payload, { replace_original: true, text: `${base}\n${line}`, blocks: card.sessionAsk ? sessionBlocks(`${base}\n${line}`, token, card.sessionAsk) : (card.ask ? askBlocks : cardBlocks)(`${base}\n${line}`, token) });
   }
-  return { status: result.status, ...(yesNo === null ? {} : { test: yesNo }) };
+  return { status: result.status, ...(yesNo === null ? {} : { test: yesNo }), ...(session ? { session: session.sessionType } : {}) };
 }

@@ -44,17 +44,53 @@ function classifyLogbook(squad, date, time, practices, entries) {
   if (today && t >= minutes(today.windowStart) && t <= minutes(today.windowEnd)) {
     return { type: 'Practice', makeupFor: '', possible: false };
   }
+  var missed = openMakeups_(squad, date, practices, entries)[0];
+  if (missed) return { type: 'Make-up', makeupFor: missed, possible: true };
+  return { type: 'OYO', makeupFor: '', possible: false };
+}
+
+/**
+ * Pure: the athlete's open make-ups on date, newest first ('YYYY-MM-DD').
+ * An open make-up is a practice for the squad, not canceled, 1 to 7 days
+ * before date, with no Practice entry (other than Out) and no Make-up entry
+ * for it yet.
+ */
+function openMakeups_(squad, date, practices, entries) {
+  var sameSquad = function (p) {
+    return !squad || !p.squad || String(p.squad).toLowerCase() === String(squad).toLowerCase();
+  };
   var covered = {};
   entries.forEach(function (e) {
     if (e.type === 'Practice' && e.status !== 'Out') covered[e.date] = true;
     if (e.type === 'Make-up' && e.makeupFor) covered[e.makeupFor] = true;
   });
-  var missed = live.filter(function (p) {
-    var days = (dayNumber_(date) - dayNumber_(p.date));
-    return days > 0 && days <= 7 && !covered[p.date];
-  }).sort(function (a, b) { return a.date < b.date ? 1 : -1; })[0];
-  if (missed) return { type: 'Make-up', makeupFor: missed.date, possible: true };
-  return { type: 'OYO', makeupFor: '', possible: false };
+  var seen = {};
+  return practices.filter(function (p) {
+    var days = dayNumber_(date) - dayNumber_(p.date);
+    if (p.canceled || !sameSquad(p) || days <= 0 || days > 7 || covered[p.date] || seen[p.date]) return false;
+    seen[p.date] = true;
+    return true;
+  }).map(function (p) { return p.date; }).sort().reverse();
+}
+
+/** Practices tab -> [{date, squad, canceled, windowStart, windowEnd}] for the classifiers. */
+function classifierPractices_(day) {
+  return readObjects_(TABS.PRACTICES).filter(function (p) { return p.Date instanceof Date; }).map(function (p) {
+    return {
+      date: day(p.Date), squad: String(p.Squad || '').trim(), canceled: /cancel/i.test(String(p.Status)),
+      windowStart: String(p['Window start']), windowEnd: String(p['Window end'])
+    };
+  });
+}
+
+/** One athlete's Entries rows -> [{date, type, status, makeupFor}] for the classifiers (rejected rows and skipRid left out). */
+function classifierEntries_(athleteId, day, skipRid) {
+  return readObjects_(TABS.ENTRIES).filter(function (e) {
+    return String(e['Athlete ID']) === String(athleteId) && e.Date instanceof Date &&
+      !/reject/i.test(String(e['Review status'])) && (!skipRid || String(e['Response ID']) !== skipRid);
+  }).map(function (e) {
+    return { date: day(e.Date), type: String(e['Session type']), status: String(e.Status), makeupFor: day(e['Make-up for date']) };
+  });
 }
 
 function dayNumber_(ymd) {
@@ -243,18 +279,8 @@ function processLogbookResult_(body) {
     if (!roster) return { status: 'error', error: 'athlete not on Roster' };
     var tz = ss_().getSpreadsheetTimeZone();
     var day = function (d) { return d instanceof Date ? Utilities.formatDate(d, tz, 'yyyy-MM-dd') : ''; };
-    var practices = readObjects_(TABS.PRACTICES).filter(function (p) { return p.Date instanceof Date; }).map(function (p) {
-      return {
-        date: day(p.Date), squad: String(p.Squad || '').trim(), canceled: /cancel/i.test(String(p.Status)),
-        windowStart: String(p['Window start']), windowEnd: String(p['Window end'])
-      };
-    });
-    var entries = readObjects_(TABS.ENTRIES).filter(function (e) {
-      return String(e['Athlete ID']) === String(body.athleteId) && e.Date instanceof Date &&
-        !/reject/i.test(String(e['Review status'])) && String(e['Response ID']) !== rid;
-    }).map(function (e) {
-      return { date: day(e.Date), type: String(e['Session type']), status: String(e.Status), makeupFor: day(e['Make-up for date']) };
-    });
+    var practices = classifierPractices_(day);
+    var entries = classifierEntries_(body.athleteId, day, rid);
     var rows = logbookRows(result, {
       athlete: { id: roster['Athlete ID'], name: String(roster.Name).trim(), squad: roster.Squad },
       practices: practices, entries: entries, now: new Date(), newId: newId_, parseDate: parseFormDate_
