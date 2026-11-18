@@ -290,6 +290,9 @@ td.detail { white-space: normal; color: var(--text-2); }
 .dot { width: 26px; height: 26px; border-radius: 50%; display: grid; place-items: center; font-size: .7rem; border: 2px solid var(--border); color: var(--text-2); }
 .dot.done { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
 .dot.mu { background: none; border-color: var(--accent); color: var(--accent); }
+/* Modified: striped like the Attendance mark (David, 2026-11-17); the day number sits on a small chip so it stays readable. */
+.dot.mod { background: repeating-linear-gradient(135deg, var(--accent) 0 3px, var(--surface) 3px 6px); border-color: var(--accent); color: var(--text); }
+.dot.mod > b { background: var(--surface); border-radius: 6px; padding: 0 2px; font-weight: inherit; line-height: 1.2; }
 .athletes { display: grid; gap: 8px; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); }
 .athletes a, .pick button {
   display: flex; justify-content: space-between; gap: 8px; padding: 10px 12px; border-radius: 9px;

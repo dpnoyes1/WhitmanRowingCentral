@@ -619,9 +619,9 @@ async function showAthlete(id) {
     <div class="two">
       <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(v.zones)}</div>
       <div class="card"><h2>Last 10 practices</h2><div class="dots">
-        ${v.recentPractices.slice().reverse().map((r) => `<span class="dot ${r.how === 'Make-up' ? 'mu' : r.done ? 'done' : ''}"
-          data-tip="${esc(fmtDay(r.date) + ': ' + (r.how === 'Make-up' ? 'made up ' + fmtDate(r.makeupDate) : r.how))}">${new Date(r.date + 'T12:00:00').getDate()}</span>`).join('')}
-      </div><p class="muted small">Filled: done. Ring: made up. Empty: missed.</p></div>
+        ${v.recentPractices.slice().reverse().map((r) => `<span class="dot ${r.how === 'Make-up' ? 'mu' : r.how === 'Modified' ? 'mod' : r.done ? 'done' : ''}"
+          data-tip="${esc(fmtDay(r.date) + ': ' + (r.how === 'Make-up' ? 'made up ' + fmtDate(r.makeupDate) : r.how === 'Full' ? 'Completed' : r.how))}">${r.how === 'Modified' ? '<b>' : ''}${new Date(r.date + 'T12:00:00').getDate()}${r.how === 'Modified' ? '</b>' : ''}</span>`).join('')}
+      </div><p class="muted small">Filled: completed. Striped: modified. Ring: made up. Empty: missed.</p></div>
     </div>
     <div class="card"><h2>Tests</h2>${testsTable(v.tests)}</div>
     ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
