@@ -99,6 +99,9 @@ flow('OYO page: an athlete sees their own row first, a coach sees plain ranking'
   assert.ok(classes.length > 1);
   assert.equal(classes[0], true, 'own row is not first');
   assert.equal(classes.filter(Boolean).length, 1);
+  // Bars run largest to smallest after the pinned row.
+  const widths = await page.$$eval('.oyo-row:not(.me) .meter .fill', (els) => els.map((e) => parseFloat(e.style.width)));
+  assert.deepEqual(widths, [...widths].sort((x, y) => y - x), 'bars are not in size order');
   await page.context().close();
   page = await newPage(browser, 1280);
   await signInCoach(page, server.url, '#/oyo');
