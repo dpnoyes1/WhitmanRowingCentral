@@ -121,6 +121,19 @@ test('lineup boat names: coaches only, shared through one store, cleaned', async
   assert.strictEqual(got['2nd 8+'].length, 24);
   assert.ok(!('3rd 8+' in got) && !('' in got));
   assert.deepStrictEqual(cleanNames([1, 2]), {});
+  // One name at a time: a second coach's save keeps the first coach's name; blank clears; markup characters are stripped.
+  await handleLineupNames(req('POST', coach, { set: { key: '2nd 8+', value: 'Novice 8' } }), env2, deps);
+  await handleLineupNames(req('POST', coach, { set: { key: '1st 8+', value: '<img src=x onerror=1>' } }), env2, deps);
+  let merged = (await (await handleLineupNames(req('GET', coach), env2, deps)).json()).names;
+  assert.strictEqual(merged['2nd 8+'], 'Novice 8');
+  assert.ok(!/[<>]/.test(merged['1st 8+']), 'no markup characters stored: ' + merged['1st 8+']);
+  assert.strictEqual(merged['3rd 8+'], undefined);
+  await handleLineupNames(req('POST', coach, { set: { key: '2nd 8+', value: '' } }), env2, deps);
+  merged = (await (await handleLineupNames(req('GET', coach), env2, deps)).json()).names;
+  assert.ok(!('2nd 8+' in merged), 'blank clears one name');
+  assert.ok('1st 8+' in merged, 'other names stay');
+  assert.strictEqual((await handleLineupNames(req('POST', coach, { set: { key: '', value: 'x' } }), env2, deps)).status, 400);
+  assert.strictEqual((await handleLineupNames(req('POST', ath, { set: { key: '1st 8+', value: 'x' } }), env2, deps)).status, 403);
 });
 
 test('browser scripts parse as modules', async () => {

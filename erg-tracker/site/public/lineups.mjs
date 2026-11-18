@@ -1,6 +1,6 @@
 // Lineups page (coaches only, David 2026-11-11). Nothing is saved: the lineup lives in this page and clears when you leave it.
 // Averages use each rower's best 2k and 20' this school year; GMS % is the average of their 2k and 20' GMS % (from the Sheet).
-// A rower with no GMS % (no test, or no weight on file) sits in a boat but is left out of the averages and is never in a Top boat.
+// A rower with no GMS % (no test, or no weight on file) sits in a boat but is left out of the averages and only takes seats left over after everyone with a GMS % is placed.
 
 const STANDARD_1500_S = 300;                 // Settings gms.standard_s: the 1v8 1500 m standard (5:00); GMS % is against this
 const SPEED = { 8: 1, 4: 1.13 };             // a 4+ is 13% slower than an 8+ of the same level (David, 2026-11-12)
@@ -25,11 +25,12 @@ async function loadNames() {
     if (res.ok) { NAMES = (await res.json()).names || {}; keepLocal(); nameNote = ''; }
   } catch { /* keep the copy from this browser */ }
 }
-async function saveNames() {
+/** Saves ONE boat name; the server merges it into the shared list, so two coaches renaming different boats never overwrite each other. */
+async function saveNames(key, value) {
   keepLocal();
   try {
-    const res = await fetch('/api/lineup-names', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ names: NAMES }) });
-    nameNote = res.ok ? '' : 'Boat name not saved for other devices. Try again.';
+    const res = await fetch('/api/lineup-names', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ set: { key, value } }) });
+    if (res.ok) { NAMES = (await res.json()).names || NAMES; keepLocal(); nameNote = ''; } else nameNote = 'Boat name not saved for other devices. Try again.';
   } catch { nameNote = 'Boat name not saved for other devices. Try again.'; }
 }
 
@@ -144,9 +145,9 @@ function draw() {
       <div class="lua"><div><span class="muted small">Avg 2k</span><b class="num">${s.k2 ? fmtTime(s.k2) : '–'}</b><small class="muted num">${s.k2 ? fmtTime(s.k2 / 4) + ' /500m' : ''}${s.k2n < s.n ? `<br>${s.k2n} of ${s.n} tested` : ''}</small></div>
         <div><span class="muted small">Avg 20'</span><b class="num">${s.m20 ? fmtNum(s.m20) + ' m' : '–'}</b><small class="muted num">${s.m20 ? fmtTime((1200 * 500) / s.m20) + ' /500m' : ''}${s.m20n < s.n ? `<br>${s.m20n} of ${s.n} tested` : ''}</small></div>
         <div><span class="muted small">Avg GMS %</span><b class="num acc">${s.g ? s.g.toFixed(1) + '%' : '–'}</b><small class="muted num">${s.gn < s.n ? `${s.gn} of ${s.n} counted` : s.n ? 'all counted' : ''}</small></div></div>
-      ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${fast8.name}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${fast8.name}`}</small>` : ''}</div>` : ''}</div>`;
+      ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${esc(fast8.name)}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${esc(fast8.name)}`}</small>` : ''}</div>` : ''}</div>`;
   };
-  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p>${nameNote ? `<p class="error small" role="alert">${esc(nameNote)}</p>` : ''}</div></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p><p id="lunote" class="error small" role="alert"${nameNote ? '' : ' hidden'}>${esc(nameNote)}</p></div></div>
     <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile('Gap, same priority', gap, 'best vs worst avg GMS %')}</div>
     <div class="card"><div class="lu-head"><h2>Absent</h2><span class="muted small num">${LU.out.size}</span></div>
       <div class="lupool luabs" data-luseat="absent">${LU.out.size ? absent.map((a) => chip(a, 'absent')).join('') : `<span class="muted small">${pickA ? 'Tap here to mark ' + esc(short(pickA)) + ' absent.' : 'Drag a name here.'}</span>`}</div></div>
@@ -167,10 +168,11 @@ function wire() {
     if (q('[data-luname]')) return;
     if (q('[data-lupin]')) { const [bi, k] = q('[data-lupin]').dataset.lupin.split(',').map(Number); LU.boats[bi].pin[k] = !LU.boats[bi].pin[k]; }
     else if (q('[data-lupick]')) { const id = q('[data-lupick]').dataset.lupick, seat = q('[data-luseat]');
-      if (LU.pick !== null && LU.pick !== id && seat) { place(LU.pick, seat.dataset.luseat); LU.pick = null; } else LU.pick = LU.pick === id ? null : id; }
+      const key = seat && seat.dataset.luseat, home = LU.pick === null ? null : LU.out.has(LU.pick) ? 'absent' : seated().has(LU.pick) ? 'seat' : 'pool';
+      if (LU.pick !== null && LU.pick !== id && seat && key !== home) { place(LU.pick, key); LU.pick = null; } else LU.pick = LU.pick === id ? null : id; }
     else if (q('[data-luseat]')) { if (LU.pick === null) return; place(LU.pick, q('[data-luseat]').dataset.luseat); LU.pick = null; }
     else if (q('[data-lueven]')) { make(); LU.pick = null; }
-    else if (q('[data-luadd]')) { if (LU.boats.length < MAX_BOATS) { LU.boats.push(boat(+q('[data-luadd]').dataset.luadd, 'even')); LU.goal = -1; } }
+    else if (q('[data-luadd]')) { if (LU.boats.length < MAX_BOATS) { LU.boats.push(boat(+q('[data-luadd]').dataset.luadd, Math.min(PRI_MAX, Math.max(1, ...LU.boats.map((b) => b.pri)) + (LU.boats.length ? 1 : 0)))); LU.goal = -1; } }
     else if (q('[data-lurm]')) { LU.boats.splice(+q('[data-lurm]').dataset.lurm, 1); LU.goal = -1; }
     else if (q('[data-lupri]')) return;   // typing in the number box; saved on change
     else if (q('[data-lugoal]')) { setGoal(+q('[data-lugoal]').dataset.lugoal); LU.pick = null; }
@@ -181,11 +183,12 @@ function wire() {
   });
   document.addEventListener('change', (e) => {
     const pr = on() && e.target.closest && e.target.closest('[data-lupri]');
-    if (pr) { const n = Math.round(Number(pr.value)); LU.boats[+pr.dataset.lupri].pri = Number.isFinite(n) ? Math.min(PRI_MAX, Math.max(1, n)) : 1; LU.goal = -1; draw(); return; }
+    // No redraw here: a redraw between mousedown and click would swallow the tap that moved focus out of the box (the next draw shows the new state).
+    if (pr) { const n = Math.round(Number(pr.value)); const v = Number.isFinite(n) ? Math.min(PRI_MAX, Math.max(1, n)) : 1; LU.boats[+pr.dataset.lupri].pri = v; pr.value = String(v); LU.goal = -1; return; }
     const el = on() && e.target.closest && e.target.closest('[data-luname]'); if (!el) return;
     const d = defaultName(+el.dataset.luname), v = el.value.trim();
     if (v && v !== d) NAMES[d] = v; else delete NAMES[d];
-    saveNames().then(draw); draw(); });
+    saveNames(d, v === d ? '' : v).then(() => { const n = document.getElementById('lunote'); if (n) { n.textContent = nameNote; n.hidden = !nameNote; } }); });
   document.addEventListener('keydown', (e) => { if (!on() || (e.key !== 'Enter' && e.key !== ' ')) return; const t = e.target.closest && e.target.closest('.lusr.empty'); if (t && e.target === t) { e.preventDefault(); t.click(); } });
   document.addEventListener('dragstart', (e) => { const el = on() && e.target.closest && e.target.closest('[data-ludrag]'); if (!el) return; e.dataTransfer.setData('text/plain', el.dataset.ludrag); e.dataTransfer.effectAllowed = 'move'; });
   document.addEventListener('dragover', (e) => { if (on() && e.target.closest && e.target.closest('[data-luseat]')) e.preventDefault(); });
@@ -195,5 +198,6 @@ function wire() {
 /** Called each time the page opens: a fresh lineup (nothing saved), everyone ticked. */
 export async function openLineups(rowers, c) {
   await loadNames();
+  if (!/^#\/lineups/.test(location.hash)) return;   // the coach already moved on while the names loaded
   R = rowers; ctx = c; LU = fresh(); wire(); draw();
 }

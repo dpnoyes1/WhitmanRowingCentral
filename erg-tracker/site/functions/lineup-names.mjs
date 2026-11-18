@@ -14,7 +14,8 @@ export function cleanNames(raw) {
   const out = {};
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return out;
   for (const [k, v] of Object.entries(raw).slice(0, MAX_NAMES)) {
-    const key = String(k).trim().slice(0, MAX_NAME), val = typeof v === 'string' ? v.trim().slice(0, MAX_NAME) : '';
+    const clean = (t) => String(t).replace(/[<>]/g, '').trim().slice(0, MAX_NAME);
+    const key = clean(k), val = typeof v === 'string' ? clean(v) : '';
     if (key && val && key !== val) out[key] = val;
   }
   return out;
@@ -39,8 +40,19 @@ export async function handleLineupNames(req, envFn, deps = {}) {
   let body = {};
   try { body = await req.json(); } catch { body = {}; }
   if (!store) return json({ error: 'Names cannot be saved right now.' }, 503);
-  const names = cleanNames(body.names);
-  try { await store.set(KEY, names); } catch (err) {
+  // { set: { key, value } } changes ONE name and keeps the rest of the stored list, so coaches editing at once don't overwrite each other.
+  // A blank value (or one equal to the key) clears that name. { names } still replaces the whole list.
+  let names;
+  try {
+    if (body.set && typeof body.set === 'object') {
+      names = cleanNames(store ? await store.get(KEY) : null);
+      const k = String(body.set.key ?? '').replace(/[<>]/g, '').trim().slice(0, MAX_NAME);
+      if (!k) return json({ error: 'Bad request.' }, 400);
+      const val = typeof body.set.value === 'string' ? cleanNames({ [k]: body.set.value })[k] : undefined;
+      if (val) names[k] = val; else delete names[k];
+    } else names = cleanNames(body.names);
+    await store.set(KEY, names);
+  } catch (err) {
     console.error('lineup names save error:', err.message);
     return json({ error: 'That did not save. Try again in a minute.' }, 502);
   }

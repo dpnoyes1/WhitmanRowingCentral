@@ -132,6 +132,20 @@ flow('lineups: priority numbers rank or share the boats, nothing pins itself, an
   assert.ok(Math.max(...even) - Math.min(...even) < 1, '1,1,1 should be even: ' + even);
   const mixed = await build([4, 4, 4, 8, 8], [1, 1, 1, 2, 2]);
   assert.ok(Math.min(...mixed.slice(0, 3)) > Math.max(...mixed.slice(3)), 'the three 4+ (priority 1) should beat the 8s (priority 2): ' + mixed);
+  // A new boat starts with a real number, and typing a priority then tapping a button must not lose that tap (the page used to redraw on blur).
+  await page.click('[data-luadd="8"]');
+  const last = await page.$$eval('.lupri', (els) => els[els.length - 1].value);
+  assert.ok(/^[1-9]$/.test(last), 'new boat priority should be a number, got "' + last + '"');
+  await page.click('[data-luclear]');
+  await page.fill('#lupri-0', '2');
+  await page.click('[data-lueven]');
+  assert.ok((await page.$$eval('.lus .luc', (e) => e.length)) > 0, 'the tap right after typing a priority was lost');
+  // Boat names can't inject markup.
+  await page.fill('[data-luname="0"]', '<img src=x onerror=window.__xss=1>');
+  await page.press('[data-luname="0"]', 'Tab');
+  await page.click('[data-lueven]');
+  assert.equal(await page.evaluate(() => window.__xss === 1), false, 'a boat name ran as markup');
+  await build([4, 4, 4, 8, 8], [1, 1, 1, 2, 2]);
   assert.equal(await page.locator('.lupin.on').count(), 0, 'Auto Lineups must not pin anyone');
   await page.click('.lupin >> nth=0');
   assert.equal(await page.locator('.lupin.on').count(), 1, 'a tap on the pin button pins one seat');
