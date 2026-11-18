@@ -10,6 +10,8 @@ import { runChecks, parseScreenDate, parseTitle, formatClock, DATE_OK_DAYS } fro
 import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
 import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { getFeed } from './feed.mjs';
+import { RUN_PHOTO_CHECK } from './runscreen.mjs';
+import { looksLikeNoErg, startRunCard, saveRunCard } from './slackrun.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
@@ -232,6 +234,10 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     const out = await readAndCheck({ client: anthropicClient(key, fetchImpl), bytes, today });
     if (out.fail) { await say(`:warning: I couldn't read that photo (${out.fail.message}). Please send a clearer one, or use /log.`); return { status: out.fail.reason }; }
     const { read, issues, status } = out.checked;
+    if ((deps.runPhotos ?? RUN_PHOTO_CHECK) && looksLikeNoErg(read)) {   // not a Concept2 screen: it may be a run (off until David says go)
+      const run = await startRunCard({ client: anthropicClient(key, fetchImpl), bytes, who, user, envFn, fetchImpl, store, say, today, deps });
+      if (run) return run;
+    }
     if (status !== 'clean') { await say(`:warning: I can't save this one yet.\n${problemText(issues)}`); return { status }; }
     // Split rows that don't add up (a scrolled list, say): the total row is what counts, so save that and tell the coach.
     const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum');
@@ -346,6 +352,9 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
   const card = await store.get('card:' + token);
   if (!card) { await sendReply(envFn, fetchImpl, payload, note('That card was already used or has expired. Send the photo again.')); return { status: 'gone' }; }
   if (card.user !== payload.user.id) { await sendReply(envFn, fetchImpl, payload, note('Only the person who sent the photo can save it.')); return { status: 'not_owner' }; }
+  if (card.kind === 'run' && /^photo_run_/.test(id)) {   // a run screenshot card (off until David says go)
+    return saveRunCard({ payload, card, token, envFn, fetchImpl, store, text, reply: (r) => sendReply(envFn, fetchImpl, payload, r) });
+  }
   if (id === 'photo_cancel') {
     await store.delete('card:' + token);
     await store.delete('datewait:' + payload.user.id);

@@ -15,7 +15,9 @@ import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
-import { paceText, parseDuration } from '../public/logmine.mjs';
+import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
+import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
+import { autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
 import { handlePassword } from '../functions/password.mjs';
@@ -1334,6 +1336,76 @@ test('slack background: a crash while handling a DM tells her instead of going s
   assert.ok(sent.some((c) => c.url === 'https://slack.com/api/chat.postMessage' && c.body.channel === 'UC1' && /Something went wrong/.test(c.body.text)));
 });
 
+test('run photo for Log activity: fills distance and time, athletes only, 404 when switched off', async () => {
+  await seedActive();
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]).toString('base64');
+  const post = (cookie, body) => new Request('https://x/api/run-photo', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
+  const reply = { app: 'Strava', person: '', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:30', elapsed_time: '', avg_pace: '8:14', pace_unit: '/mi', flags: [] };
+  const client = (r) => ({ messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }] }) } });
+  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: false })).status, 404, 'answers 404 when switched off');
+  assert.strictEqual((await handleRunPhoto(post('', { photo: jpeg }), env, { enabled: true })).status, 401);
+  assert.strictEqual((await handleRunPhoto(post(coach, { photo: jpeg }), env, { enabled: true })).status, 403);
+  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: 'not base64!' }), env, { enabled: true, client: client(reply) })).status, 400);
+  let out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client(reply) })).json();
+  assert.deepStrictEqual([out.status, out.dist, out.unit, out.time], ['read', '3.1', 'mi', '25:30']);
+  out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '2h 6m' }) })).json();
+  assert.deepStrictEqual([out.status, out.time], ['read', '2:06:00']);
+  out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '', elapsed_time: '' }) })).json();
+  assert.strictEqual(out.status, 'unread');
+  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', flags: [], person: '', activity: '' });
+});
+
+test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
+  const env = (k) => ({ SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
+  const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
+  const noErg = { title: '', date: '', split_label: '', total: { time: '', meters: null, avg_split: '', avg_rate: null }, total_time_incl_rest: '', rest_meters: null, meters_column: 'none', pieces: [], flags: ['not a Concept2 monitor'] };
+  const run = { app: 'Strava', person: '', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:30', elapsed_time: '', avg_pace: '8:14', pace_unit: '/mi', flags: [] };
+  const world = (answers) => {
+    const calls = []; const store = new Map(); let ai = 0;
+    const fake = { get: async (k) => store.get(k) || null, set: async (k, v) => { store.set(k, JSON.parse(JSON.stringify(v))); }, delete: async (k) => { store.delete(k); } };
+    const deps = { today: '2026-11-17', store: fake, runPhotos: true, athleteIdOf: async () => 'A901', makeCopy: async () => ({ bytes: Buffer.from('small-copy') }), fetchImpl: async (url, init) => {
+      const body = init && init.body ? JSON.parse(init.body) : null;
+      calls.push({ url, body });
+      if (url === 'https://script.example/exec') return Response.json(body.action === 'slack-access' ? { status: 'ok', role: 'athlete', athlete: 'Olivia Fake' } : { status: 'ok', athlete: 'Olivia Fake' });
+      if (url === 'https://files.slack.example/p.jpg') return new Response(jpeg, { status: 200 });
+      if (url === 'https://api.anthropic.com/v1/messages') return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers[Math.min(ai++, answers.length - 1)]) }] });
+      return Response.json({ ok: true });
+    } };
+    return { calls, store, deps, dms: () => calls.filter((c) => c.url === 'https://slack.com/api/chat.postMessage').map((c) => c.body).filter((b) => !/^:eyes: Got your photo/.test(b.text)) };
+  };
+  const msg = { type: 'message', channel_type: 'im', subtype: 'file_share', user: 'UA1', text: '', files: [{ mimetype: 'image/jpeg', url_private_download: 'https://files.slack.example/p.jpg' }] };
+  const press = (id, token) => ({ type: 'block_actions', user: { id: 'UA1', name: 'olivia' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' }, message: { ts: '1.2', text: '*For Olivia Fake:* Run, 3.1 mi (4.99 km) in 25:30, 8:13 per mile, today. Check the numbers, then save.' }, actions: [{ action_id: id, value: token }] });
+  let w = world([noErg, noErg, run]);
+  let out = await handlePhotoEvent(msg, env, w.deps);
+  assert.deepStrictEqual([out.status, out.kind], ['card', 'run']);
+  const card = w.dms()[0];
+  assert.ok(/For Olivia Fake/.test(card.text) && /3\.1 mi/.test(card.text) && /25:30/.test(card.text), card.text);
+  assert.deepStrictEqual(card.blocks[1].elements.map((b) => b.action_id), ['photo_run_oyo', 'photo_run_practice', 'photo_cancel']);
+  const token = card.blocks[1].elements[0].value;
+  out = await handlePhotoButton(press('photo_run_practice', token), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  const save = w.calls.find((c) => c.body && c.body.action === 'site-log').body;
+  assert.deepStrictEqual([save.self, save.athleteId, save.form.type, save.form.activity, save.form.pieces, save.form.date], [true, 'A901', 'practice', 'Run', '25:30.0, 4989', '2026-11-17']);
+  assert.ok(save.photo, 'a small copy of the screenshot goes with it');
+  assert.strictEqual((await handlePhotoButton(press('photo_run_oyo', token), env, w.deps)).status, 'gone', 'first press wins');
+  // not a run either: the usual answer
+  w = world([noErg, noErg, { ...run, distance: '', moving_time: '', elapsed_time: '' }]);
+  out = await handlePhotoEvent(msg, env, w.deps);
+  assert.notStrictEqual(out.kind, 'run');
+  // a ride is refused politely
+  w = world([noErg, noErg, { ...run, activity: 'Ride' }]);
+  assert.strictEqual((await handlePhotoEvent(msg, env, w.deps)).status, 'run_other');
+  // switched off: no run reader call at all
+  w = world([noErg, noErg, run]);
+  await handlePhotoEvent(msg, env, { ...w.deps, runPhotos: false });
+  assert.ok(w.calls.filter((c) => c.url === 'https://api.anthropic.com/v1/messages').length <= 2, 'the run reader is not called when off');
+});
+
 test('slack photo: coach sends a screen, bot asks which athlete, Save button saves', async () => {
   const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
@@ -2519,6 +2591,8 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25:30'), 1530);
   assert.strictEqual(parseDuration('1:02:30'), 3750);
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
+  [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
+  assert.strictEqual(parseDuration(autoClock('2530')), 1530);
   ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
   assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
   assert.strictEqual(paceText(0, 5000), '');
@@ -2882,6 +2956,72 @@ test('display names: inactive athletes do not lengthen an active name (Norah Tel
   assert.strictEqual(m.get('Ann Lopez'), 'Ann Lopez');
   const two = displayNames([{ name: 'Norah Tello', active: true }, { name: 'Norah Kim', active: true }]);
   assert.strictEqual(two.get('Norah Tello'), 'Norah T.');
+});
+
+test('run photo check (built, switched off): reading and comparing a run screen', async () => {
+  assert.strictEqual(RUN_PHOTO_CHECK, true, 'live since David said go (2026-11-17)');
+  assert.strictEqual(distanceMeters('3.1', 'mi').meters, 4989);
+  assert.strictEqual(distanceMeters('5,2', 'km').meters, 5200);
+  assert.strictEqual(distanceMeters('800,00', 'm').meters, 800, 'Garmin in meters uses a decimal comma');
+  assert.strictEqual(distanceMeters('1,609', 'm').meters, 1609, 'a thousands comma');
+  // what the Garmin Connect screens David sent should read as (2026-11-17), checked after the model's text is normalized
+  const garmin = [
+    [{ distance: '3.24', distance_unit: 'mi', moving_time: '39:29', avg_pace: '12:12', pace_unit: '/mi' }, 5214, 2369],
+    [{ distance: '800,00', distance_unit: 'm', moving_time: '4:01', avg_pace: '5:02', pace_unit: '/km' }, 800, 241],
+    [{ distance: '2.86', distance_unit: 'mi', moving_time: '36:53', avg_pace: '12:53', pace_unit: '/mi' }, 4603, 2213],
+    [{ distance: '3.10', distance_unit: 'mi', moving_time: '28:43', avg_pace: '9:16', pace_unit: '/mi' }, 4989, 1723],
+    [{ distance: '5.18', distance_unit: 'km', moving_time: '32:26', avg_pace: '6:16', pace_unit: '/km' }, 5180, 1946],
+    [{ distance: '6.22', distance_unit: 'mi', moving_time: '55:15', avg_pace: '8:53', pace_unit: '/mi' }, 10010, 3315],
+  ];
+  // Apple Fitness and Apple Watch screens David sent (2026-11-17)
+  garmin.push(
+    [{ distance: '11.38', distance_unit: 'km', moving_time: '1:14:23', avg_pace: `6'32"`, pace_unit: '/km' }, 11380, 4463],
+    [{ distance: '5.26', distance_unit: 'mi', moving_time: '0:53:06', avg_pace: '', pace_unit: '' }, 8465, 3186],
+    [{ distance: '4.00', distance_unit: 'mi', moving_time: '0:41:39', avg_pace: `10'24''`, pace_unit: '/mi' }, 6437, 2499],
+    [{ distance: '4.96', distance_unit: 'mi', moving_time: '41:57.00', avg_pace: `8'27"`, pace_unit: '/mi' }, 7982, 2517],
+    [{ distance: '3,22', distance_unit: 'km', moving_time: '0:30:48', elapsed_time: '0:36:36', avg_pace: `9'34"`, pace_unit: '/km' }, 3220, 1848],
+  );
+  // Strava feed cards David sent (2026-11-17): time is spelled "21m 2s" or "2h 6m"
+  assert.deepStrictEqual(['21m 2s', '2h 6m', '10m 0s', '7m 42s', 'x', ''].map(parseSpelledTime), [1262, 7560, 600, 462, null, null]);
+  garmin.push(
+    [{ distance: '2.02', distance_unit: 'mi', moving_time: '21m 2s', avg_pace: '10:24', pace_unit: '/mi' }, 3251, 1262],
+    [{ distance: '6.39', distance_unit: 'mi', moving_time: '2h 6m', avg_pace: '', pace_unit: '' }, 10284, 7560],
+    [{ distance: '0.76', distance_unit: 'mi', moving_time: '7m 42s', avg_pace: '10:04', pace_unit: '/mi' }, 1223, 462],
+    [{ distance: '0.80', distance_unit: 'mi', moving_time: '10m 0s', avg_pace: '12:30', pace_unit: '/mi' }, 1287, 600],
+    [{ distance: '5.38', distance_unit: 'mi', moving_time: '48m 26s', avg_pace: '9:00', pace_unit: '/mi' }, 8658, 2906],
+    [{ distance: '5.25', distance_unit: 'mi', moving_time: '46m 5s', avg_pace: '8:46', pace_unit: '/mi' }, 8449, 2765],
+  );
+  assert.strictEqual(compareRun(normalizeRunRead({ app: 'Strava', person: 'Pat Example', activity: 'Run', date: '', distance: '3.38', distance_unit: 'mi', moving_time: '34m 2s', elapsed_time: '', avg_pace: '10:04', pace_unit: '/mi', flags: [] }), { meters: 5440, timeS: 2042, name: 'Sam Tester' }).verdict, 'close', 'a different name on the screenshot');
+  for (const [g, m, t] of garmin) {
+    const r = normalizeRunRead({ app: 'Garmin Connect', activity: 'Running', date: '', elapsed_time: '', flags: [], ...g });
+    assert.deepStrictEqual([r.meters, r.movingS], [m, t], g.distance);
+    assert.strictEqual(compareRun(r, { meters: m, timeS: t }).verdict, 'match', g.distance + ' pace agrees with distance and time');
+  }
+  assert.strictEqual(compareRun(normalizeRunRead({ app: 'Apple', activity: 'Run', date: '', distance: '3,22', distance_unit: 'km', moving_time: '0:30:48', elapsed_time: '0:36:36', avg_pace: `9'34"`, pace_unit: '/km', flags: [] }), { meters: 3220, timeS: 2196 }).verdict, 'match', 'typed the elapsed time: pace is scaled too');
+  assert.strictEqual(parsePace("8'30\""), 510);
+  assert.strictEqual(parsePace('5:12'), 312);
+  const raw = { app: 'Strava', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:40', elapsed_time: '27:05', avg_pace: '8:17', pace_unit: '/mi', flags: [] };
+  const read = normalizeRunRead(raw);
+  assert.deepStrictEqual([read.meters, read.movingS, read.elapsedS, read.paceS], [4989, 1540, 1625, 497]);
+  const v = (meters, timeS, r = read) => compareRun(r, { meters, timeS }).verdict;
+  assert.strictEqual(v(4989, 1530), 'match');
+  assert.strictEqual(v(4989, 1625), 'match', 'typed the elapsed time');
+  assert.strictEqual(v(5100, 1540), 'match', 'GPS drift under 5%');
+  assert.strictEqual(v(5400, 1540), 'close');
+  assert.strictEqual(v(8000, 1540), 'mismatch');
+  assert.strictEqual(v(4989, 2400), 'mismatch');
+  assert.strictEqual(compareRun(normalizeRunRead({ ...raw, distance: '', moving_time: '', elapsed_time: '' }), { meters: 5000, timeS: 1500 }).verdict, 'unreadable');
+  const bare = normalizeRunRead({ ...raw, distance: '5.0', distance_unit: '' });
+  assert.strictEqual(compareRun(bare, { meters: 5000, timeS: 1540 }).verdict, 'match', 'no unit: closer of miles and km');
+  assert.strictEqual(compareRun(normalizeRunRead({ ...raw, activity: 'Ride' }), { meters: 4989, timeS: 1540 }).verdict, 'close');
+  // the call: a fake client, a tiny JPEG, no network
+  const jpeg = Buffer.from([0xff, 0xd8, 0xff, 0xda, 0, 0]);
+  let sent;
+  const client = { messages: { create: async (body) => { sent = body; return { stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(raw) }], usage: { input_tokens: 1, output_tokens: 1 } }; } } };
+  const out = await readRunScreen({ client, bytes: jpeg });
+  assert.ok(out.ok && out.read.meters === 4989);
+  assert.strictEqual(sent.messages[0].content[0].type, 'image');
+  assert.strictEqual((await readRunScreen({ client: { messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: 'no' }] }) } }, bytes: jpeg })).reason, 'bad_reply');
 });
 
 photoTests(test);

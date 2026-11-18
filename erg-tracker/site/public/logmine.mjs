@@ -3,12 +3,23 @@
 import { shrinkPhoto } from './photo.mjs';
 
 const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
+// Photo first (David, 2026-11-17, live): On, picking a screenshot fills distance and time (via /api/run-photo,
+// which itself answers 404 until RUN_PHOTO_CHECK is true) and the athlete checks the numbers and saves. Typing stays as the fallback.
+const PHOTO_FIRST = true;
 const UNITS = { mi: ['miles', 1609.344], km: ['kilometers', 1000], m: ['meters', 1] };
 
 export function paceText(timeS, meters) {
   if (!(timeS > 0) || !(meters > 0)) return '';
   const per = (m) => { const s = Math.round(timeS / meters * m); return Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0'); };
   return `Pace ${per(1609.344)} per mile, ${per(1000)} per km.`;
+}
+
+/** The phone number pad has no colon, so digits typed alone get one: 2530 -> 25:30, 10230 -> 1:02:30. One or two digits stay as minutes; anything with a colon is left as typed. */
+export function autoClock(t) {
+  const s = String(t).trim();
+  if (!/^\d{3,6}$/.test(s)) return s;
+  const sec = s.slice(-2), min = s.slice(-4, -2), h = s.slice(0, -4);
+  return s.length <= 4 ? `${s.slice(0, -2)}:${sec}` : `${h}:${min}:${sec}`;
 }
 
 /** "25:00", "1:02:30" or "25" (minutes) -> seconds, or null. */
@@ -29,8 +40,11 @@ export function openLogMine(ctx) {
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
   const draw = () => {
+    const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
+          <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>`;
     app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
+        ${PHOTO_FIRST ? photoBlock : ''}
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
           <label class="f">Was it<select class="in" data-f="type"><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>On my own</option><option value="practice"${S.type === 'practice' ? ' selected' : ''}>At practice</option></select></label></div>
@@ -39,13 +53,12 @@ export function openLogMine(ctx) {
           ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Note for coaches (optional)', 'note')}
-        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
-          <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>
+        ${PHOTO_FIRST ? '' : photoBlock}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save'}</button></div></form>`;
     const f = app.querySelector('#logmine');
     f.querySelectorAll('[data-f]').forEach((el) => {
-      el.oninput = () => { S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
+      el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
       if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; };
     });
     const pick = f.querySelector('#lm-photo');
@@ -53,6 +66,16 @@ export function openLogMine(ctx) {
       const file = pick.files && pick.files[0];
       if (!file) return;
       try { S.photo = await shrinkPhoto(file); S.photoName = file.name; S.err = ''; } catch { S.err = 'That photo could not be read. Try another one.'; }
+      if (PHOTO_FIRST && S.photo) {
+        S.msg = 'Reading your photo…'; draw();
+        try {
+          const res = await fetch('/api/run-photo', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo: S.photo }) });
+          const out = await res.json().catch(() => ({}));
+          if (res.status === 401) { signedOut(); return; }
+          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
+          else { S.msg = ''; S.err = 'Could not read the numbers. Type them in.'; }
+        } catch { S.msg = ''; S.err = 'Could not read the photo. Type the numbers in.'; }
+      }
       draw();
     };
     const drop = f.querySelector('#lm-photo-x');
