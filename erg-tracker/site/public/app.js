@@ -603,7 +603,7 @@ async function showAthlete(id) {
       </div></div>
     <div class="grid">
       ${tile('Practices this week', `${w.practicesDone}/${w.practicesExpected}`, fmtMin(w.practiceMin) + ' weighted')}
-      ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}`)}
+      ${tile('Season completion', s.completionPct === null ? '–' : s.completionPct + '%', `${s.practicesDone} of ${s.practicesExpected}${s.makeupsDone ? ` · ${s.makeupsDone} make-up${s.makeupsDone > 1 ? 's' : ''}` : ''}${s.partials === undefined ? '' : `<br>${s.partials} partial${s.partials === 1 ? '' : 's'}`}`)}
       ${tile('Practice streak', v.streaks.practices, 'in a row')}
       ${tile('OYO goal streak', v.streaks.oyoWeeks, v.streaks.oyoWeeks === 1 ? 'week' : 'weeks in a row')}
       ${tile('Season training', fmtMin(s.trainingMin).replace(/m$/, ' min'), fmtNum(s.meters) + ' meters')}
@@ -619,9 +619,9 @@ async function showAthlete(id) {
     <div class="two">
       <div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(v.zones)}</div>
       <div class="card"><h2>Last 10 practices</h2><div class="dots">
-        ${v.recentPractices.slice().reverse().map((r) => `<span class="dot ${r.how === 'Make-up' ? 'mu' : r.done ? 'done' : ''}"
-          data-tip="${esc(fmtDay(r.date) + ': ' + (r.how === 'Make-up' ? 'made up ' + fmtDate(r.makeupDate) : r.how))}">${new Date(r.date + 'T12:00:00').getDate()}</span>`).join('')}
-      </div><p class="muted small">Filled: done. Ring: made up. Empty: missed.</p></div>
+        ${v.recentPractices.slice().reverse().map((r) => `<span class="dot ${r.how === 'Make-up' ? 'mu' : r.how === 'Modified' ? 'mod' : r.done ? 'done' : ''}"
+          data-tip="${esc(fmtDay(r.date) + ': ' + (r.how === 'Make-up' ? 'made up ' + fmtDate(r.makeupDate) : r.how === 'Full' ? 'Completed' : r.how))}">${r.how === 'Modified' ? '<b>' : ''}${new Date(r.date + 'T12:00:00').getDate()}${r.how === 'Modified' ? '</b>' : ''}</span>`).join('')}
+      </div><p class="muted small">Filled: completed. Striped: modified. Ring: made up. Empty: missed.</p></div>
     </div>
     <div class="card"><h2>Tests</h2>${testsTable(v.tests)}</div>
     ${v.own || v.coach ? workoutsCard(v.workouts, v.yearStart) : `<div class="card"><h2>Recent sessions</h2>${sessionsTable(v.sessions)}</div>`}${footer(v.meta)}`;
@@ -822,14 +822,14 @@ function gmsCard(gms, coach = false, summary = null, bests = [], key = null) {
     // A 2k or 20' this season but no GMS means no weight on file: the result stands, unadjusted (David, 2026-11-11).
     const tested = bests.some((b) => b.season && (b.test === '2000m' || b.test === '20min'));
     const her = coach ? 'their' : 'your', herObj = coach ? 'them' : 'you';
-    return `<div class="card"><h2>Gold Medal Standard</h2><p class="empty">${tested
+    return `<div class="card"><h2>Stotesbury Cup GMS</h2><p class="empty">${tested
       ? `A test is recorded this season, and it is shown unadjusted below. The GMS % and stars appear once a coach adds ${her} weight.`
       : `No 2k or 20' test this season yet. A test gives ${herObj} a GMS % and stars.`}</p></div>`;
   }
   // Next star per test, visible (David, 2026-11-16): time for the 2k, meters for the 20', with the split it works out to.
   const more = gms.filter((g) => g.stars !== null && nextStarText(g)).map((g) => `<p>${TEST_LABELS[g.test]}: ${nextStarText(g)}</p>`).join('');
   const keyRows = key ? key.map((k) => `<div class="gms-key"><span class="stars" role="img" aria-label="${starWord(k.stars)}">${starText(k.stars)}</span><span>${Number(k.pct).toFixed(1).replace(/\.0$/, '')}% or better${k.label ? ` · ${esc(k.label)}` : ''}</span></div>`).join('') : '';
-  return `<div class="card"><h2>Gold Medal Standard <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
+  return `<div class="card"><h2>Stotesbury Cup GMS <span class="pill">${coach ? 'coach view' : 'only you see this'}</span></h2>
     <div class="table-wrap"><table><tr><th>Test</th><th class="r">Best GMS this season</th><th class="r">GMS</th><th>Stars</th></tr>
     ${gms.map((g) => `<tr><td>${TEST_LABELS[g.test]}</td><td class="r">${fmtResult(g)}<div class="muted small">${split(g)} /500m</div></td><td class="r">${g.gmsPct.toFixed(1)}%</td>
       <td class="stars">${g.stars === null ? '' : starText(g.stars)}</td></tr>`).join('')}
@@ -857,10 +857,13 @@ function splitsCell(list, bike = false) {
 
 const isBike = (r) => /bikeerg/i.test(r.activity || '');
 
+/** The Sheet's Status as shown: Full is "Completed", so Modified reads as not completed (David, 2026-11-17). The Sheet keeps Full. */
+const statusLabel = (st) => (!st || st === 'Full' ? 'Completed' : st);
+
 /** Pills for one logged result: status, machine, make-up, and the range verdict. */
 function resultPills(r) {
   const verdict = r.hit === true ? '<span class="pill good">All in range</span>' : r.hit === false ? '<span class="pill warn">Some off target</span>' : '';
-  return `<span class="pill">${r.test ? 'Test done' : esc(r.status || 'Logged')}</span>${r.type === 'Make-up' ? ` <span class="pill">Make-up ${fmtDate(r.date)}</span>` : ''}${r.activity && !/rowerg/i.test(r.activity) ? ` <span class="pill">${esc(r.activity)}</span>` : ''} ${verdict}`;
+  return `<span class="pill">${r.test ? 'Test done' : esc(statusLabel(r.status))}</span>${r.type === 'Make-up' ? ` <span class="pill">Make-up ${fmtDate(r.date)}</span>` : ''}${r.activity && !/rowerg/i.test(r.activity) ? ` <span class="pill">${esc(r.activity)}</span>` : ''} ${verdict}`;
 }
 
 /**
@@ -871,7 +874,7 @@ function resultPills(r) {
 function sessionBlock(s, withTargets, today = '') {
   const r = s.result;
   const status = r ? `<div class="result-line">${resultPills(r)}${r.matches ? '' : ` <span class="muted small">${esc(r.reason)}</span>`}</div>`
-    : s.missed ? '<div class="result-line"><span class="pill">Not logged</span></div>' : '';
+    : s.missed ? `<div class="result-line"><span class="pill${s.notDone ? ' warn' : ''}">${s.notDone ? 'Not done' : 'Not logged'}</span></div>` : '';
   return `<div class="session"><div class="session-head"><b>${esc(s.workout)}</b>
       ${/^(varsity|novice)$/i.test(s.squad) ? `<span class="pill">${esc(s.squad)}</span>` : ''}${s.session !== 'Practice' ? ` <span class="pill">${esc(s.session)}</span>` : ''}</div>
     ${s.notes ? `<p class="muted small">${esc(s.notes)}</p>` : ''}${status}
@@ -916,7 +919,7 @@ function teamResults(s, today) {
     ${s.results.map((x) => {
       const avg = x.result ? avgSplit(x.result) : null;
       // On a phone the status sits under the name (st-inline) and its own column hides, so nothing scrolls sideways.
-      const st = x.result ? resultPills(x.result) : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
+      const st = x.result ? resultPills(x.result) : x.notDone ? '<span class="pill warn">Not done</span>' : `<span class="muted small">${ahead ? '' : 'Not logged'}</span>`;
       return `<tr data-name="${esc(x.name.toLowerCase())}" data-speed="${avg === null ? '' : avg}" data-target="${(() => { const t = targetPace(x.targets); return t === null ? '' : t; })()}"><td class="r rank muted"></td><td><a href="#/athlete/${esc(x.id)}">${esc(x.name)}</a><div class="st-inline">${st}</div></td>
       <td class="st-col">${st}</td>
       <td class="r">${avg === null ? '' : fmtTime(avg) + (isBike(x.result) ? '*' : '')}</td>
@@ -1116,7 +1119,9 @@ async function showWeek(id = null, prev = false) {
       const rs = d.sessions.flatMap((s) => s.results || []);
       return rs.length ? `<span class="pill">${rs.filter((x) => x.result).length} of ${rs.length} logged</span>` : '';
     }
-    return d.sessions.some((s) => s.result) ? '<span class="pill good">Logged</span>' : '<span class="pill">Not logged</span>';
+    const done = d.sessions.filter((s) => s.result);
+    if (!done.length) return '<span class="pill">Not logged</span>';
+    return done.some((s) => s.result.status === 'Modified') || d.sessions.some((s) => s.notDone) ? '<span class="pill warn">Modified</span>' : '<span class="pill good">Completed</span>';
   };
   const drawDays = () => {
     const d = v.days.find((x) => x.day === sel);
@@ -1342,7 +1347,7 @@ async function showLogFor() {
         <label class="f">Activity<select class="in" data-f="activity">${['Erg (RowErg)', 'BikeErg', 'Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'].map((a) => `<option value="${esc(a)}"${a === S.activity ? ' selected' : ''}>${a === 'Erg (RowErg)' ? 'Erg (RowErg)' : esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${dayOpts.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : fmtDay(d)}</option>`).join('')}</select></label>
           <label class="f">Workout<select class="in" data-f="type"><option value="practice"${S.type === 'practice' ? ' selected' : ''}>Practice</option><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>OYO</option><option value="makeup"${S.type === 'makeup' ? ' selected' : ''}>Make-up</option></select></label></div>
-        ${S.type === 'practice' ? `<div class="seg" role="group" aria-label="Practice status">${[['full', 'Full'], ['modified', 'Modified'], ['out', 'Out']].map(([v, l]) => `<button type="button" data-status="${v}" aria-pressed="${S.status === v}">${l}</button>`).join('')}</div>` : ''}
+        ${S.type === 'practice' ? `<div class="seg" role="group" aria-label="Practice status">${[['full', 'Completed'], ['modified', 'Modified'], ['out', 'Out']].map(([v, l]) => `<button type="button" data-status="${v}" aria-pressed="${S.status === v}">${l}</button>`).join('')}</div>` : ''}
         ${S.type === 'makeup' ? `<label class="f">Make-up for<select class="in" data-f="makeup">${dayOpts.slice(1).map((d) => `<option value="${d}"${d === S.makeup ? ' selected' : ''}>${fmtDay(d)}</option>`).join('')}</select></label>` : ''}
         ${out ? field('Note for coaches (optional)', 'note') : `
         <div class="seg" role="group" aria-label="Pieces">${[['single', 'Single piece'], ['intervals', 'Intervals']].map(([v, l]) => `<button type="button" data-mode="${v}" aria-pressed="${S.mode === v}">${l}</button>`).join('')}</div>
@@ -1487,7 +1492,7 @@ async function showLineups() {
 async function showCompletion() {
   const v = await api('/api/completion');
   setNav('completion');
-  const name = { F: 'Logged', M: 'Modified', U: 'Made up', P: 'Absent, make-up still open', O: 'Absent', W: 'Week in progress' };
+  const name = { F: 'Completed', M: 'Modified', U: 'Made up', P: 'Absent, make-up still open', O: 'Absent', W: 'Week in progress' };
   const dot = (c, d) => `<span class="ad ad-${c || 'N'}" title="${esc(fmtDate(d, { month: 'short', day: 'numeric' }) + ' · ' + (c ? name[c] : 'No session'))}"></span>`;
   const mine = !isCoach() && me() ? me().id : null;
   const rows = [...v.rows].sort((x, y) => (x.id === mine ? -1 : 0) - (y.id === mine ? -1 : 0) || (y.pct ?? -1) - (x.pct ?? -1) || x.name.localeCompare(y.name));
@@ -1496,10 +1501,10 @@ async function showCompletion() {
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}${isCoach() ? '' : ' · everyone on the team sees this page'}</div><h1>Attendance</h1></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}</div><h1>Attendance</h1></div></div>
     <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
-      <div class="att-head"><span>${mine ? 'You first, then the team by %' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
+      <div class="att-head"><span>${mine ? '' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
       ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
         <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
         <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}

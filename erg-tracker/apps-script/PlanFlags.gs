@@ -1,12 +1,12 @@
 /**
- * Plan flags in Slack (David, 2026-10-28). Every 15 minutes a sweep looks at
- * the last few days of entries; a session marked Full that doesn't match its
- * plan gets one message in the coach channel (through the alert webhook) with
- * three buttons: Set to Modified, Looks right, Open in Sheet. The Netlify
- * function behind the Slack app (site/functions/slack-background.mjs) sends a
- * press back here through the feed key. Only member IDs in Settings
- * slack.coach_ids may decide; the first press wins and the other coaches see
- * who pressed. Nothing changes without a press.
+ * Plan flags in Slack (David, 2026-10-28; changed 2026-11-17). A practice or make-up logged as Full that is not
+ * exactly the planned workout (fewer pieces, a piece cut short, a different workout, or a skipped workout on
+ * a day with several) is marked Modified automatically and gets one message in the coach channel
+ * (#ergbot-coaches, through the alert webhook) with three buttons: Confirm Modified, Set back to Full, Open
+ * in Sheet. It runs right after a Slack or site save, and an every-15-minutes sweep catches the rest (Logbook,
+ * Form). The Netlify function behind the Slack app (site/functions/slack-background.mjs) sends a press back
+ * here through the feed key. Only member IDs in Settings slack.coach_ids may decide; the first press wins and
+ * the other coaches see who pressed.
  */
 
 var PLAN_FLAGS_POSTED_PROP = 'PLAN_FLAGS_POSTED';
@@ -14,42 +14,76 @@ var PLAN_FLAG_LOOKBACK_DAYS = 3;
 var PLAN_FLAG_ACTION = 'plan-flag-action';
 var PLAN_FLAG_REVIEWED = 'Reviewed, Full';
 var PLAN_FLAG_MODIFIED = 'Reviewed, Modified';
+var PLAN_FLAG_AUTO = 'Auto Modified';   // marked Modified by the plan check, waiting for a coach
 
 // ---- Pure parts (tested in Node) ----
 
 /**
- * Entries from the last few days that need a flag message: Full, doesn't
- * match the plan, no Review status yet, not posted before. `inp` has
- * schedule, workouts, benchmarks, settings. `squads` maps Athlete ID to squad.
- * `posted` lists Entry IDs already sent. Entries whose plan can't be read are
- * skipped (the Plan check report shows those).
+ * What needs a flag: one item per athlete and planned day, { entryIds, entryId, athlete, date, sessionType,
+ * flag, detail }. An item covers that day's Full practice and make-up entries with no Review status that
+ * were not posted before: the ones that don't match their plan, or all of them when a workout planned that
+ * day was not logged (checked once the day is over; warm-ups and cool-downs and draft sessions don't count).
+ * `inp` has schedule, workouts, benchmarks, settings. `squads` maps Athlete ID to squad. `posted` lists
+ * Entry IDs already sent. Entries whose plan can't be read are skipped (the Plan check report shows those).
  */
 function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   var from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - PLAN_FLAG_LOOKBACK_DAYS);
+  var todayKey = dayKey_(today);
   var byEntry = {};
   intervals.forEach(function (iv) { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
-  var out = [];
+  var names = {};
+  (inp.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || id); });
+  var groups = {}, order = [];
   entries.forEach(function (e) {
-    var id = e['Entry ID'];
+    var type = String(e['Session type'] || '');
+    if (type !== 'Practice' && type !== 'Make-up') return;
     if (!isDate_(e.Date) || e.Date < from || e.Date > today) return;
-    if (String(e.Status) !== 'Full' || String(e['Review status'] || '').trim() !== '') return;
-    if (posted.indexOf(id) >= 0) return;
+    var review = String(e['Review status'] || '').trim();
+    if (/reject|^pending/i.test(review)) return;
     try {
-      var planned = plannedFor(e, squads[e['Athlete ID']], inp.schedule);
-      if (!planned) return;
-      var pieces = workoutPieces(inp.workouts, planned['Workout ID']);
+      var best = plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
+      if (!best || !best.pieces.length) return;
+      var key = e['Athlete ID'] + '|' + dayKey_(best.row.Date);
+      if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], done: {}, out: false }; order.push(key); }
+      var g = groups[key];
+      if (String(e.Status) === 'Out') { g.out = true; return; }
+      g.done[String(best.row['Workout ID']).trim()] = true;
+      var open = String(e.Status) === 'Full' && review === '' && posted.indexOf(e['Entry ID']) < 0;
+      if (!open) return;
       var bases = {};
       Object.keys(PLAN_BASES).forEach(function (b) {
-        var best = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, planned.Date, inp.settings.school_year_start);
-        if (best) bases[b] = best.watts;
+        var bw = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, best.row.Date, inp.settings.school_year_start);
+        if (bw) bases[b] = bw.watts;
       });
-      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[id] || [], e.Activity), pieces, bases, inp.settings, e.Activity);
-      var flag = planFlag(e, c);
-      if (flag) out.push({ entryId: id, athlete: e.Athlete, date: e.Date, sessionType: e['Session type'], flag: flag,
-        detail: planFlagDetail(e, byEntry[id] || [], pieces) });
+      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
+      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17).
+      var warmCool = isWarmCoolWorkout_(names[String(best.row['Workout ID']).trim()]);
+      g.rows.push({ e: e, pieces: best.pieces, flag: warmCool ? '' : planFlag(e, c) });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
+  });
+  var out = [];
+  order.forEach(function (key) {
+    var g = groups[key];
+    if (!g.rows.length) return;
+    var skipped = [];
+    if (!g.out && g.day < todayKey) {
+      planCandidates(g.first, squads[g.first['Athlete ID']], inp.schedule, inp.workouts).forEach(function (r) {
+        var id = String(r['Workout ID']).trim();
+        if (g.done[id] || !isActive_(r.Published) || isWarmCoolWorkout_(names[id])) return;
+        if (skipped.indexOf(names[id] || id) < 0) skipped.push(names[id] || id);
+      });
+    }
+    var hit = skipped.length ? g.rows : g.rows.filter(function (x) { return x.flag; });
+    if (!hit.length) return;
+    var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; });
+    if (skipped.length) reasons.push('Not logged: ' + skipped.join(', '));
+    out.push({
+      entryIds: hit.map(function (x) { return x.e['Entry ID']; }), entryId: hit[0].e['Entry ID'],
+      athlete: g.first.Athlete, date: hit[0].e.Date, sessionType: hit[0].e['Session type'], flag: reasons.join('. '),
+      detail: hit.map(function (x) { return planFlagDetail(x.e, byEntry[x.e['Entry ID']] || [], x.pieces); }).join('\n\n').slice(0, 2400)
+    });
   });
   return out;
 }
@@ -103,17 +137,18 @@ function planFlagDetail(entry, intervals, pieces) {
   return lines.join('\n').slice(0, 2400);
 }
 
-/** The Slack message for one flagged entry: text plus Block Kit buttons. */
+/** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
-  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' + item.flag +
-    (item.detail ? '\n' + item.detail : '');
+  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType +
+    '. Marked Modified: ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
+  var ids = (item.entryIds || [item.entryId]).join(',');
   return {
     text: text,
     blocks: [
       { type: 'section', text: { type: 'mrkdwn', text: text } },
       { type: 'actions', elements: [
-        { type: 'button', action_id: 'plan_modified', value: item.entryId, text: { type: 'plain_text', text: 'Set to Modified' } },
-        { type: 'button', action_id: 'plan_reviewed', value: item.entryId, text: { type: 'plain_text', text: 'Looks right' } },
+        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: 'Confirm Modified' } },
+        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Completed' } },
         { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
       ] }
     ]
@@ -126,50 +161,119 @@ function slackCoachIds_(settings) {
 }
 
 /**
- * What a button press does. `row` is the entry's current Status and Review
- * status. Returns { status: 'forbidden' | 'missing' | 'already' | 'ok', set }
- * where `set` holds the cells to write on 'ok'.
+ * What a button press does. `row` is the entry's current Status and Review status. Ops: 'confirm' and
+ * 'full' (since 2026-11-17), and 'modified' and 'reviewed' from older messages. Returns
+ * { status: 'forbidden' | 'missing' | 'already' | 'ok', set } where `set` holds the cells to write on 'ok'.
  */
 function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   if (!slackUserId || coachIds.indexOf(String(slackUserId)) < 0) return { status: 'forbidden' };
   if (!row) return { status: 'missing' };
-  if (String(row['Review status'] || '').trim() !== '') return { status: 'already', reviewStatus: String(row['Review status']).trim() };
-  if (op === 'modified') return { status: 'ok', set: { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
-  if (op === 'reviewed') return { status: 'ok', set: { 'Review status': PLAN_FLAG_REVIEWED } };
-  return { status: 'error', error: 'unknown action' };
+  var review = String(row['Review status'] || '').trim();
+  if (['confirm', 'full', 'modified', 'reviewed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
+  if (review === PLAN_FLAG_AUTO) {
+    if (op === 'confirm' || op === 'modified') return { status: 'ok', set: { 'Review status': PLAN_FLAG_MODIFIED } };
+    return { status: 'ok', set: { 'Status': 'Full', 'Review status': PLAN_FLAG_REVIEWED } };
+  }
+  if (review !== '') return { status: 'already', reviewStatus: review };
+  if (op === 'modified' || op === 'confirm') return { status: 'ok', set: { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
+  return { status: 'ok', set: { 'Review status': PLAN_FLAG_REVIEWED } };
+}
+
+/** The cells the plan check writes on an entry it marks: '' when the entry is no longer a Full entry with no Review status. Pure. */
+function planFlagAutoSet_(row) {
+  if (!row || String(row.Status) !== 'Full' || String(row['Review status'] || '').trim() !== '') return null;
+  return { 'Status': 'Modified', 'Review status': PLAN_FLAG_AUTO };
 }
 
 // ---- Sheet side ----
 
-/** Every-15-minutes trigger: posts one message per newly flagged entry. */
+/** Every-15-minutes trigger: marks and posts every newly flagged item. */
 function sweepPlanFlags() {
-  var props = PropertiesService.getScriptProperties();
-  var hook = props.getProperty(SLACK_WEBHOOK_PROP);
-  if (!hook) return [];                        // the buttons need Slack
   var lock = LockService.getScriptLock();
   if (!lock.tryLock(5000)) return [];
   try {
-    var posted = [];
-    try { posted = JSON.parse(props.getProperty(PLAN_FLAGS_POSTED_PROP) || '[]'); } catch (err) { posted = []; }
     var squads = {};
     readObjects_(TABS.ROSTER).forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
-    var items = pendingPlanFlags(readObjects_(TABS.ENTRIES), readObjects_(TABS.INTERVALS), squads, planInputs_(), new Date(), posted);
-    var sheetUrl = ss_().getUrl() + '#gid=' + tab_(TABS.ENTRIES).getSheetId();
-    var sent = [];
-    for (var i = 0; i < items.length; i++) {
+    return runPlanFlags_(function (posted) {
+      return pendingPlanFlags(readObjects_(TABS.ENTRIES), readObjects_(TABS.INTERVALS), squads, planInputs_(), new Date(), posted);
+    });
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+/**
+ * Right after a Slack or site save (the caller holds the script lock): runs the plan check for that
+ * athlete's recent entries, so a workout that isn't the plan is marked Modified and posted at once.
+ * True when the saved entry was flagged. Never throws: the save has already happened.
+ */
+function planFlagsAfterSave_(entry, squads) {
+  try {
+    var id = String(entry['Athlete ID']), ids = {};
+    var mine = readObjects_(TABS.ENTRIES).filter(function (e) { return String(e['Athlete ID']) === id; });
+    mine.forEach(function (e) { ids[e['Entry ID']] = true; });
+    var ivs = readObjects_(TABS.INTERVALS).filter(function (iv) { return ids[iv['Entry ID']]; });
+    var hit = false;
+    runPlanFlags_(function (posted) {
+      var items = pendingPlanFlags(mine, ivs, squads, planInputs_(), new Date(), posted);
+      hit = items.some(function (it) { return it.entryIds.indexOf(entry['Entry ID']) >= 0; });
+      return items;
+    });
+    return hit;
+  } catch (err) {
+    logChange_({ Who: 'plan check', Tab: TABS.ENTRIES, 'Row ID': entry['Entry ID'], Note: 'PLAN CHECK ERROR: ' + err.message });
+    return false;
+  }
+}
+
+/**
+ * Posts each item to the coach channel and marks its entries Modified (Review status "Auto Modified").
+ * The caller holds the script lock. With no webhook the entries are still marked (the site shows why).
+ * A failed post stops here and is retried at the next sweep. Returns the Entry IDs marked.
+ */
+function runPlanFlags_(findItems) {
+  var props = PropertiesService.getScriptProperties();
+  var hook = props.getProperty(SLACK_WEBHOOK_PROP);
+  var posted = [];
+  try { posted = JSON.parse(props.getProperty(PLAN_FLAGS_POSTED_PROP) || '[]'); } catch (err) { posted = []; }
+  var items = findItems(posted);
+  if (!items.length) return [];
+  var sheetUrl = ss_().getUrl() + '#gid=' + tab_(TABS.ENTRIES).getSheetId();
+  var marked = [];
+  for (var i = 0; i < items.length; i++) {
+    if (hook) {
       var res = UrlFetchApp.fetch(hook, {
         method: 'post', contentType: 'application/json',
         payload: JSON.stringify(planFlagMessage(items[i], sheetUrl)), muteHttpExceptions: true
       });
       if (res.getResponseCode() !== 200) break;   // retried at the next sweep
-      posted.push(items[i].entryId);
-      sent.push(items[i].entryId);
     }
-    props.setProperty(PLAN_FLAGS_POSTED_PROP, JSON.stringify(posted.slice(-300)));
-    return sent;
-  } finally {
-    lock.releaseLock();
+    items[i].entryIds.forEach(function (id) {
+      posted.push(id);
+      var entry = entryRowById_(id);
+      var set = planFlagAutoSet_(entry);
+      if (!set) return;
+      writeEntryCells_(entry, set, 'Plan check', 'not the planned workout: ' + items[i].flag);
+      marked.push(id);
+    });
   }
+  props.setProperty(PLAN_FLAGS_POSTED_PROP, JSON.stringify(posted.slice(-300)));
+  SpreadsheetApp.flush();
+  return marked;
+}
+
+/** Writes cells on one Entries row (from entryRowById_), each change logged to the Change log. */
+function writeEntryCells_(entry, set, who, note) {
+  var sheet = tab_(TABS.ENTRIES);
+  var headers = HEADERS[TABS.ENTRIES];
+  Object.keys(set).forEach(function (field) {
+    var cell = sheet.getRange(entry.row, headers.indexOf(field) + 1);
+    logChange_({
+      Who: who, Tab: TABS.ENTRIES, Cell: cell.getA1Notation(), 'Row ID': entry['Entry ID'],
+      Field: field, 'Old value': entry[field], 'New value': set[field], Note: String(note || '').slice(0, 200)
+    });
+    cell.setValue(set[field]);
+  });
 }
 
 /** Entries row for an Entry ID: {row, status, review} or null. */
@@ -187,30 +291,29 @@ function entryRowById_(entryId) {
 }
 
 /**
- * doPost action from the Slack function: body { entryId, op, slackUserId,
- * slackName }. Decides and writes under the script lock so two coaches
- * pressing together can't both win.
+ * doPost action from the Slack function: body { entryId (one ID, or several joined by commas), op,
+ * slackUserId, slackName }. Decides and writes under the script lock so two coaches pressing together
+ * can't both win.
  */
 function applyPlanFlagAction_(body) {
   var lock = LockService.getScriptLock();
   lock.waitLock(30000);
   try {
-    var entry = body.entryId ? entryRowById_(body.entryId) : null;
-    var d = decidePlanFlagAction(entry, body.op, body.slackUserId, slackCoachIds_(getSettings()));
-    if (d.status !== 'ok') return d;
-    var sheet = tab_(TABS.ENTRIES);
-    var headers = HEADERS[TABS.ENTRIES];
+    var ids = String(body.entryId || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
+    if (!ids.length) return { status: 'missing' };
+    var coachIds = slackCoachIds_(getSettings());
     var who = 'Slack, ' + String(body.slackName || body.slackUserId).slice(0, 40);
-    Object.keys(d.set).forEach(function (field) {
-      var col = headers.indexOf(field) + 1;
-      var cell = sheet.getRange(entry.row, col);
-      logChange_({
-        Who: who, Tab: TABS.ENTRIES, Cell: cell.getA1Notation(), 'Row ID': entry['Entry ID'],
-        Field: field, 'Old value': entry[field], 'New value': d.set[field], Note: 'plan flag button'
-      });
-      cell.setValue(d.set[field]);
+    var first = null, changed = 0;
+    ids.forEach(function (id) {
+      var entry = entryRowById_(id);
+      var d = decidePlanFlagAction(entry, body.op, body.slackUserId, coachIds);
+      if (!first) first = d;
+      if (d.status !== 'ok') return;
+      writeEntryCells_(entry, d.set, who, 'plan flag button');
+      changed++;
     });
     SpreadsheetApp.flush();
+    if (!changed) return first;
     return { status: 'ok', op: body.op, by: String(body.slackName || '') };
   } catch (err) {
     return { status: 'error', error: err.message };

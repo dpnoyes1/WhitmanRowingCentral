@@ -270,7 +270,7 @@ export default function photoTests(test) {
     assert.deepStrictEqual(res.issues, []);
   });
 
-  test('photo: a scrolled interval screen asks for the rest', () => {
+  test('photo: a scrolled interval screen saves from the total row, flagged', () => {
     const tenOfTen = read({
       title: '10x3:00/1:15r',
       total: { time: '30:00.0', meters: 6974, avg_split: '2:09.0', avg_rate: 26 },
@@ -278,9 +278,23 @@ export default function photoTests(test) {
       pieces: Array.from({ length: 7 }, () => piece('3:00.0', 697, '2:09.0', 26)),
     });
     const res = C.runChecks(tenOfTen, { today: TODAY });
-    assert.strictEqual(res.status, 'ask');
+    assert.strictEqual(res.status, 'clean', 'saved, never refused (David, 2026-11-17)');
     assert.deepStrictEqual(codes(res), ['pieces_missing'], 'no false "doesn\'t add up" for a partial list');
-    assert.ok(/7 of 10 pieces/.test(res.issues[0].athlete) && /That's everything/.test(res.issues[0].athlete));
+    assert.ok(/only 7 of 10 pieces/.test(res.issues[0].coach) && /total row/.test(res.issues[0].coach), res.issues[0].coach);
+  });
+
+  test('photo: an interval workout stopped early saves the pieces done, flagged', () => {
+    const threeOfFour = read({
+      title: '4x15:00/2:00r',
+      total: { time: '45:00.0', meters: 10800, avg_split: '2:05.0', avg_rate: 20 },
+      meters_column: 'per_piece',
+      pieces: Array.from({ length: 3 }, () => piece('15:00.0', 3600, '2:05.0', 20)),
+    });
+    const res = C.runChecks(threeOfFour, { today: TODAY });
+    assert.strictEqual(res.status, 'clean');
+    assert.deepStrictEqual(codes(res), ['pieces_short']);
+    assert.ok(/3 of 4 pieces; saved as 3/.test(res.issues[0].coach), res.issues[0].coach);
+    assert.strictEqual(res.read.pieces.length, 3);
   });
 
   test('photo: interval pieces must add to the work totals', () => {

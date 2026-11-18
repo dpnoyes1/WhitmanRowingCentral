@@ -213,6 +213,10 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
     if (access.status !== 'ok') return { status: access.status };
     var athlete = access.athlete;
     if (dedupe && alreadyProcessed_(rid)) return { status: 'duplicate' };
+    if (hooks && hooks.beforeParse) {
+      var asked = hooks.beforeParse(athlete);   // e.g. a photo asks "Make-up or OYO?" before anything is saved
+      if (asked) return asked;
+    }
     var result = parseSubmission(makeAnswers(String(athlete.Name).trim(), access.role === 'coach' ? 'Coach ' + (body.slackName || 'via Slack') : String(athlete.Name).trim()), {
       submittedAt: new Date(), responseId: rid, athleteIds: athleteIdByName_(), newId: newId_, parseDate: parseFormDate_
     });
@@ -230,7 +234,7 @@ function slackSave_(body, rid, dedupe, typedName, makeAnswers, hooks) {
     SpreadsheetApp.flush();
     var squads = {};
     roster.forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
-    var flagged = pendingPlanFlags([result.entry], result.intervals, squads, planInputs_(), new Date(), []).length > 0;
+    var flagged = planFlagsAfterSave_(result.entry, squads);
     var e = result.entry;
     return { status: 'ok', entryId: e['Entry ID'], athlete: String(athlete.Name).trim(), sessionType: e['Session type'], entryStatus: e.Status,
       activity: e.Activity || '', pieces: result.intervals.length, flagged: flagged, test: result.benchmark ? result.benchmark.Test : '',

@@ -173,9 +173,20 @@ export function runChecks(input, ctx) {
   const reps = title && title.kind === 'intervals' ? title.reps : null;
   const partial = reps != null && pieces.length < reps;
   if (partial) {
-    issues.push(issue('pieces_missing', 'ask',
-      `The screen shows ${pieces.length} of ${reps} pieces. Scroll the list and send a photo of the rest, or tap "That's everything".`,
-      `Only ${pieces.length} of ${reps} pieces visible`, false));
+    // Fewer pieces than the title (David, 2026-11-17: log incomplete workouts, flagged). When the visible pieces
+    // add up to the total row, the workout stopped early: save them as they are (the plan check marks it
+    // Modified). When they don't, rows are scrolled off: save from the total row, like split rows that don't add up.
+    const times = pieces.map((p) => p.timeS);
+    const sum = times.every((t) => t != null) ? tenths(times.reduce((a, b) => a + b, 0)) : null;
+    const msum = pieces.every((p) => p.meters != null) ? pieces.reduce((a, p) => a + p.meters, 0) : null;
+    const timeOk = sum != null && Math.abs(sum - read.totalTimeS) <= 0.1 * pieces.length + 0.3;
+    const metersOk = msum == null || read.metersColumn === 'none' || read.metersColumn === 'unclear' || Math.abs(msum - read.totalMeters) <= 2;
+    if (timeOk && metersOk) {
+      issues.push(issue('pieces_short', 'flag', '', `The screen shows ${pieces.length} of ${reps} pieces; saved as ${pieces.length}`, true));
+    } else {
+      issues.push(issue('pieces_missing', 'flag', '',
+        `Check this one: only ${pieces.length} of ${reps} pieces are on the screen (rows may be scrolled off). Saved from the total row.`, true));
+    }
   } else if (pieces.length) {
     const times = pieces.map((p) => p.timeS);
     if (times.every((t) => t != null)) {

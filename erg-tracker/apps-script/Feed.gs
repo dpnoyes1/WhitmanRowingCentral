@@ -379,7 +379,8 @@ function feedWeekResults_(sessions, inputs, start) {
   sessions.forEach(function (sn) { sn.results = []; });
   inputs.entries.forEach(function (e) {
     if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
-    var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
+    var best = plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
+    var planned = best && best.row;
     if (!planned || planned.Date < start || planned.Date >= end) return;
     var sn = sessions.filter(function (x) {
       return x.day === dayKey_(planned.Date) && x.session === (planned.Session || 'Practice') && x.workoutId === String(planned['Workout ID']).trim();
@@ -398,7 +399,7 @@ function feedWeekResults_(sessions, inputs, start) {
     var rowErg = activity === '' || /rowerg|bikeerg/i.test(activity);
     var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
       .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
-    var c = checkAgainstPlan(ivs, workoutPieces(inputs.workouts, planned['Workout ID']), bases, s, activity);
+    var c = checkAgainstPlan(ivs, best.pieces, bases, s, activity);
     var isRun = activity === 'Run';
     var test = String(e['Benchmark ID'] || '') !== '';
     sn.results.push({
@@ -433,8 +434,9 @@ function feedLogged_(inputs, yearStart, s) {
     var test = String(e['Benchmark ID'] || '') !== '';
     var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
       .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
-    var planned = plannedFor(e, squadOf[e['Athlete ID']], inputs.schedule);
-    var pieces = planned ? workoutPieces(inputs.workouts, planned['Workout ID']) : [];
+    var best = plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
+    var planned = best && best.row;
+    var pieces = best ? best.pieces : [];
     var bases = {};
     if (planned) {
       Object.keys(PLAN_BASES).forEach(function (b) {

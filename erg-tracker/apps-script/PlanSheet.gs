@@ -137,9 +137,9 @@ function checkWeekAgainstPlan() {
   var out = [['Date', 'Athlete', 'Session type', 'Planned workout', 'Did the plan', 'Hit target', 'Detail', 'Flag']];
   readObjects_(TABS.ENTRIES).forEach(function (e) {
     if (!(e.Date instanceof Date) || e.Date < start || e.Date >= end || e.Status === 'Out') return;
-    var planned = plannedFor(e, squads[e['Athlete ID']], inp.schedule);
-    if (!planned) return;
-    var pieces = workoutPieces(inp.workouts, planned['Workout ID']);
+    var best = plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
+    if (!best) return;
+    var planned = best.row, pieces = best.pieces;
     var bases = {};
     Object.keys(PLAN_BASES).forEach(function (b) {
       var best = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, planned.Date, inp.settings.school_year_start);

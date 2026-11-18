@@ -118,7 +118,10 @@ function processSiteLog_(body) {
       logChange_({ Who: by, Tab: TABS.BENCHMARKS, 'Row ID': result.benchmark['Benchmark ID'], Note: result.benchmark['Drag check'] + ' (' + result.benchmark.Test + ', ' + result.benchmark.Athlete + ')' });
     }
     SpreadsheetApp.flush();
-    return { status: 'ok', entryId: result.entry['Entry ID'], athlete: name, test: result.benchmark ? result.benchmark.Test : '', sessionType: result.entry['Session type'], photo: photoState };
+    var squads = {};
+    roster.forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
+    var flagged = planFlagsAfterSave_(result.entry, squads);
+    return { status: 'ok', entryId: result.entry['Entry ID'], flagged: flagged, athlete: name, test: result.benchmark ? result.benchmark.Test : '', sessionType: result.entry['Session type'], photo: photoState };
   } catch (err) {
     logChange_({ Who: 'site', Tab: '(site log)', 'Row ID': String(body.requestId || ''), Note: 'SITE LOG ERROR: ' + err.message });
     return { status: 'error', error: err.message };

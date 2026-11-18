@@ -141,7 +141,8 @@ export function practiceRecord(athlete, feed, today) {
   const mine = feed.entries.filter((e) => e.athleteId === athlete.id);
   const attended = new Map();
   mine.forEach((e) => {
-    if (e.type === 'Practice' && (e.status === 'Full' || e.status === 'Modified')) attended.set(e.date, e.status);
+    // Modified wins for the day: one partial workout makes the practice partial (David, 2026-11-17).
+    if (e.type === 'Practice' && (e.status === 'Modified' || (e.status === 'Full' && attended.get(e.date) !== 'Modified'))) attended.set(e.date, e.status);
     if (e.type === 'Practice' && e.status === 'Out' && !attended.has(e.date)) attended.set(e.date, 'Out');
   });
   const madeUp = new Map();
