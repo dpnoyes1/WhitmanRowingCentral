@@ -826,9 +826,10 @@ table.avg-results th, table.avg-results td { padding-left: 6px; padding-right: 6
 .ins-list .ins-row .r { white-space: nowrap; }
 /* Star keys line up in a grid instead of wrapping with one left over (layout review, 2026-11-16). */
 .gms-keys { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); gap: 8px 32px; }
-@container (min-width: 900px) { .gms-std .gms-keys { grid-template-columns: repeat(5, max-content); } }
-@container (max-width: 899px) { .gms-std .gms-keys { gap: 8px 20px; } .gms-std .gms-keys > :last-child { grid-column: 1 / -1; } }
-@media (max-width: 600px) { .gms-keys { grid-template-columns: minmax(0, 1fr); } }
+/* GMS Rating legend: wraps inside its box at any width, never spills out to the right (David, 2026-11-17). */
+.gms-std .gms-keys { display: flex; flex-wrap: wrap; gap: 8px 24px; min-width: 0; max-width: 100%; }
+.gms-std > b { flex-basis: 100%; }
+@media (max-width: 600px) { .gms-keys { grid-template-columns: minmax(0, 1fr); } .gms-std .gms-keys { flex-direction: column; } }
 /* OYO: fixed name and label columns, so every bar starts and ends in the same place and the ticks line up (layout review, 2026-11-16). */
 @media (min-width: 561px) {
   .oyo-row { grid-template-columns: 17.5em minmax(0, 1fr) 6.5em; }
