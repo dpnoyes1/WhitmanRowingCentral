@@ -34,6 +34,16 @@ async function saveNames(key, value) {
   } catch { nameNote = 'Boat name not saved for other devices. Try again.'; }
 }
 
+/** Replaces the whole shared list (used when boats are removed or re-laid out, so each name stays with its own boat). */
+async function saveAllNames() {
+  keepLocal();
+  try {
+    const res = await fetch('/api/lineup-names', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ names: NAMES }) });
+    if (res.ok) { NAMES = (await res.json()).names || NAMES; keepLocal(); nameNote = ''; } else nameNote = 'Boat names not saved for other devices. Try again.';
+  } catch { nameNote = 'Boat names not saved for other devices. Try again.'; }
+  const n = document.getElementById('lunote'); if (n) { n.textContent = nameNote; n.hidden = !nameNote; }
+}
+
 /** First name only so a card fits on one line; shared first names get the last initial (David, 2026-11-13). */
 function short(a) {
   const parts = a.name.trim().split(/\s+/), first = parts[0];
@@ -102,9 +112,26 @@ function make() {
   LU.built = true;
 }
 
+/** Runs a change to the boat list and keeps every surviving boat's name with that boat (names are stored by position, e.g. "2nd 8+"). */
+function relayout(change) {
+  const before = new Map(LU.boats.map((b, i) => [b, defaultName(i)]));
+  const was = JSON.stringify(NAMES);
+  const named = new Map([...before].filter(([, key]) => NAMES[key]).map(([b, key]) => [b, NAMES[key]]));
+  change();
+  [...before.values()].forEach((key) => delete NAMES[key]);
+  LU.boats.forEach((b, i) => { const key = defaultName(i); delete NAMES[key]; if (named.has(b) && named.get(b) !== key) NAMES[key] = named.get(b); });
+  if (JSON.stringify(NAMES) !== was) saveAllNames();
+}
+
+/** A preset changes the boats and priorities. Pinned seats stay where they are (boats of the same size are reused in order); everything else is dealt again. */
 function setGoal(g) {
   const atN = R.length - LU.out.size, k = Math.min(MAX_BOATS - 1, Math.max(1, Math.floor((atN - 4) / 8))), mk = GOALS[g][2];
-  if (mk) LU.boats = mk(k); else LU.boats.forEach((b, i) => { b.pri = g === 3 ? Math.min(PRI_MAX, i + 1) : 1; });
+  relayout(() => {
+    if (mk) {
+      const old = [...LU.boats];
+      LU.boats = mk(k).map((nb) => { const i = old.findIndex((o) => o.n === nb.n); if (i < 0) return nb; const [o] = old.splice(i, 1); o.pri = nb.pri; return o; });
+    } else LU.boats.forEach((b, i) => { b.pri = g === 3 ? Math.min(PRI_MAX, i + 1) : 1; });
+  });
   LU.goal = g; make();
 }
 
@@ -173,7 +200,7 @@ function wire() {
     else if (q('[data-luseat]')) { if (LU.pick === null) return; place(LU.pick, q('[data-luseat]').dataset.luseat); LU.pick = null; }
     else if (q('[data-lueven]')) { make(); LU.pick = null; }
     else if (q('[data-luadd]')) { if (LU.boats.length < MAX_BOATS) { LU.boats.push(boat(+q('[data-luadd]').dataset.luadd, Math.min(PRI_MAX, Math.max(1, ...LU.boats.map((b) => b.pri)) + (LU.boats.length ? 1 : 0)))); LU.goal = -1; } }
-    else if (q('[data-lurm]')) { LU.boats.splice(+q('[data-lurm]').dataset.lurm, 1); LU.goal = -1; }
+    else if (q('[data-lurm]')) { relayout(() => LU.boats.splice(+q('[data-lurm]').dataset.lurm, 1)); LU.goal = -1; }
     else if (q('[data-lupri]')) return;   // typing in the number box; saved on change
     else if (q('[data-lugoal]')) { setGoal(+q('[data-lugoal]').dataset.lugoal); LU.pick = null; }
     else if (q('[data-luclear]')) { LU.boats.forEach((b) => b.s.forEach((x, k) => { if (!b.pin[k]) b.s[k] = null; })); LU.built = false; }

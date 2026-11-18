@@ -149,6 +149,20 @@ flow('lineups: priority numbers rank or share the boats, nothing pins itself, an
   assert.equal(await page.locator('.lupin.on').count(), 0, 'Auto Lineups must not pin anyone');
   await page.click('.lupin >> nth=0');
   assert.equal(await page.locator('.lupin.on').count(), 1, 'a tap on the pin button pins one seat');
+  // A boat's name stays with that boat when another boat is removed, and a practice goal keeps pinned seats (David, 2026-11-18).
+  await build([8, 8, 8], [1, 1, 1]);
+  await page.fill('[data-luname="0"]', 'Alpha'); await page.press('[data-luname="0"]', 'Tab');
+  await page.fill('[data-luname="1"]', 'Bravo'); await page.press('[data-luname="1"]', 'Tab');
+  await page.fill('[data-luname="2"]', 'Charlie'); await page.press('[data-luname="2"]', 'Tab');
+  await page.click('[data-lurm] >> nth=0');
+  const names = await page.$$eval('[data-luname]', (els) => els.map((e) => e.value));
+  assert.deepEqual(names, ['Bravo', 'Charlie'], 'names moved to the wrong boat after a removal: ' + names);
+  await page.click('[data-lugoal="1"]');
+  await page.click('.lupin >> nth=0');
+  const pinned = await page.$eval('.lupin.on', (el) => el.closest('[data-luseat]').textContent);
+  await page.click('[data-lugoal="0"]');
+  assert.equal(await page.locator('.lupin.on').count(), 1, 'a practice goal wiped the pinned seat');
+  assert.equal(await page.$eval('.lupin.on', (el) => el.closest('[data-luseat]').textContent), pinned);
   await page.context().close();
   page = await newPage(browser, 390);
   await signInAthlete(page, server.url, server.athlete, '#/lineups');
