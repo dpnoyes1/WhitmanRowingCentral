@@ -207,7 +207,7 @@ function staleNote(meta) {
 function footer(meta) {
   if (!meta) return '';
   return `<p class="foot">Updated ${new Date(meta.generatedAt).toLocaleString('en-US', { weekday: 'short', hour: 'numeric', minute: '2-digit' })}
-    <button class="linkish" id="signout">Sign out</button></p>`;
+</p>`;
 }
 
 // Click the name card for the menu: Log out, and for coaches Change password.
@@ -1167,7 +1167,7 @@ async function showBoards() {
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
     const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
     const yr = Number(String(v.yearStart).slice(0, 4));
-    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Boards</h1>
+    app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Benchmarks</h1>
       <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div></div>
       <div class="board-filters">
         <div class="filters tests">${seg('test', [...v.tests].sort((x, y) => (x.test === '20min' ? -1 : y.test === '20min' ? 1 : 0)).map((x) => [x.test, TEST_LABELS[x.test]]))}</div>
@@ -1250,8 +1250,6 @@ async function showInsights() {
   setNav('insights');
   const trend = (t) => (!t ? '<span class="muted">–</span>' : Math.abs(t.changeS) < 0.5 ? 'same'
     : `<span class="${t.changeS < 0 ? 'good-text' : ''}">${t.changeS < 0 ? '▲' : '▼'} ${Math.abs(t.changeS).toFixed(1)}s</span>`);
-  const flagged = v.rowers.filter((r) => r.thisWeek.flag || r.lastWeek.flag).length;
-  const missedFlagged = v.rowers.filter((r) => r.missed.flag).length;
   // Missed practices lead (David, 2026-11-03); load jumps stay, quieter: a ▲ with no pill.
   const jump = (w) => (w.changePct === null ? '<span class="muted">–</span>'
     : w.flag ? `<span class="jump" title="More than ${v.jumpPct}% above their 3-week average">▲ ${w.changePct > 0 ? '+' : ''}${w.changePct}%</span>`
@@ -1278,9 +1276,7 @@ async function showInsights() {
     </div>
       <div class="card ins-wide"><h2>Overreaching on OYO</h2><p class="muted small">OYO at ${v.overreachPct}%+ of Standard, this week.</p><div class="ins-list">${over.length ? over.map((r) => rowLink(r, `<b class="num">${fmtMin(r.oyo.minutes)}</b> <span class="pill warn">${r.oyo.pct}% of Standard</span>`)).join('') : '<p class="muted">Nobody this week.</p>'}</div></div>
 `;
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1>
-    <p class="muted small">${missedFlagged ? `<b>${missedFlagged} missing ${v.missedFlagAt}+ practices</b>` : 'No one flagged.'}
-      Load jumps are shown quietly: weighted minutes against the rower's average for the 3 weeks before (fewer in their first weeks); ▲ means more than ${v.jumpPct}% above it${flagged ? ` (${flagged} rower${flagged > 1 ? 's' : ''})` : ''}.</p></div></div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>Insights</h1></div></div>
     ${alerts}
     <div class="card"><div class="table-wrap"><table class="insights">
       <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r c-last" colspan="2">Last week</th>
@@ -1355,7 +1351,7 @@ async function showLogFor() {
           : `<label class="f">One line per piece: time, meters, rate (optional), rest time (optional)<textarea class="in" data-f="pieces" rows="5" placeholder="7:44.8, 2000, 31, 4:00">${esc(S.pieces)}</textarea></label>`}
         <div class="lf-row">${S.activity === 'Erg (RowErg)' || S.activity === 'BikeErg' ? field('Drag factor (optional)', 'drag', 'inputmode="numeric"') : ''}</div>
         ${kind ? `<div class="card hl" id="lf-test"><b>This piece is exactly ${kind.label}. Is it a test?</b><div class="seg" role="group" aria-label="Is it a test?"><button type="button" data-test="yes" aria-pressed="${S.test === 'yes'}">Yes, a test</button><button type="button" data-test="no" aria-pressed="${S.test === 'no'}">No</button></div>
-          <p class="muted small">${S.test === 'yes' ? `${kind.what}: counts on boards${kind.key === '500m' || kind.key === '100m' ? ' (no stars or GMS %)' : ' and stars'}.` : S.test === 'no' ? 'Normal workout, not on boards.' : 'Pick one before saving.'}</p></div>`
+          <p class="muted small">${S.test === 'yes' ? `${kind.what}: counts on Benchmarks${kind.key === '500m' || kind.key === '100m' ? ' (no stars or GMS %)' : ' and stars'}.` : S.test === 'no' ? 'Normal workout, not on Benchmarks.' : 'Pick one before saving.'}</p></div>`
           : !onErg() ? ''
           : '<p class="muted small">Test question: only single 2000 m, 500 m, 100 m or 20:00.</p>'}
         ${field('Note for coaches (optional)', 'note')}
@@ -1501,8 +1497,8 @@ async function showCompletion() {
   const present = withPct.reduce((n, r) => n + r.done, 0), planned = withPct.reduce((n, r) => n + r.expected, 0);
   const low = withPct.filter((r) => r.pct < 80).length;
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
-  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">This season since ${fmtDate(v.yearStart, { month: 'short', day: 'numeric' })}</div><h1>Attendance</h1></div></div>
-    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–', 'this season')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0, 'missed, still inside the window') : `${tile('Under 80%', low, 'rowers this season')}${tile('Make-ups open', open, 'missed, still inside the window')}`}</div>
+  app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1></div></div>
+    <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0) : `${tile('Under 80%', low)}${tile('Make-ups open', open)}`}</div>
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
       <div class="att-head"><span>${mine ? '' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
       ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
@@ -1670,7 +1666,7 @@ async function showOyo() {
     const breakWk = which === 'now' ? v.breakWeek : v.lastBreakWeek;
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Week of ${fmtDate(which === 'now' ? v.weekStart : v.lastWeekStart, { month: 'short', day: 'numeric' })}${breakWk ? ' · break week goals' : ''}</div><h1>OYO</h1></div>
       <div class="seg" role="group"><button data-w="now" aria-pressed="${which === 'now'}">This week</button><button data-w="last" aria-pressed="${which === 'last'}">Last week</button></div></div>
-      <div class="tiles">${tile('Goal met, this week', `${metNow}/${v.rowers.length}`, 'so far')}${tile('Goal met, last week', `${metLast}/${v.rowers.length}`, '')}${tile('At Elite', elite, '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
+      <div class="tiles">${tile('Goal met, this week', `${metNow}/${v.rowers.length}`, v.rowers.length ? `Required ${fmtMin(v.rowers[0].required)}` : '')}${tile('Goal met, last week', `${metLast}/${v.rowers.length}`, v.rowers.length ? `Required ${fmtMin(v.rowers[0].lastWeek.required)}` : '')}${tile('At Elite', elite, rows.length ? `Elite ${fmtMin(rows[0].elite)}` : '')}${tile('Team average', fmtMin(avg), 'weighted minutes')}</div>
       <div class="card">${rows.map((r) => {
         const left = Math.max(0, r.required - r.minutes);
         // Bars show percent of Required (the ranking measure), so they run largest to smallest down the list.
@@ -1680,7 +1676,7 @@ async function showOyo() {
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * pct) / max)}%"></div>
             <div class="mark" style="left:${100 / max}%"></div><div class="mark" style="left:${(100 * eliteAt) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
-      }).join('')}<p class="note">Bars show percent of Required. Marks: Required, Elite. Bars cap at 150% of Elite. Weighted minutes.</p></div>${footer(v.meta)}`;
+      }).join('')}</div>${footer(v.meta)}`;
     app.querySelectorAll('[data-w]').forEach((b) => { b.onclick = () => { which = b.dataset.w; render(); }; });
     wireFooter();
   };
@@ -1799,14 +1795,12 @@ function coachAdminCard(data) {
   const status = { set: 'has a password', temporary: 'temporary password issued' };
   const rows = !list.length ? '<p class="muted small">No other coaches yet.</p>'
     : `<ul class="pw-list">${list.map((c) => `<li><span>${esc(c.name)}<span class="muted small"> · ${esc(status[c.status] || c.status)}</span></span>
-      <span><button class="btn ghost" type="button" data-creset="${esc(c.key)}" data-name="${esc(c.name)}">Reset password</button>
-      <button class="btn ghost" type="button" data-cremove="${esc(c.key)}" data-name="${esc(c.name)}">Remove</button></span></li>`).join('')}</ul>`;
+      <span><button class="btn ghost sm" type="button" data-creset="${esc(c.key)}" data-name="${esc(c.name)}">Reset password</button>
+      <button class="btn ghost sm" type="button" data-cremove="${esc(c.key)}" data-name="${esc(c.name)}">Remove</button></span></li>`).join('')}</ul>`;
   return `<section class="card" id="coach-admin"><h2>Coaches</h2>
-    <p class="muted small">Only you (${esc(data.admin)}) can add or remove coaches. Removing signs them out.</p>
     ${rows}
-    <label class="small" for="coach-add-name">Add a coach</label>
-    <input id="coach-add-name" class="in" type="text" autocomplete="off" placeholder="First and last name">
-    <button class="btn" type="button" id="coach-add">Add coach</button>
+    <div class="coach-add"><input id="coach-add-name" class="in" type="text" autocomplete="off" placeholder="Add a coach: first and last name" aria-label="New coach name">
+    <button class="btn" type="button" id="coach-add">Add</button></div>
     <p id="coach-admin-msg" class="small" role="status"></p></section>`;
 }
 
@@ -1859,7 +1853,7 @@ function settingsColumns(sections, extraCards) {
   const rank = (z) => { const i = ['gms', 'oyo', 'star5', 'star4', 'star3', 'star2', 'star1'].indexOf(z.id); return i < 0 ? 9 : i; };
   const items = [...sections].sort((x, y) => rank(x) - rank(y)).map((s) => ({
     weight: 2 + s.fields.reduce((n, f) => n + 1.4 + (f.help ? 0.6 : 0), 0) + (s.note ? 1 : 0),
-    html: `<section class="card"><h2>${esc(s.title)}</h2>
+    html: `<section class="card"><h2>${esc(s.id === 'schedule' ? 'Practice Schedule' : s.title)}</h2>
         ${s.note ? `<p class="muted small">${esc(s.note)}</p>` : ''}
         ${s.fields.map((f) => `<div class="setting${f.wide ? ' wide' : ''}"><label for="s-${esc(f.key)}">${esc(f.label)}</label>
           <input id="s-${esc(f.key)}" data-key="${esc(f.key)}" data-was="${esc(f.value)}" type="text" value="${esc(f.value)}" autocomplete="off" ${f.optional ? 'placeholder="(blank)"' : ''}>
