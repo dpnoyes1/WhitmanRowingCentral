@@ -1336,7 +1336,7 @@ test('slack background: a crash while handling a DM tells her instead of going s
   assert.ok(sent.some((c) => c.url === 'https://slack.com/api/chat.postMessage' && c.body.channel === 'UC1' && /Something went wrong/.test(c.body.text)));
 });
 
-test('run photo for Log activity (built, off): fills distance and time, athletes only, 404 while off', async () => {
+test('run photo for Log activity: fills distance and time, athletes only, 404 when switched off', async () => {
   await seedActive();
   const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
@@ -1346,7 +1346,7 @@ test('run photo for Log activity (built, off): fills distance and time, athletes
   const post = (cookie, body) => new Request('https://x/api/run-photo', { method: 'POST', headers: { cookie, 'content-type': 'application/json' }, body: JSON.stringify(body) });
   const reply = { app: 'Strava', person: '', activity: 'Run', date: '', distance: '3.10', distance_unit: 'mi', moving_time: '25:30', elapsed_time: '', avg_pace: '8:14', pace_unit: '/mi', flags: [] };
   const client = (r) => ({ messages: { create: async () => ({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(r) }] }) } });
-  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: jpeg }), env, {})).status, 404, 'off by default');
+  assert.strictEqual((await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: false })).status, 404, 'answers 404 when switched off');
   assert.strictEqual((await handleRunPhoto(post('', { photo: jpeg }), env, { enabled: true })).status, 401);
   assert.strictEqual((await handleRunPhoto(post(coach, { photo: jpeg }), env, { enabled: true })).status, 403);
   assert.strictEqual((await handleRunPhoto(post(athlete, { photo: 'not base64!' }), env, { enabled: true, client: client(reply) })).status, 400);
@@ -1359,7 +1359,7 @@ test('run photo for Log activity (built, off): fills distance and time, athletes
   assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', flags: [], person: '', activity: '' });
 });
 
-test('slack run screenshot (built, off by default): athlete sends it, card saves through site-log', async () => {
+test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
   const env = (k) => ({ SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
   const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
@@ -1400,7 +1400,7 @@ test('slack run screenshot (built, off by default): athlete sends it, card saves
   // a ride is refused politely
   w = world([noErg, noErg, { ...run, activity: 'Ride' }]);
   assert.strictEqual((await handlePhotoEvent(msg, env, w.deps)).status, 'run_other');
-  // off by default: no run reader call at all
+  // switched off: no run reader call at all
   w = world([noErg, noErg, run]);
   await handlePhotoEvent(msg, env, { ...w.deps, runPhotos: false });
   assert.ok(w.calls.filter((c) => c.url === 'https://api.anthropic.com/v1/messages').length <= 2, 'the run reader is not called when off');
@@ -2959,7 +2959,7 @@ test('display names: inactive athletes do not lengthen an active name (Norah Tel
 });
 
 test('run photo check (built, switched off): reading and comparing a run screen', async () => {
-  assert.strictEqual(RUN_PHOTO_CHECK, false, 'stays off until David says go');
+  assert.strictEqual(RUN_PHOTO_CHECK, true, 'live since David said go (2026-11-17)');
   assert.strictEqual(distanceMeters('3.1', 'mi').meters, 4989);
   assert.strictEqual(distanceMeters('5,2', 'km').meters, 5200);
   assert.strictEqual(distanceMeters('800,00', 'm').meters, 800, 'Garmin in meters uses a decimal comma');

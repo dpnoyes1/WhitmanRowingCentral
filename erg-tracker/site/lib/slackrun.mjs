@@ -1,4 +1,4 @@
-// Run screenshots in ErgBot (David, 2026-11-17). NOT LIVE: used only when RUN_PHOTO_CHECK (lib/runscreen.mjs) is true.
+// Run screenshots in ErgBot (David, 2026-11-17). Live; used only while RUN_PHOTO_CHECK (lib/runscreen.mjs) is true.
 // The erg reader runs first; when the photo is not a Concept2 monitor, the run reader gets a turn. An athlete sends it for
 // herself only. The card has two Save buttons (on my own / at practice) and saves through the Sheet's existing `site-log`
 // action with self = true, the same as the Log activity page, so no Apps Script change is needed. The date is today.

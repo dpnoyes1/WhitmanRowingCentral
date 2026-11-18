@@ -3,9 +3,9 @@
 import { shrinkPhoto } from './photo.mjs';
 
 const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
-// Photo first (David, 2026-11-17): off until he says go. On, picking a screenshot fills distance and time (via /api/run-photo,
+// Photo first (David, 2026-11-17, live): On, picking a screenshot fills distance and time (via /api/run-photo,
 // which itself answers 404 until RUN_PHOTO_CHECK is true) and the athlete checks the numbers and saves. Typing stays as the fallback.
-const PHOTO_FIRST = false;
+const PHOTO_FIRST = true;
 const UNITS = { mi: ['miles', 1609.344], km: ['kilometers', 1000], m: ['meters', 1] };
 
 export function paceText(timeS, meters) {

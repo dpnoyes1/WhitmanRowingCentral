@@ -1,10 +1,10 @@
 // Reads a photo or screenshot of a run result (Garmin, Apple Watch, Strava, MapMyRun, COROS, a treadmill and so on)
 // and says whether it roughly agrees with what the athlete typed on Log activity (David, 2026-11-17).
-// NOT LIVE: nothing imports this file yet, and RUN_PHOTO_CHECK stays false until David says go.
+// LIVE since 2026-11-17 (David: "go live"); set RUN_PHOTO_CHECK to false to switch the run photo reader off everywhere.
 // Plan: plans/run-photo-check-plan-2026-11-17.md. Pure code like ergscreen.mjs: the caller passes an Anthropic client.
 import { parseClock, stripImageMetadata, MODELS, MAX_OUTPUT_TOKENS, MAX_IMAGE_BYTES } from './ergscreen.mjs';
 
-export const RUN_PHOTO_CHECK = false;
+export const RUN_PHOTO_CHECK = true;
 const MILE = 1609.344;
 
 export const RUN_PROMPT = `You read a photo or screenshot of a finished run (a running watch, a phone app such as Garmin Connect, Apple Fitness or Workout, Strava, MapMyRun, COROS, Nike Run Club, or a treadmill display) and return what is printed on it.

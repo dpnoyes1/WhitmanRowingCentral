@@ -1,5 +1,5 @@
 // Reads a run screenshot for the athlete's Log activity page and sends back distance and time to fill in (David, 2026-11-17).
-// NOT LIVE: answers 404 until RUN_PHOTO_CHECK in lib/runscreen.mjs is true. Athletes only; nothing is saved here, the
+// Live; answers 404 whenever RUN_PHOTO_CHECK in lib/runscreen.mjs is false. Athletes only; nothing is saved here, the
 // athlete checks the numbers and saves through /api/log-mine as before. A failed read is a normal answer, never an error page.
 import { liveSession, athleteStillActive } from '../lib/auth.mjs';
 import { anthropicClient } from '../lib/slackphoto.mjs';
