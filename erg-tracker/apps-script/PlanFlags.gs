@@ -146,7 +146,7 @@ function planFlagMessage(item, sheetUrl) {
       { type: 'section', text: { type: 'mrkdwn', text: text } },
       { type: 'actions', elements: [
         { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: 'Confirm Modified' } },
-        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Full' } },
+        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Completed' } },
         { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
       ] }
     ]

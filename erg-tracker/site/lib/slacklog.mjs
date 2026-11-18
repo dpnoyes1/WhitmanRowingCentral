@@ -8,7 +8,7 @@ export const TIME_RE = /^\s*\d{1,3}:[0-5]\d(\.\d)?\s*$/;
 
 const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice'], ['test', "Test (2k / 20')"]];
 const TEST_WHERE = [['practice', 'At practice'], ['oyo', 'On my own']];
-const STATUSES = [['full', 'Full'], ['modified', 'Modified (e.g. BikeErg instead)'], ['out', 'Out']];
+const STATUSES = [['full', 'Completed'], ['modified', 'Modified (e.g. BikeErg instead)'], ['out', 'Out']];
 
 /** Today's date (YYYY-MM-DD) in the team's time zone. */
 export function todayEastern(now = new Date()) {

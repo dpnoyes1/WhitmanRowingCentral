@@ -34,7 +34,7 @@ export async function callSheet(env, fetchImpl, body) {
 const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_reviewed: 'reviewed' };
 const DONE = {
   confirm: (n) => `:white_check_mark: Modified confirmed by ${n}`,
-  full: (n) => `:white_check_mark: Set back to Full by ${n}`,
+  full: (n) => `:white_check_mark: Set back to Completed by ${n}`,
   modified: (n) => `:white_check_mark: Set to Modified by ${n}`,
   reviewed: (n) => `:white_check_mark: Looks right, marked by ${n}`
 };

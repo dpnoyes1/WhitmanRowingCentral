@@ -1160,7 +1160,7 @@ test('slack buttons: signature, coach check by the Sheet, first press wins, mess
   w = world({ status: 'ok' });
   await handleSlackAction(press(btn('plan_full')), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'full');
-  assert.ok(/Set back to Full by coach\.one/.test(w.calls[1].body.text));
+  assert.ok(/Set back to Completed by coach\.one/.test(w.calls[1].body.text));
 
   w = world({ status: 'already', reviewStatus: 'Reviewed, Full' });
   await handleSlackAction(press(btn('plan_modified')), env, w.deps);
