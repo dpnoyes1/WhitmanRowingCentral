@@ -466,14 +466,17 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lu-actions, .lugoal { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 12px; }
 .lugrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(340px, 1fr)); gap: 12px; align-items: start; margin-bottom: 12px; }
 .lurole { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; margin-bottom: 10px; }
-.lurole .seg button { min-height: 44px; }
+.lu-actions .btn, .lu-head .btn, .lu-head .seg button { min-height: 44px; }
+.luname { min-height: 40px; }
+.lupri { font: inherit; width: 4.2em; min-height: 44px; text-align: center; color: var(--text); background: var(--bg); border: 1px solid var(--border); border-radius: 10px; padding: 6px 8px; }
+.lupri:focus { outline: none; border-color: var(--accent); }
 .lus { display: flex; flex-direction: column; gap: 6px; }
 .lusr { display: flex; align-items: center; gap: 8px; min-height: 46px; border-radius: 12px; padding: 4px 6px 4px 4px; background: var(--hover); min-width: 0; }
 .lusr.empty { background: transparent; border: 1px dashed var(--border); cursor: pointer; }
 .lusr.empty:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .lun { width: 44px; flex: none; text-align: center; font-size: .75rem; color: var(--muted); font-weight: 600; }
 .luc { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex: 1; min-width: 0; font: inherit; color: inherit; background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 7px 10px; text-align: left; cursor: grab; }
-.luc b { font-weight: 600; min-width: 0; }
+.luc b { font-weight: 600; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .luc span { color: var(--link); font-weight: 700; font-size: .875rem; flex: none; }
 .luc span.w { color: var(--warn); font-weight: 600; font-size: .75rem; }
 .luc.on { border-color: var(--accent); box-shadow: 0 0 0 2px rgba(116, 176, 218, .35); }
@@ -488,14 +491,14 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .lua b.acc { color: var(--link); }
 .lupace { display: flex; flex-direction: column; gap: 2px; background: var(--hover); border-radius: 12px; padding: 10px 12px; margin-top: 10px; }
 .lupace b { font-size: 1.05rem; }
-.luat { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 0 12px; }
-.luck { display: flex; align-items: center; gap: 10px; min-height: 44px; cursor: pointer; min-width: 0; }
-.luck input { width: 24px; height: 24px; accent-color: var(--accent); flex: none; }
-.luck span { min-width: 0; } .luck b { display: block; font-weight: 600; font-size: .875rem; } .luck small { font-size: .75rem; }
+.luname { font: inherit; font-size: 1rem; font-weight: 700; color: var(--text); background: transparent; border: 1px solid transparent; border-radius: 8px; padding: 4px 8px; margin-left: -8px; width: 9.5em; max-width: 100%; min-width: 0; }
+.luname:hover { border-color: var(--border); }
+.luname:focus { outline: none; border-color: var(--accent); background: var(--bg); }
+.luabs { min-height: 58px; border: 1px dashed var(--border); border-radius: 12px; padding: 6px; align-items: center; }
+.luabs > .muted { padding: 0 6px; }
 @container (max-width: 560px) {
-  .lugrid, .lupool, .luat { grid-template-columns: minmax(0, 1fr); }
+  .lugrid, .lupool { grid-template-columns: minmax(0, 1fr); }
   .lua b { font-size: 1rem; }
-  .luc { flex-wrap: wrap; }
 }
 .theme-toggle[hidden] { display: none; }
 
@@ -704,6 +707,8 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 
 .setting label { color: var(--muted); font-size: .9rem; }
 .setting input { min-height: 48px; padding: 8px 14px; border-radius: 12px; font-size: 1.05rem; }
+.coach-add { display: flex; gap: 8px; }
+.coach-add .in { flex: 1; min-width: 0; }
 .settings-grid h2 { font-size: 1rem; }
 .settings-grid .card { align-content: start; }
 .result-line { margin-bottom: 14px; }

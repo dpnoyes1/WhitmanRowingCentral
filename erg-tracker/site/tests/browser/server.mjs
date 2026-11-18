@@ -17,6 +17,7 @@ import { handleWeights } from '../../functions/weights.mjs';
 import { handleSettings } from '../../functions/settings.mjs';
 import { handleAthletePasswords } from '../../functions/athlete-passwords.mjs';
 import { handleCoaches } from '../../functions/coaches.mjs';
+import { handleLineupNames } from '../../functions/lineup-names.mjs';
 import { setCoachPassword } from '../../lib/coachpw.mjs';
 
 const require = createRequire(import.meta.url);
@@ -76,13 +77,13 @@ export async function startServer({ port = 0 } = {}) {
   feed.logins = [...feed.logins, { coach: true, code: coachCode }];
   const state = { library: [], upcoming: [], saves: [], logs: [] };
   const fetchImpl = makeSheet(feed, state);
-  const deps = { fetchImpl, feedFetch: fetchImpl, feedShared: null, shared: null, coachStore: mapStore(), athleteStore: mapStore(), store: null, today: TODAY, failDelayMs: 0 };
+  const deps = { fetchImpl, feedFetch: fetchImpl, feedShared: null, shared: null, coachStore: mapStore(), athleteStore: mapStore(), lineupStore: mapStore(), store: null, today: TODAY, failDelayMs: 0 };
   // A901 already has a password (the sweep signs in many times); A902 is brand new, so the first sign-in flow can be tested.
   await setCoachPassword(deps.athleteStore, 'A901', 'row-fast-1');
   const routes = [
     ['/api/login', handleLogin], ['/api/logout', handleLogin], ['/api/workouts', handleWorkouts], ['/api/log-mine', handleLogMine],
     ['/api/log', handleLog], ['/api/weights', handleWeights], ['/api/settings', handleSettings],
-    ['/api/athlete-passwords', handleAthletePasswords], ['/api/coaches', handleCoaches]
+    ['/api/athlete-passwords', handleAthletePasswords], ['/api/coaches', handleCoaches], ['/api/lineup-names', handleLineupNames]
   ];
   clearFeedCache();
   const server = http.createServer(async (req, res) => {
