@@ -1499,12 +1499,6 @@ async function showCompletion() {
   const open = rows.reduce((n, r) => n + r.cells.filter((c) => c === 'P').length, 0);
   app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><h1>Attendance</h1></div></div>
     <div class="tiles">${tile('Team present', planned ? Math.round((100 * present) / planned) + '%' : '–')}${mine ? tile('Your make-ups open', own ? own.cells.filter((c) => c === 'P').length : 0) : `${tile('Under 80%', low)}${tile('Make-ups open', open)}`}</div>
-    <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
-      <div class="att-head"><span>${mine ? '' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
-      ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
-        <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
-        <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
-      <p class="note">Circles: last ${v.dates.length} practices. %: whole season. Modified and make-ups count as present.</p></div>
     ${isCoach() && v.markDays ? `<div class="card" id="mark-card"><h2>Change a mark</h2>
       <p class="muted small">For a practice that was counted wrong, for example novices who came on a day with no workout to log. Completed and Modified count as present. Missed leaves the make-up open and keeps any minutes logged.</p>
       <div class="markform">
@@ -1514,6 +1508,13 @@ async function showCompletion() {
         <label>Note (optional)<input id="mk-note" type="text" maxlength="200" autocomplete="off" placeholder="First day, no workout to log"></label>
         <div class="markact"><button class="btn" type="button" id="mk-save" disabled>Save mark</button><span id="mk-msg" class="muted small" role="status"></span></div>
       </div></div>` : ''}
+    <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
+      <div class="att-head"><span>${mine ? '' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
+      ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
+        <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
+        <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
+      <p class="note">Circles: last ${v.dates.length} practices. %: whole season. Modified and make-ups count as present.</p></div>
+
     ${footer(v.meta)}`;
   wireFooter();
   if (isCoach() && v.markDays) wireMarkForm();
