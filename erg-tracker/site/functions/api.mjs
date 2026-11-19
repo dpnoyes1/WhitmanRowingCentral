@@ -2,7 +2,7 @@ import { liveSession } from '../lib/auth.mjs';
 import { getFeed } from '../lib/feed.mjs';
 import { todayIn } from '../lib/stats.mjs';
 import { callSheet } from '../lib/slack.mjs';
-import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
+import { teamView, teamSplitsView, notLoggedView, athleteView, leaderboardsView, starsView, oyoView, weekView, insightsView, lineupsView, completionView, markDays, workoutView, balanceView, logbookMissingView, LOGBOOK_MISSING_FROM } from '../lib/views.mjs';
 import * as C2 from '../lib/concept2.mjs';
 import { displayNames, shortenNames } from '../lib/names.mjs';
 
@@ -58,7 +58,7 @@ export async function handle(req, envFn, deps = {}) {
   // Attendance: everyone on the team sees it (David, 2026-11-12); the OYO columns stay coaches only.
   if (path === '/api/completion') {
     const view = completionView(data, today);
-    if (who.kind === 'team') return json({ ...view, meta });
+    if (who.kind === 'team') return json({ ...view, markDays: markDays(data, today), meta });
     return json({ ...view, rows: view.rows.map(({ oyo, ...r }) => r), meta });
   }
   // 100m / 2k / 20' watts balance beside Paul's Law: coaches only, nothing for athletes (David, 2026-10-27).

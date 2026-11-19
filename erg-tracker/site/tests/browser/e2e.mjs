@@ -170,6 +170,31 @@ flow('lineups: priority numbers rank or share the boats, nothing pins itself, an
   await page.context().close();
 });
 
+flow('attendance: a coach changes one mark, an athlete has no way to', async ({ browser, server }) => {
+  let page = await newPage(browser, 390);
+  await signInCoach(page, server.url, '#/attendance');
+  await page.waitForSelector('#mark-card');
+  assert.equal(await page.$eval('#mk-save', (b) => b.disabled), true, 'Save should wait for an athlete and a mark');
+  const first = await page.$eval('#mk-athlete option:nth-child(2)', (o) => ({ id: o.value, name: o.textContent }));
+  await page.selectOption('#mk-athlete', first.id);
+  await page.click('[data-mark="completed"]');
+  await page.fill('#mk-note', 'First day, no workout to log');
+  assert.equal(await page.$eval('#mk-save', (b) => b.disabled), false);
+  await page.click('#mk-save');
+  await page.waitForFunction(() => /Saved/.test(document.getElementById('mk-msg').textContent));
+  const sent = server.state.marks[server.state.marks.length - 1];
+  assert.equal(sent.athleteId, first.id);
+  assert.equal(sent.mark, 'Full');
+  assert.equal(sent.note, 'First day, no workout to log');
+  assert.match(sent.date, /^\d{4}-\d{2}-\d{2}$/);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, 'the page scrolls sideways');
+  await page.context().close();
+  page = await newPage(browser, 390);
+  await signInAthlete(page, server.url, server.athlete, '#/attendance');
+  assert.equal(await page.locator('#mark-card').count(), 0, 'an athlete should not see Change a mark');
+  await page.context().close();
+});
+
 export default async function e2e(ctx) {
   let ok = true;
   for (const [name, fn] of flows) {

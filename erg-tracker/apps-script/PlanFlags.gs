@@ -14,7 +14,8 @@ var PLAN_FLAG_LOOKBACK_DAYS = 3;
 var PLAN_FLAG_ACTION = 'plan-flag-action';
 var PLAN_FLAG_REVIEWED = 'Reviewed, Full';
 var PLAN_FLAG_MODIFIED = 'Reviewed, Modified';
-var PLAN_FLAG_AUTO = 'Auto Modified';   // marked Modified by the plan check, waiting for a coach
+var PLAN_FLAG_AUTO = 'Auto Modified';   // marked Modified (or Missed, when under half was done) by the plan check, waiting for a coach
+var PLAN_FLAG_MISSED = 'Reviewed, Missed';
 
 // ---- Pure parts (tested in Node) ----
 
@@ -58,7 +59,9 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
       // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17).
       var warmCool = isWarmCoolWorkout_(names[String(best.row['Workout ID']).trim()]);
-      g.rows.push({ e: e, pieces: best.pieces, flag: warmCool ? '' : planFlag(e, c) });
+      var flag = warmCool ? '' : planFlag(e, c);
+      var missed = !!flag && !!c.notDone;
+      g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
@@ -81,6 +84,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     if (skipped.length) reasons.push('Not logged: ' + skipped.join(', '));
     out.push({
       entryIds: hit.map(function (x) { return x.e['Entry ID']; }), entryId: hit[0].e['Entry ID'],
+      missedIds: hit.filter(function (x) { return x.missed; }).map(function (x) { return x.e['Entry ID']; }),
       athlete: g.first.Athlete, date: hit[0].e.Date, sessionType: hit[0].e['Session type'], flag: reasons.join('. '),
       detail: hit.map(function (x) { return planFlagDetail(x.e, byEntry[x.e['Entry ID']] || [], x.pieces); }).join('\n\n').slice(0, 2400)
     });
@@ -139,15 +143,16 @@ function planFlagDetail(entry, intervals, pieces) {
 
 /** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
+  var allMissed = !!(item.missedIds && item.missedIds.length && item.missedIds.length === (item.entryIds || [item.entryId]).length);
   var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType +
-    '. Marked Modified: ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
+    '. Marked ' + (allMissed ? 'Missed (an open make-up; the minutes still count)' : 'Modified') + ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
   var ids = (item.entryIds || [item.entryId]).join(',');
   return {
     text: text,
     blocks: [
       { type: 'section', text: { type: 'mrkdwn', text: text } },
       { type: 'actions', elements: [
-        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: 'Confirm Modified' } },
+        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: allMissed ? 'Confirm Missed' : 'Confirm Modified' } },
         { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Completed' } },
         { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
       ] }
@@ -171,7 +176,9 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   var review = String(row['Review status'] || '').trim();
   if (['confirm', 'full', 'modified', 'reviewed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
   if (review === PLAN_FLAG_AUTO) {
-    if (op === 'confirm' || op === 'modified') return { status: 'ok', set: { 'Review status': PLAN_FLAG_MODIFIED } };
+    var wasMissed = String(row.Status) === 'Missed';
+    if (op === 'confirm') return { status: 'ok', mark: wasMissed ? 'Missed' : 'Modified', set: { 'Review status': wasMissed ? PLAN_FLAG_MISSED : PLAN_FLAG_MODIFIED } };
+    if (op === 'modified') return { status: 'ok', set: { 'Review status': PLAN_FLAG_MODIFIED } };
     return { status: 'ok', set: { 'Status': 'Full', 'Review status': PLAN_FLAG_REVIEWED } };
   }
   if (review !== '') return { status: 'already', reviewStatus: review };
@@ -179,10 +186,13 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   return { status: 'ok', set: { 'Review status': PLAN_FLAG_REVIEWED } };
 }
 
-/** The cells the plan check writes on an entry it marks: '' when the entry is no longer a Full entry with no Review status. Pure. */
-function planFlagAutoSet_(row) {
+/**
+ * The cells the plan check writes on an entry it marks: null when the entry is no longer a Full entry with no
+ * Review status. `missed` (under half of the planned work, David 2026-11-18) marks it Missed, not Modified. Pure.
+ */
+function planFlagAutoSet_(row, missed) {
   if (!row || String(row.Status) !== 'Full' || String(row['Review status'] || '').trim() !== '') return null;
-  return { 'Status': 'Modified', 'Review status': PLAN_FLAG_AUTO };
+  return { 'Status': missed ? 'Missed' : 'Modified', 'Review status': PLAN_FLAG_AUTO };
 }
 
 // ---- Sheet side ----
@@ -251,7 +261,7 @@ function runPlanFlags_(findItems) {
     items[i].entryIds.forEach(function (id) {
       posted.push(id);
       var entry = entryRowById_(id);
-      var set = planFlagAutoSet_(entry);
+      var set = planFlagAutoSet_(entry, (items[i].missedIds || []).indexOf(id) >= 0);
       if (!set) return;
       writeEntryCells_(entry, set, 'Plan check', 'not the planned workout: ' + items[i].flag);
       marked.push(id);
@@ -314,7 +324,7 @@ function applyPlanFlagAction_(body) {
     });
     SpreadsheetApp.flush();
     if (!changed) return first;
-    return { status: 'ok', op: body.op, by: String(body.slackName || '') };
+    return { status: 'ok', op: body.op, by: String(body.slackName || ''), mark: first && first.mark ? first.mark : '' };
   } catch (err) {
     return { status: 'error', error: err.message };
   } finally {
