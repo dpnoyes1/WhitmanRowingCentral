@@ -35,9 +35,7 @@ function classifyLogbook(squad, date, time, practices, entries) {
     var p = String(hhmm).split(':');
     return Number(p[0]) * 60 + Number(p[1]);
   };
-  var sameSquad = function (p) {
-    return !squad || !p.squad || String(p.squad).toLowerCase() === String(squad).toLowerCase();
-  };
+  var sameSquad = function (p) { return practiceForSquad_(p.squad, squad); };
   var live = practices.filter(function (p) { return !p.canceled && sameSquad(p); });
   var today = live.filter(function (p) { return p.date === date; })[0];
   var t = minutes(time);
@@ -50,15 +48,25 @@ function classifyLogbook(squad, date, time, practices, entries) {
 }
 
 /**
+ * Pure: is a Practices-tab row for this athlete's squad? Same rule as the site (`practicesFor` in
+ * stats.mjs): only a Varsity or Novice row is limited to that squad. Any other value (the generated
+ * rows say 'Girls', or 'All') is for everyone. Before 2026-11-18 this compared names exactly, so
+ * 'Girls' never matched a Varsity or Novice rower and every launch-day workout saved as OYO.
+ */
+function practiceForSquad_(practiceSquad, athleteSquad) {
+  var ps = String(practiceSquad || '').trim().toLowerCase();
+  if (ps !== 'varsity' && ps !== 'novice') return true;
+  return !athleteSquad || ps === String(athleteSquad).trim().toLowerCase();
+}
+
+/**
  * Pure: the athlete's open make-ups on date, newest first ('YYYY-MM-DD').
  * An open make-up is a practice for the squad, not canceled, 1 to 7 days
  * before date, with no Practice entry (other than Out) and no Make-up entry
  * for it yet.
  */
 function openMakeups_(squad, date, practices, entries) {
-  var sameSquad = function (p) {
-    return !squad || !p.squad || String(p.squad).toLowerCase() === String(squad).toLowerCase();
-  };
+  var sameSquad = function (p) { return practiceForSquad_(p.squad, squad); };
   var covered = {};
   entries.forEach(function (e) {
     if (e.type === 'Practice' && e.status !== 'Out') covered[e.date] = true;

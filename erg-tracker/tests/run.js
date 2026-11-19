@@ -1177,7 +1177,13 @@ test('logbook: classify practice, OYO and possible make-up', () => {
   // older than 7 days or a canceled day never match; no practice that day is OYO
   assert.strictEqual(g.classifyLogbook('Girls', '2026-11-06', '17:00', lbPractices, logged).type, 'OYO');
   assert.strictEqual(c('2026-10-28', '16:00', logged).type, 'OYO');
-  assert.strictEqual(g.classifyLogbook('Boys', '2026-10-29', '17:15', lbPractices, []).type, 'OYO');
+  assert.strictEqual(g.classifyLogbook('Boys', '2026-10-29', '17:15', lbPractices, []).type, 'Practice', 'a Girls row is for every rower, whatever the roster squad');
+  const vn = [{ date: '2026-10-29', squad: 'Varsity', canceled: false, windowStart: '16:30', windowEnd: '19:30' }];
+  assert.strictEqual(g.classifyLogbook('Novice', '2026-10-29', '17:15', vn, []).type, 'OYO', 'a Varsity-only row is not for a Novice');
+  assert.strictEqual(g.classifyLogbook('Varsity', '2026-10-29', '17:15', vn, []).type, 'Practice');
+  // Live Sheet (launch day 2026-11-18): Practices say 'Girls', Roster says Varsity / Novice.
+  assert.strictEqual(g.classifyLogbook('Varsity', '2026-10-29', '17:15', lbPractices, []).type, 'Practice', 'regression: Girls practice, Varsity rower');
+  assert.strictEqual(g.classifyLogbook('Novice', '2026-10-29', '17:15', lbPractices, []).type, 'Practice', 'regression: Girls practice, Novice rower');
 });
 
 test('logbook: interval result becomes a pending entry with pieces', () => {
@@ -1468,11 +1474,11 @@ test('slack photo: a weekend or no-practice day is OYO unless the athlete has an
     { date: '2026-11-16', squad: 'Girls', canceled: false },
     { date: '2026-11-17', squad: 'Girls', canceled: false },
     { date: '2026-11-18', squad: 'Girls', canceled: true },
-    { date: '2026-11-19', squad: 'Boys', canceled: false }
+    { date: '2026-11-19', squad: 'Novice', canceled: false }
   ];
   const logged = [{ date: '2026-11-17', type: 'Practice', status: 'Full', makeupFor: '' }];
   const plain = (x) => JSON.parse(JSON.stringify(x));
-  const s = (date, entries, chosen, isTest) => g.slackPhotoSession_('Girls', date, practices, entries, chosen, isTest);
+  const s = (date, entries, chosen, isTest) => g.slackPhotoSession_('Varsity', date, practices, entries, chosen, isTest);
   assert.deepStrictEqual(plain(s('2026-11-17', logged)), { type: 'Practice', makeupFor: '' }, 'a practice day stays Practice');
   assert.deepStrictEqual(plain(s('2026-11-21', logged)), { ask: true, missed: ['2026-11-16'] }, 'Saturday with a missed Monday asks');
   const coveredMon = logged.concat([{ date: '2026-11-20', type: 'Make-up', status: 'Full', makeupFor: '2026-11-16' }]);
