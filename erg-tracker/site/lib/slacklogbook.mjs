@@ -150,6 +150,7 @@ export function confirmReply(result, text, name) {
 /** DM a pending Logbook card. Never throws: the site card works either way. True when Slack said ok. */
 export async function notifyLogbook(env, fetchImpl, slack) {
   try {
+    if (slack.notice) return await dmBlocks(env, fetchImpl, slack.slackUserId, slack.notice, [{ type: 'section', text: { type: 'mrkdwn', text: slack.notice } }]);
     const m = logbookMessage(slack.card);
     return await dmBlocks(env, fetchImpl, slack.slackUserId, m.text, m.blocks);
   } catch (err) {

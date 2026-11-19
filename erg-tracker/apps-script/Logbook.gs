@@ -180,7 +180,8 @@ function logbookRows(result, ctx) {
     'Intervals': intervals.length,
     'Coach note': note,
     'Source': 'Logbook',
-    'Review status': cls.possible ? LOGBOOK_PENDING_MAKEUP : LOGBOOK_PENDING,
+    // David, 2026-11-19: a result counts right away. Only a possible make-up or a possible 2k/20' test waits for the athlete's tap.
+    'Review status': cls.possible ? LOGBOOK_PENDING_MAKEUP : (isBenchmarkShape_(result) ? LOGBOOK_PENDING : ''),
     'Response ID': 'logbook:' + result.id,
     'Calories': numOrBlank_(result.calories),
     'Stroke count': numOrBlank_(result.strokeCount),
@@ -306,7 +307,15 @@ function processLogbookResult_(body) {
     }
     SpreadsheetApp.flush();
     var out = { status: existing ? 'updated' : 'created', entryId: rows.entry['Entry ID'] };
-    var slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);
+    var slack = null;
+    if (/^pending/i.test(String(rows.entry['Review status']))) {
+      slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);
+    } else {   // counted at once: the plan check flags it to the coaches and the athlete if it isn't the plan in full
+      var squads = {};
+      readObjects_(TABS.ROSTER).forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
+      out.flagged = planFlagsAfterSave_(rows.entry, squads);
+      if (out.flagged && !existing) slack = logbookFlagNotice(rows.entry, roster);
+    }
     if (slack) out.slack = slack;
     return out;
   } catch (err) {
@@ -422,12 +431,19 @@ function logbookBenchmarkShape(entry, intervals) {
   return '';
 }
 
-/** Pure: Entry IDs of plain Pending Logbook sessions older than the auto-accept window. */
-function logbookDueIds(entries, now) {
+/**
+ * Pure: Entry IDs of plain Pending Logbook sessions to accept. Since 2026-11-19 results count at once, so a
+ * plain Pending row left from before is accepted now; one that could be a 2k/20' test (when `intervals` is
+ * given) still waits for the athlete or the 20-hour window.
+ */
+function logbookDueIds(entries, now, intervals) {
   var cutoff = now.getTime() - LOGBOOK_AUTO_ACCEPT_HOURS * 3600000;
+  var byEntry = {};
+  (intervals || []).forEach(function (iv) { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
   return entries.filter(function (e) {
-    return String(e['Source']) === 'Logbook' && String(e['Review status']) === LOGBOOK_PENDING &&
-      isDate_(e['Submitted at']) && e['Submitted at'].getTime() <= cutoff;
+    if (String(e['Source']) !== 'Logbook' || String(e['Review status']) !== LOGBOOK_PENDING) return false;
+    if (isDate_(e['Submitted at']) && e['Submitted at'].getTime() <= cutoff) return true;
+    return !!intervals && !logbookBenchmarkShape(e, byEntry[e['Entry ID']] || [{}]);
   }).map(function (e) { return e['Entry ID']; });
 }
 
@@ -483,6 +499,18 @@ function logbookSlackNotice(entry, intervals, rosterRow) {
   return card ? { slackUserId: id, card: card } : null;
 }
 
+/**
+ * Pure: the DM for a Logbook result that counted at once but was not the plan in full (David, 2026-11-19).
+ * Null when she has no valid Slack ID on the Roster.
+ */
+function logbookFlagNotice(entry, rosterRow) {
+  var id = String(rosterRow['Slack member ID'] || '').trim();
+  if (!/^[UW][A-Z0-9]{2,}$/.test(id)) return null;
+  var d = entry['Date'];
+  var when = d instanceof Date ? Utilities.formatDate(d, ss_().getSpreadsheetTimeZone(), 'EEE MMM d') : 'today';
+  return { slackUserId: id, notice: ':warning: Your Logbook workout on ' + when + ' was not the planned workout in full, so it is marked Modified and your coaches were told. If that is wrong, tell a coach.' };
+}
+
 /** Pure: the active Roster row with this Slack member ID, or null. */
 function slackAthleteFor_(roster, slackUserId) {
   var id = String(slackUserId || '').trim();
@@ -513,7 +541,7 @@ function processLogbookAcceptDue_() {
   lock.waitLock(30000);
   try {
     var entries = readObjects_(TABS.ENTRIES);
-    var due = logbookDueIds(entries, new Date());
+    var due = logbookDueIds(entries, new Date(), readObjects_(TABS.INTERVALS));
     entries.forEach(function (e, i) {
       if (due.indexOf(e['Entry ID']) >= 0) setEntryCells_(i + 2, { 'Review status': '' });
     });
