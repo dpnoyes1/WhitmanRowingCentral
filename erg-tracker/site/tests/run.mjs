@@ -822,6 +822,22 @@ test('week results: her own vs goal; coaches see everyone and last week', async 
   assert.strictEqual(body.weekStart, '2026-10-12');
   body = await get('/api/week/' + mate.id, team);
   assert.ok(body.days.flatMap((d) => d.sessions).some((x) => x.result), 'coach sees her results');
+  // A coxswain (David, 2026-11-19) sees every rower's target for the week and no one's results, and never counts as a rower.
+  const cox = { ...feed.athletes.find((a) => a.id === rower.id), id: 'A990', name: 'Fake Coxswain', role: 'Coxswain' };
+  const coxFeed = { ...feed, athletes: [...feed.athletes, cox] };
+  const coxDeps = { fetchImpl: async () => new Response(JSON.stringify(coxFeed)), today: TODAY };
+  clearFeedCache();
+  const coxCookie = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), cox.id);
+  const coxBody = await (await handle(new Request('https://x/api/week', { headers: { cookie: coxCookie } }), env, coxDeps)).json();
+  const coxSessions = coxBody.days.flatMap((d) => d.sessions);
+  assert.ok(coxSessions.length && coxSessions.every((x) => x.results.length > 5), 'every rower is listed');
+  assert.ok(coxSessions.some((x) => x.results.some((r) => r.targets.some(Boolean))), 'with targets');
+  assert.ok(coxSessions.every((x) => x.results.every((r) => !('result' in r) && r.id !== cox.id)) && !JSON.stringify(coxBody).includes('"result"'), 'no results, and not herself');
+  assert.strictEqual((await (await handle(new Request('https://x/api/session', { headers: { cookie: coxCookie } }), env, coxDeps)).json()).athlete.role, 'Coxswain');
+  assert.strictEqual((await handle(new Request('https://x/api/week/' + mate.id, { headers: { cookie: coxCookie } }), env, coxDeps)).status, 403, 'still no teammate week');
+  assert.ok(!activeRowers(coxFeed).some((r) => r.id === cox.id), 'a coxswain is not a rower');
+  assert.ok(!completionView(coxFeed, TODAY).rows.some((r) => r.id === cox.id), 'not in attendance rates');
+  assert.deepStrictEqual(athleteView(coxFeed, cox.id, TODAY).openMakeups, [], 'no make-ups');
   clearFeedCache();
 });
 

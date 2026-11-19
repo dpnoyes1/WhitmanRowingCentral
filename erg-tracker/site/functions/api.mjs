@@ -33,7 +33,7 @@ export async function handle(req, envFn, deps = {}) {
 
   if (path === '/api/session') {
     const a = who.kind === 'athlete' && data.athletes.find((x) => x.id === who.id);
-    return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad } : null, coachName: who.kind === 'team' ? who.name || null : null, meta });
+    return json({ kind: who.kind, athlete: a ? { id: a.id, name: a.name, squad: a.squad, role: a.role } : null, coachName: who.kind === 'team' ? who.name || null : null, meta });
   }
   // Coach split averages on the Team page: coaches only (David, 2026-10-25).
   if (path === '/api/team') return json({ ...teamView(data, today), ...(who.kind === 'team' ? { splits: teamSplitsView(data, today), notLogged: notLoggedView(data, today) } : {}), meta });
@@ -68,7 +68,9 @@ export async function handle(req, envFn, deps = {}) {
   const coach = who.kind === 'team';
   const offset = coach && new URL(req.url).searchParams.get('week') === 'prev' ? -1 : 0;
   if (path === '/api/week') {
-    const view = coach ? weekView(data, today, null, { offset, results: 'all' }) : weekView(data, today, who.id, { results: 'own' });
+    // A coxswain walks the boathouse and checks everyone's targets, with no results (David, 2026-11-19).
+    const cox = !coach && data.athletes.some((x) => x.id === who.id && x.role === 'Coxswain');
+    const view = coach ? weekView(data, today, null, { offset, results: 'all' }) : cox ? weekView(data, today, null, { results: 'targets' }) : weekView(data, today, who.id, { results: 'own' });
     return json({ ...view, meta });
   }
   const w = path.match(/^\/api\/week\/([A-Za-z0-9-]+)$/);

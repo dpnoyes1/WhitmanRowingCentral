@@ -341,6 +341,9 @@ table.pieces th { font-size: .75rem; font-weight: 600; color: var(--text-2); }
 .week-tools { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .week-tools select { width: auto; min-width: 200px; }
 details.team-results { margin-top: 10px; }
+.targets-list { margin-top: 12px; }
+.targets-list td { vertical-align: top; }
+.targets-list th { white-space: normal; font-size: .8rem; line-height: 1.2; }
 details.team-results summary { cursor: pointer; color: var(--link); font-size: .9rem; min-height: 32px; display: flex; align-items: center; }
 details.team-results td { vertical-align: top; }
 table.pieces td { white-space: normal; }
@@ -868,7 +871,8 @@ td.nowrap { white-space: nowrap; }
   .lugrid > .lub:last-child:nth-child(odd) .lus { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 /* U12: practice dots spread across their column, so they meet the bar on both sides */
-.att-dots { justify-content: space-between; }
+.att-dots { justify-content: flex-start; }
+.att-dots.full { justify-content: space-between; }   /* only a full row spreads; with 2 practices so far the dots sit together (David, 2026-11-19) */
 /* U13: zone filter fits one row on a phone */
 @media (max-width: 480px) {
   .workout-tools .seg { display: flex; }

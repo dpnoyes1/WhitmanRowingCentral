@@ -156,7 +156,8 @@ export function athleteView(feed, id, today) {
       partials: season.filter((r) => r.how === 'Modified').length
     },
     streaks: { practices: practiceStreak(record), oyoWeeks: oyoWeekStreak(a, feed, today) },
-    openMakeups: openMakeups(record, today, feed.settings.makeupWindowDays).map((m) => ({ ...m, sessions: dayPlan(feed, m.date, a) })),
+    // A coxswain has no make-ups (David, 2026-11-19): they are not counted in attendance.
+    openMakeups: a.role === 'Coxswain' ? [] : openMakeups(record, today, feed.settings.makeupWindowDays).map((m) => ({ ...m, sessions: dayPlan(feed, m.date, a) })),
     recentPractices: record.slice(-10).reverse(),
     weekly: weeks.map((w) => {
       const t = weekMinutes(mine, feed.settings, w)[id] || { practice: 0, oyo: 0 };
@@ -661,7 +662,8 @@ function resultView(r, pieces) {
  * only her squad's sessions and only her own targets (David, 2026-10-23);
  * without one, every session and no targets.
  * opts.results: 'own' adds her result to each session (or missed: true once
- * the day has passed); 'all' adds every rower in the session's squad with
+ * the day has passed); 'targets' adds every rower with her target only, no
+ * results (coxswains); 'all' adds every rower in the session's squad with
  * her result or null (coaches only); 'none' adds nothing.
  */
 export function weekView(feed, today, id = null, opts = {}) {
@@ -690,6 +692,13 @@ export function weekView(feed, today, id = null, opts = {}) {
         out.result = of(a.id);
         out.missed = !out.result && day < today;
         out.notDone = out.missed && !WARM_COOL.test(s.workout || '') && loggedOn(day).has(a.id);
+      }
+      // A coxswain sees everyone's target for the practice and nothing logged (David, 2026-11-19).
+      if (results === 'targets') {
+        out.results = rowers.filter((r) => inSquadDay(s, r.squad, plan.sessions)).map((r) => {
+          const t = (s.athletes || []).find((x) => x.athlete === r.name);
+          return { ...athleteSummary(r), targets: t ? t.targets.map((x) => x.target || null) : [] };
+        });
       }
       if (results === 'all') {
         out.results = rowers.filter((r) => inSquadDay(s, r.squad, plan.sessions)).map((r) => {
