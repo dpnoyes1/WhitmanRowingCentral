@@ -377,6 +377,11 @@ export function completionView(feed, today) {
   return { today, yearStart, weekStarts: weeks, dates, rows };
 }
 
+/** Practice days a coach can change a mark for (David, 2026-11-18): not canceled, up to today, newest first. */
+export function markDays(feed, today) {
+  return [...new Set(feed.practices.filter((p) => !p.canceled && p.date <= today).map((p) => p.date))].sort().reverse().slice(0, COMPLETION_DAYS);
+}
+
 /** Missed practices in the last 4 weeks (David, 2026-10-28): 2 or more not made up is flagged. */
 export const MISSED_FLAG_AT = 2;
 export const MISSED_WINDOW_DAYS = 28;

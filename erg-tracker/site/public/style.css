@@ -240,7 +240,7 @@ main { max-width: 1040px; margin: 0 auto; padding: 8px 16px 48px; }
 @keyframes spin { to { transform: rotate(360deg); } }
 @media (prefers-reduced-motion: reduce) { .btn .spinner { animation-duration: 2s; } }
 .btn.ghost { background: none; color: var(--link); border: 1px solid var(--border); }
-input[type="password"], input[type="search"], .login input, select {
+input[type="password"], input[type="search"], .login input, .markform input, select {
   font: inherit; width: 100%; padding: 10px 12px; border-radius: 9px;
   border: 1px solid var(--border); background: var(--surface); color: var(--text); min-height: 44px;
 }
@@ -686,6 +686,12 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .logfor .card { border-radius: 20px; }
 .logfor .card.hl { border-color: var(--accent); }
 .logfor .btn { min-height: 52px; font-weight: 600; }
+.markform { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px 16px; margin-top: 10px; }
+.markform label { display: flex; flex-direction: column; gap: 6px; font-size: .85rem; color: var(--muted); min-width: 0; }
+.markform select, .markform input { width: 100%; }
+.markform .seg { align-self: flex-start; }
+.markact { grid-column: 1 / -1; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+@media (max-width: 719px) { .markform { grid-template-columns: minmax(0, 1fr); } .markform .seg { width: 100%; } .markform .seg button { flex: 1; } }
 .att-row.me { background: color-mix(in srgb, var(--accent) 12%, transparent); border-radius: 8px; padding: 8px 10px; margin: 0 -10px 8px; }
 .hrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 /* Phone: chips keep their full label and wrap instead of clipping; Weights drops two columns so Status and Edit stay on screen. */

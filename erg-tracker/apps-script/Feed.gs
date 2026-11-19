@@ -25,6 +25,7 @@ function doPost(e) {
   if (body.action === SLACK_PHOTO_ACTION) return feedJson_(processSlackPhoto_(body));
   if (body.action === PHOTO_GET_ACTION) return feedJson_(processPhotoGet_(body));
   if (body.action === SITE_LOG_ACTION) return feedJson_(processSiteLog_(body));
+  if (body.action === ATTENDANCE_MARK_ACTION) return feedJson_(processAttendanceMark_(body));
   if (body.action === WORKOUT_LIST_ACTION) return feedJson_(processWorkoutList_());
   if (body.action === WORKOUT_SAVE_ACTION) return feedJson_(processWorkoutSave_(body));
   if (body.action === WORKOUT_UPDATE_ACTION) return feedJson_(processWorkoutUpdate_(body));

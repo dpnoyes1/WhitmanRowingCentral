@@ -13,6 +13,7 @@ import { handleLogin } from '../../functions/login.mjs';
 import { handleWorkouts } from '../../functions/workouts.mjs';
 import { handleLogMine } from '../../functions/logmine.mjs';
 import { handleLog } from '../../functions/log.mjs';
+import { handleAttendanceMark } from '../../functions/attendance-mark.mjs';
 import { handleWeights } from '../../functions/weights.mjs';
 import { handleSettings } from '../../functions/settings.mjs';
 import { handleAthletePasswords } from '../../functions/athlete-passwords.mjs';
@@ -61,6 +62,7 @@ function makeSheet(feed, state) {
         return Response.json(planOut({ savedId: id }));
       }
       case 'site-log': state.logs.push(body); return Response.json({ status: 'ok' });
+      case 'attendance-mark': state.marks = state.marks || []; state.marks.push(body); return Response.json({ status: 'ok', changed: 0, created: true });
       case 'weights-get': return Response.json({ yearStart: '2026-07-01', rows: feed.athletes.filter((a) => a.active).slice(0, 12).map((a, i) => ({ id: a.id, name: a.name, squad: a.squad, lb: i % 3 ? 130 + i : null, by: i % 3 ? 'Pat Example' : '', day: i % 3 ? '2026-09-15' : '', status: i % 3 ? 'Current' : 'Missing' })) });
       case 'settings-get': return Response.json({ sections: [{ title: 'OYO goals', fields: [{ key: 'oyo.standard.required', label: 'Standard goal (min a week)', value: '60', help: 'Elite is double.' }] }] });
       default: return Response.json({ error: 'the browser check does not fake ' + body.action });
@@ -82,7 +84,7 @@ export async function startServer({ port = 0 } = {}) {
   await setCoachPassword(deps.athleteStore, 'A901', 'row-fast-1');
   const routes = [
     ['/api/login', handleLogin], ['/api/logout', handleLogin], ['/api/workouts', handleWorkouts], ['/api/log-mine', handleLogMine],
-    ['/api/log', handleLog], ['/api/weights', handleWeights], ['/api/settings', handleSettings],
+    ['/api/log', handleLog], ['/api/attendance-mark', handleAttendanceMark], ['/api/weights', handleWeights], ['/api/settings', handleSettings],
     ['/api/athlete-passwords', handleAthletePasswords], ['/api/coaches', handleCoaches], ['/api/lineup-names', handleLineupNames]
   ];
   clearFeedCache();

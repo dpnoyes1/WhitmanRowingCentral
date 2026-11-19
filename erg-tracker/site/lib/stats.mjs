@@ -143,7 +143,7 @@ export function practiceRecord(athlete, feed, today) {
   mine.forEach((e) => {
     // Modified wins for the day: one partial workout makes the practice partial (David, 2026-11-17).
     if (e.type === 'Practice' && (e.status === 'Modified' || (e.status === 'Full' && attended.get(e.date) !== 'Modified'))) attended.set(e.date, e.status);
-    if (e.type === 'Practice' && e.status === 'Out' && !attended.has(e.date)) attended.set(e.date, 'Out');
+    if (e.type === 'Practice' && (e.status === 'Out' || e.status === 'Missed') && !attended.has(e.date)) attended.set(e.date, e.status);
   });
   const madeUp = new Map();
   mine.forEach((e) => { if (e.type === 'Make-up' && e.makeupFor) madeUp.set(e.makeupFor, e.date); });
@@ -155,7 +155,7 @@ export function practiceRecord(athlete, feed, today) {
       const s = attended.get(p.date);
       if (s === 'Full' || s === 'Modified') return { date: p.date, done: true, how: s };
       if (madeUp.has(p.date)) return { date: p.date, done: true, how: 'Make-up', makeupDate: madeUp.get(p.date) };
-      return { date: p.date, done: false, how: s === 'Out' ? 'Out' : 'Not logged' };
+      return { date: p.date, done: false, how: s === 'Out' || s === 'Missed' ? s : 'Not logged' };
     })
     .filter((r) => r.done || r.date < today);
 }
