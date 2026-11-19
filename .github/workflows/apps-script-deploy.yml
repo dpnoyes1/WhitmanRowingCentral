@@ -1,0 +1,77 @@
+# Merge deploys the Apps Script (David, 2026-11-18).
+# When a merge to main changes erg-tracker/apps-script, run the tests, push the
+# code to the live Sheet's Apps Script, and update the existing "Team site feed"
+# deployment to a new version (same URL, never a new deployment).
+#
+# One-time setup: repo Settings > Secrets and variables > Actions > New
+# repository secret named CLASPRC_JSON, containing the whole text of
+# ~/.clasprc.json from David's Mac. Never commit that file.
+name: Deploy Apps Script
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "erg-tracker/apps-script/**"
+      - ".github/workflows/apps-script-deploy.yml"
+  workflow_dispatch:
+
+# One deploy at a time, in merge order. A newer run waits instead of cancelling.
+concurrency:
+  group: apps-script-deploy
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+env:
+  # Identifiers, not credentials. Useless without the CLASPRC_JSON sign-in.
+  SCRIPT_ID: 1uFSY4lqvM9s9cxJkAG5ZC0OQMczRnu5UUBpmEec7ry-x5CZ3DfTDePly
+  FEED_DEPLOYMENT_ID: AKfycbyUSr8wr9MrzhZjoRF0V7i1gqco3p3rcmFXiNDQ27SpfJ3QZhC4t_lJsPHjMiGfGWfm
+  CLASP_VERSION: 3.4.1
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Tests
+        run: |
+          npm ci
+          node erg-tracker/tests/run.js
+          node erg-tracker/site/tests/run.mjs
+
+      - name: Check the sign-in secret is set
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          if [ -z "$CLASPRC_JSON" ]; then
+            echo "::error::Secret CLASPRC_JSON is not set. See the note at the top of this workflow."
+            exit 1
+          fi
+
+      - name: Sign in to clasp
+        env:
+          CLASPRC_JSON: ${{ secrets.CLASPRC_JSON }}
+        run: |
+          umask 077
+          printf '%s' "$CLASPRC_JSON" > "$HOME/.clasprc.json"
+          printf '{"scriptId":"%s","rootDir":"erg-tracker/apps-script"}' "$SCRIPT_ID" > .clasp.json
+
+      - name: Push Apps Script
+        run: npx -y @google/clasp@${CLASP_VERSION} push -f
+
+      - name: Update the Team site feed deployment
+        run: npx -y @google/clasp@${CLASP_VERSION} update-deployment "$FEED_DEPLOYMENT_ID" -d "Team site feed"
+
+      - name: Show the live deployments
+        run: npx -y @google/clasp@${CLASP_VERSION} list-deployments
+
+      - name: Remove sign-in files
+        if: always()
+        run: rm -f "$HOME/.clasprc.json" .clasp.json
