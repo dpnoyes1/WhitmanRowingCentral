@@ -95,6 +95,8 @@ async function api(path) {
 }
 
 const isCoach = () => !!SESSION && SESSION.kind === 'team';
+/** A coxswain signs in like an athlete and sees everyone's targets on Week (David, 2026-11-19). */
+const isCox = () => !!SESSION && SESSION.kind === 'athlete' && !!SESSION.athlete && SESSION.athlete.role === 'Coxswain';
 
 function setNav(active) {
   // Today's practice shows only on the page each person lands on after signing in: Team for coaches, Me for athletes.
@@ -250,7 +252,7 @@ function wireFooter() {
 
 function showError(err) {
   if (err.message === 'signin') return;
-  app.innerHTML = `<div class="card"><p class="error">${esc(err.message)}</p><button class="btn ghost" id="retry">Try again</button></div>`;
+    app.innerHTML = `<div class="card"><p class="error">${esc(err.message)}</p><button class="btn ghost" id="retry">Try again</button></div>`;
   document.getElementById('retry').onclick = () => { app.innerHTML = SKELETON; route(); };
 }
 
@@ -883,7 +885,15 @@ function sessionBlock(s, withTargets, today = '') {
       ${withTargets ? `<td class="r target">${p.target ? fmtTarget(p.target) : '<span class="muted">–</span>'}</td>` : ''}
       ${r ? `<td class="r splits">${splitsCell(r.pieces[i], isBike(r))}</td>` : ''}</tr>`).join('')}
       ${r && r.extra.length ? `<tr><td class="muted">Extra</td>${withTargets ? '<td></td>' : ''}<td class="r splits">${splitsCell(r.extra, isBike(r))}</td></tr>` : ''}</table>
-    ${s.results ? teamResults(s, today) : ''}</div>`;
+    ${s.results ? (isCox() ? teamTargets(s) : teamResults(s, today)) : ''}</div>`;
+}
+
+/** Coxswains: everyone in the session's squad with their target for each piece, by name. No results (David, 2026-11-19). */
+function teamTargets(s) {
+  return `<div class="targets-list"><div class="eyebrow">Targets: ${s.results.length} athletes</div>
+    <div class="table-wrap"><table><thead><tr><th>Name</th>${s.pieces.map((p, i) => `<th class="r" title="${esc(p.label)}">Target${s.pieces.length > 1 ? ' ' + (i + 1) : ''}</th>`).join('')}</tr></thead><tbody>
+    ${s.results.map((x) => `<tr><td>${esc(x.name)}</td>${s.pieces.map((p, i) => `<td class="r splits">${x.targets[i] ? esc(shortPace(x.targets[i].replace(/\s*\([^)]*\)$/, ''))) : '<span class="muted">–</span>'}</td>`).join('')}</tr>`).join('')}
+    </tbody></table></div></div>`;
 }
 
 /** Target pace in seconds per 500m (a range uses its middle; several pieces average), or null when there is none. */
@@ -1115,6 +1125,7 @@ async function showWeek(id = null, prev = false) {
   const stat = (d) => {
     if (!d.sessions.length) return '<span class="muted small">nothing scheduled</span>';
     if (d.day > v.today) return '<span class="muted small">upcoming</span>';
+    if (isCox()) return '';
     if (coach && !v.athlete) {
       const rs = d.sessions.flatMap((s) => s.results || []);
       return rs.length ? `<span class="pill">${rs.filter((x) => x.result).length} of ${rs.length} logged</span>` : '';

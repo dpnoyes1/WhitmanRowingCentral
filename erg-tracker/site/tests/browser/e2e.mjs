@@ -3,6 +3,7 @@
 import assert from 'node:assert';
 import { newPage, signInCoach, signInAthlete } from './lib.mjs';
 import { COACH } from './server.mjs';
+import { clearFeedCache } from '../../lib/feed.mjs';
 
 const flows = [];
 const flow = (name, fn) => flows.push([name, fn]);
@@ -193,6 +194,25 @@ flow('attendance: a coach changes one mark, an athlete has no way to', async ({ 
   await signInAthlete(page, server.url, server.athlete, '#/attendance');
   assert.equal(await page.locator('#mark-card').count(), 0, 'an athlete should not see Change a mark');
   await page.context().close();
+});
+
+flow('coxswain: Week lists every athlete\'s target, no results, nothing scrolls sideways', async ({ browser, server }) => {
+  const me = server.feed.athletes.find((a) => a.id === server.athlete.id);
+  me.role = 'Coxswain';
+  clearFeedCache();
+  try {
+    for (const width of [320, 390, 1280]) {
+      const page = await newPage(browser, width);
+      await signInAthlete(page, server.url, server.athlete, '#/week');
+      await page.waitForSelector('#wk-detail .targets-list table');
+      const names = await page.$$eval('#wk-detail .targets-list tbody tr', (rows) => rows.length);
+      assert.ok(names > 5, 'every rower is listed');
+      assert.equal(await page.locator('#wk-detail .results-sort').count(), 0, 'no results sorting for a coxswain');
+      assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= document.documentElement.clientWidth), true, `the page scrolls sideways at ${width}`);
+      assert.equal(await page.evaluate(() => { const w = document.querySelector('#wk-detail .targets-list .table-wrap'); return w.scrollWidth <= w.clientWidth; }), true, `the target table scrolls sideways at ${width}`);
+      await page.context().close();
+    }
+  } finally { me.role = 'Rower'; clearFeedCache(); }
 });
 
 export default async function e2e(ctx) {
