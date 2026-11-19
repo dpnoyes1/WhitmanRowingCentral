@@ -48,6 +48,7 @@ export function planFlagReply(result, op, name, text) {
   ] });
   const note = (line) => ({ response_type: 'ephemeral', replace_original: false, text: line });
   if (result.status === 'ok') {
+    if (op === 'confirm' && result.mark === 'Missed') return done(`:white_check_mark: Missed confirmed by ${name}`);
     return done((DONE[op] || DONE.reviewed)(name));
   }
   if (result.status === 'already') return done(`:information_source: Already decided (${result.reviewStatus}).`);

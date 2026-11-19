@@ -5,7 +5,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createRequire } from 'node:module';
 import * as S from '../lib/stats.mjs';
-import { teamTestsRun, lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, workoutView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, activeRowers, balanceView } from '../lib/views.mjs';
+import { teamTestsRun, lineupsView, OYO_OVERREACH_PCT, missedNotMadeUp, teamView, teamSplitsView, athleteView, workoutView, leaderboardsView, starsView, oyoView, weekView, comingMonday, insightsView, completionView, markDays, activeRowers, balanceView } from '../lib/views.mjs';
 import * as A from '../lib/auth.mjs';
 import { getFeed, clearFeedCache, refreshFeed } from '../lib/feed.mjs';
 import { handle } from '../functions/api.mjs';
@@ -14,6 +14,7 @@ import { handleSettings } from '../functions/settings.mjs';
 import { handleWeights } from '../functions/weights.mjs';
 import { handleWorkouts, cleanWorkoutBody } from '../functions/workouts.mjs';
 import { handleLog } from '../functions/log.mjs';
+import { handleAttendanceMark } from '../functions/attendance-mark.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
 import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
@@ -2703,6 +2704,47 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
   assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
   assert.strictEqual(paceText(0, 5000), '');
+});
+
+test('attendance override: a Missed mark is absent with the make-up open, minutes still count; coaches only (David, 2026-11-18)', async () => {
+  const a = feed.athletes.find((x) => x.active && x.role === 'Rower');
+  const day = feed.practices.filter((p) => !p.canceled && p.date < TODAY && (!/^(varsity|novice)$/i.test(p.squad) || p.squad.toLowerCase() === a.squad.toLowerCase())).map((p) => p.date).sort().pop();
+  const base = { ...feed, entries: feed.entries.filter((e) => !(e.athleteId === a.id && e.date === day)) };
+  const row = (status) => ({ id: 'EX', athleteId: a.id, date: day, type: 'Practice', status, activity: 'Erg (RowErg)', workS: 1200, workM: 4000, warmS: 0, coolS: 0 });
+  const how = (f) => S.practiceRecord(a, f, TODAY).find((r) => r.date === day);
+  assert.strictEqual(how(base).how, 'Not logged');
+  const missed = { ...base, entries: [...base.entries, row('Missed')] };
+  assert.deepStrictEqual([how(missed).done, how(missed).how], [false, 'Missed']);
+  assert.strictEqual(how({ ...base, entries: [...base.entries, row('Full')] }).done, true);
+  assert.strictEqual(how({ ...base, entries: [...base.entries, row('Missed'), row('Modified')] }).how, 'Modified', 'a completed or modified entry the same day wins');
+  const cell = completionView(missed, TODAY).rows.find((r) => r.id === a.id).cells;
+  assert.ok(['P', 'O'].includes(cell[completionView(missed, TODAY).dates.indexOf(day)]), 'shown as absent');
+  assert.ok(S.weightedMinutes(row('Missed'), feed.settings) > 0, 'the minutes of a Missed day still count');
+  const md = markDays(feed, TODAY);
+  assert.ok(md.length > 0 && md.length <= 15 && md.every((d) => d <= TODAY) && md.every((d, i) => !i || d < md[i - 1]), 'newest first, none after today');
+  assert.ok(!md.some((d) => feed.practices.some((p) => p.date === d && p.canceled && !feed.practices.some((q) => q.date === d && !q.canceled))), 'canceled days left out');
+  // The endpoint: coaches only, a plain checked body, the Sheet gets mark names it knows.
+  const env = (k) => ({ FEED_KEY: 'fake-key', FEED_URL: 'https://script.example/exec' })[k];
+  const coach = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'team', Date.now(), 'Pat Example');
+  const athlete = A.COOKIE + '=' + A.makeToken(A.sessionSecret(env), 'A901');
+  const calls = [];
+  const sheet = (reply) => async (url, init) => { calls.push(JSON.parse(init.body)); return new Response(JSON.stringify(reply)); };
+  const post = (cookie, body, extra = {}) => new Request('https://x/api/attendance-mark', { method: 'POST', headers: { cookie, 'content-type': 'application/json', ...extra }, body: JSON.stringify(body) });
+  const ok = { athleteId: 'A901', date: '2026-11-18', mark: 'completed', note: 'First day', requestId: 'r1' };
+  assert.strictEqual((await handleAttendanceMark(post('', ok), env, { fetchImpl: sheet({}) })).status, 401);
+  assert.strictEqual((await handleAttendanceMark(post(athlete, ok), env, { fetchImpl: sheet({}) })).status, 403);
+  assert.strictEqual(calls.length, 0, 'an athlete never reaches the Sheet');
+  for (const bad of [{ ...ok, mark: 'Full' }, { ...ok, mark: 'bogus' }, { ...ok, date: 'tomorrow' }, { ...ok, athleteId: '' }, { ...ok, note: 'x'.repeat(201) }]) {
+    assert.strictEqual((await handleAttendanceMark(post(coach, bad), env, { fetchImpl: sheet({}) })).status, 400, JSON.stringify(bad).slice(0, 40));
+  }
+  assert.strictEqual((await handleAttendanceMark(post(coach, ok, { origin: 'https://evil.example' }), env, { fetchImpl: sheet({}) })).status, 400);
+  const res = await handleAttendanceMark(post(coach, ok), env, { fetchImpl: sheet({ status: 'ok', changed: 0, created: true }) });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual(await res.json(), { status: 'ok', changed: 0, created: true, message: '' });
+  assert.deepStrictEqual(calls[0], { action: 'attendance-mark', athleteId: 'A901', date: '2026-11-18', mark: 'Full', note: 'First day', coachName: 'Pat Example', requestId: 'r1', key: calls[0].key });
+  assert.strictEqual((await handleAttendanceMark(post(coach, { ...ok, mark: 'missed' }), env, { fetchImpl: sheet({ status: 'invalid', message: 'There is no practice for Fake on that day.' }) })).status, 422);
+  assert.strictEqual((await handleAttendanceMark(post(coach, ok), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }) })).status, 502);
+  assert.strictEqual((await handleAttendanceMark(post(coach, ok), env, { fetchImpl: async () => { throw new Error('down'); } })).status, 502);
 });
 
 test('weights page: coaches only, goes to the Sheet with the feed key, weight never in the cached feed or athlete views', async () => {

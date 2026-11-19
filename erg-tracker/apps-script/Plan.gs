@@ -413,6 +413,8 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
   }
   var cut = planShortReason_(done, planned);
   if (cut) { out.matches = false; out.short = true; out.reason = cut; }
+  // Under half of the planned work is Not done (David, 2026-11-18): Missed with an open make-up, minutes still count.
+  out.notDone = planWorkFraction_(done, planned) < PLAN_NOT_DONE_BELOW;
   var tol = Number(settings['target.single_tolerance_pct'] || 2) / 100;
   var anyTarget = false;
   var allIn = true;
@@ -447,6 +449,30 @@ function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
   });
   out.hit = anyTarget ? allIn : null;
   return out;
+}
+
+/** Under this share of the planned work, a workout counts as Not done (David, 2026-11-18). */
+var PLAN_NOT_DONE_BELOW = 0.5;
+
+/**
+ * The share of the planned work that was done: all logged work over all planned work, in the planned unit
+ * (seconds for a timed plan, meters for a distance plan; the first planned piece decides). A plan that mixes
+ * time and distance averages each piece's own share, each capped at 1. 1 when nothing is planned. Pure.
+ */
+function planWorkFraction_(done, planned) {
+  if (!planned.length) return 1;
+  var val = function (iv, p) { return Number(p.workType === 'Time' ? iv['Work s'] : iv['Work m']) || 0; };
+  var want = function (p) { return p.workType === 'Time' ? p.workS : p.workM; };
+  var sameType = planned.every(function (p) { return p.workType === planned[0].workType; });
+  if (sameType) {
+    var total = 0, got = 0;
+    planned.forEach(function (p) { total += want(p) || 0; });
+    done.forEach(function (iv) { got += val(iv, planned[0]); });
+    return total > 0 ? got / total : 1;
+  }
+  var sum = 0;
+  planned.forEach(function (p, i) { sum += done[i] && want(p) > 0 ? Math.min(1, val(done[i], p) / want(p)) : 0; });
+  return sum / planned.length;
 }
 
 /** "11:32" for a time, "1450 m" for meters: a short form for reasons. */
@@ -500,6 +526,7 @@ function checkRunAgainstPlan_(intervals, pieces, settings) {
     out.matches = false;
     out.reason = 'Run is ' + Math.round(got / plan * 100) + '% of the plan';
   }
+  out.notDone = got > 0 && plan > 0 && got < plan * PLAN_NOT_DONE_BELOW;
   var anyGoal = false, allIn = true;
   done.forEach(function (iv, i) {
     var p = planned[Math.min(i, planned.length - 1)], row = { n: i + 1, watts: null, status: '' };

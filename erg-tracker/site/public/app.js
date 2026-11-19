@@ -1505,8 +1505,41 @@ async function showCompletion() {
         <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
         <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
       <p class="note">Circles: last ${v.dates.length} practices. %: whole season. Modified and make-ups count as present.</p></div>
+    ${isCoach() && v.markDays ? `<div class="card" id="mark-card"><h2>Change a mark</h2>
+      <p class="muted small">For a practice that was counted wrong, for example novices who came on a day with no workout to log. Completed and Modified count as present. Missed leaves the make-up open and keeps any minutes logged.</p>
+      <div class="markform">
+        <label>Athlete<select id="mk-athlete"><option value="">Choose…</option>${[...v.rows].sort((x, y) => x.name.localeCompare(y.name)).map((r) => `<option value="${esc(r.id)}">${esc(r.name)}</option>`).join('')}</select></label>
+        <label>Practice day<select id="mk-date">${v.markDays.map((d) => `<option value="${esc(d)}">${esc(fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric' }))}</option>`).join('')}</select></label>
+        <label>Mark<span class="seg" role="group" aria-label="Mark">${[['completed', 'Completed'], ['modified', 'Modified'], ['missed', 'Missed']].map(([k, l]) => `<button type="button" data-mark="${k}" aria-pressed="false">${l}</button>`).join('')}</span></label>
+        <label>Note (optional)<input id="mk-note" type="text" maxlength="200" autocomplete="off" placeholder="First day, no workout to log"></label>
+        <div class="markact"><button class="btn" type="button" id="mk-save" disabled>Save mark</button><span id="mk-msg" class="muted small" role="status"></span></div>
+      </div></div>` : ''}
     ${footer(v.meta)}`;
   wireFooter();
+  if (isCoach() && v.markDays) wireMarkForm();
+}
+
+/** Coaches: the Change a mark form on Attendance. One save at a time; a retry after a dropped reply reuses its request id. */
+function wireMarkForm() {
+  const ath = app.querySelector('#mk-athlete'), day = app.querySelector('#mk-date'), note = app.querySelector('#mk-note');
+  const save = app.querySelector('#mk-save'), msg = app.querySelector('#mk-msg');
+  let mark = '', rid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()), busy = false;
+  const ready = () => { save.disabled = busy || !ath.value || !day.value || !mark; };
+  const fresh = () => { rid = crypto.randomUUID ? crypto.randomUUID() : String(Date.now()); };
+  app.querySelectorAll('[data-mark]').forEach((b) => { b.onclick = () => { mark = b.dataset.mark; app.querySelectorAll('[data-mark]').forEach((x) => x.setAttribute('aria-pressed', String(x === b))); fresh(); ready(); }; });
+  [ath, day].forEach((el) => { el.onchange = () => { fresh(); msg.textContent = ''; ready(); }; });
+  save.onclick = async () => {
+    busy = true; ready(); msg.textContent = 'Saving…';
+    const who = ath.options[ath.selectedIndex].text, label = { completed: 'Completed', modified: 'Modified', missed: 'Missed' }[mark];
+    try {
+      const res = await fetch('/api/attendance-mark', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ athleteId: ath.value, date: day.value, mark, note: note.value.trim(), requestId: rid }) });
+      const out = await res.json().catch(() => ({}));
+      if (res.status === 401) { showLogin('You were signed out. Please sign in again.'); return; }
+      if (!res.ok) msg.textContent = out.error || 'Nothing was saved.';
+      else { msg.textContent = out.message || `Saved: ${who}, ${day.options[day.selectedIndex].text}, ${label}. The page shows it within about 5 minutes.`; note.value = ''; fresh(); }
+    } catch { msg.textContent = 'Could not reach the site. Nothing was saved.'; }
+    busy = false; ready();
+  };
 }
 
 /**

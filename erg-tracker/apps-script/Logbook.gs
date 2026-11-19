@@ -69,7 +69,7 @@ function openMakeups_(squad, date, practices, entries) {
   var sameSquad = function (p) { return practiceForSquad_(p.squad, squad); };
   var covered = {};
   entries.forEach(function (e) {
-    if (e.type === 'Practice' && e.status !== 'Out') covered[e.date] = true;
+    if (e.type === 'Practice' && e.status !== 'Out' && e.status !== 'Missed') covered[e.date] = true;
     if (e.type === 'Make-up' && e.makeupFor) covered[e.makeupFor] = true;
   });
   var seen = {};
