@@ -98,7 +98,7 @@ function slackPhotoTestAnswers_(photo, athleteName, enteredBy, type) {
  */
 function slackPhotoSession_(squad, date, practices, entries, chosen, isTest) {
   var practiceDay = practices.some(function (p) {
-    return p.date === date && !p.canceled && (!squad || !p.squad || String(p.squad).toLowerCase() === String(squad).toLowerCase());
+    return p.date === date && !p.canceled && practiceForSquad_(p.squad, squad);
   });
   var pick = String((chosen && chosen.sessionType) || '').toLowerCase();
   if (pick === 'oyo') return { type: 'OYO', makeupFor: '' };
