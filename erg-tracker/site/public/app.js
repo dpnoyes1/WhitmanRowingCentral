@@ -1513,7 +1513,7 @@ async function showCompletion() {
     <div class="card att"><div class="legend">${['F', 'M', 'U', 'O', 'N'].map((k) => `<span><span class="ad ad-${k}"></span> ${k === 'N' ? 'No session' : name[k]}</span>`).join('')}</div>
       <div class="att-head"><span>${mine ? '' : 'Athlete (sorted by %)'}</span><span>Last ${v.dates.length} practices, oldest to newest</span><span>Season attendance</span></div>
       ${rows.map((r) => `<div class="att-row${r.id === mine ? ' me' : ''}"><a class="nm" href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}${r.id === mine ? ' (you)' : ''}</a>
-        <span class="att-dots">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
+        <span class="att-dots${v.dates.length >= 15 ? ' full' : ''}">${r.cells.map((c, i) => dot(c, v.dates[i])).join('')}</span>
         <span class="att-bar"><span class="meter slim"><span class="fill" style="width:${r.pct ?? 0}%"></span></span><b class="num">${r.pct === null ? '–' : r.pct + '%'}</b></span></div>`).join('')}
       <p class="note">Circles: last ${v.dates.length} practices. %: whole season. Modified and make-ups count as present.</p></div>
     ${isCoach() && v.markDays ? `<div class="card" id="mark-card"><h2>Change a mark</h2>
