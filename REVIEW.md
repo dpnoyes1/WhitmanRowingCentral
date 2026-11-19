@@ -16,6 +16,7 @@ David's standing rules. Every thread checks these before it opens a PR, and a re
 - **Apps Script before merge.** If the site calls a new Sheet action, the Apps Script has to be pushed (and the "Team site feed" version updated) before the site PR is merged. David's clear go authorizes the push (see `erg-tracker/CLAUDE.md`, "Apps Script pushes"); on his Mac the clasp allow rules in `.claude/settings.json` let any thread push after his go, as long as the session is not in auto mode. Check the branch contains main before pushing. Say in the PR when a push is needed.
 - **Merge only on David's go.** Deploy previews are off, so every merge is a build. Batch a session's work into one PR. Never merge on your own.
 - **Three strikes.** After about three failed attempts to fix the same failure, stop and ask David. Do not patch around a failing test, skip it, loosen it, or quarantine it to get green.
+- **Check live state, then pull main.** Before saying a PR is merged, check its live state on GitHub (`gh pr view <n> --json state,mergedAt`), not a local clone. Pull main before every push.
 - **Fake data only.** No athlete names, results, weights or birthdays in the repo, tests or screenshots. Dummy data must be clearly fake (IDs A901+). No passwords, keys or tokens.
 - **Weight is coach-only.** Never on a page athletes can see, never phrased as a way to earn stars.
 
