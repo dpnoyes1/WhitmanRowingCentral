@@ -2785,10 +2785,13 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   let res = await handleLogMine(post(athlete, { athleteId: 'A777', requestId: 'r1', form }), env, { fetchImpl: ok, now });
   assert.strictEqual(res.status, 200);
   assert.deepStrictEqual(calls[0], { action: 'site-log', self: true, athleteId: 'A901', requestId: 'r1', form, key: 'fake-key' }, 'the athlete ID comes from the sign-in, not the request');
-  for (const bad of [{ activity: 'Erg (RowErg)' }, { activity: 'BikeErg' }, { activity: 'Lifting' }, { type: 'makeup' }, { type: 'test' }, { date: '2026-10-01' }, { date: '2026-12-25' }, { date: 'yesterday' }]) {
+  for (const bad of [{ activity: 'Erg (RowErg)' }, { activity: 'BikeErg' }, { activity: 'Lifting' }, { type: 'test' }, { date: '2026-10-01' }, { date: '2026-12-25' }, { date: 'yesterday' }]) {
     res = await handleLogMine(post(athlete, { form: { ...form, ...bad } }), env, { fetchImpl: ok, now });
     assert.strictEqual(res.status, 422, JSON.stringify(bad));
   }
+  res = await handleLogMine(post(athlete, { form: { ...form, type: 'makeup', note: 'jog' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.deepStrictEqual([calls.at(-1).form.type, calls.at(-1).form.status, calls.at(-1).form.note], ['practice', 'modified', 'Make-up. jog'], 'Make up saves as a Modified practice');
   const n = calls.length;
   res = await handleLogMine(post(athlete, { form: { ...form, test: 'yes', status: 'out', evil: 'x' } }), env, { fetchImpl: ok, now });
   assert.strictEqual(res.status, 200);
