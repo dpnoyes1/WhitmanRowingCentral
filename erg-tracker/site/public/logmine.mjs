@@ -47,7 +47,9 @@ export function openLogMine(ctx) {
         ${PHOTO_FIRST ? photoBlock : ''}
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
-          <label class="f">Was it<select class="in" data-f="type"><option value="oyo"${S.type === 'oyo' ? ' selected' : ''}>On my own</option><option value="practice"${S.type === 'practice' ? ' selected' : ''}>At practice</option></select></label></div>
+</div>
+        <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'On my own'], ['practice', 'At practice'], ['makeup', 'Make up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
+          ${S.type === 'makeup' ? '<span class="muted small">Counts as that day\'s practice, marked Modified.</span>' : ''}</div>
         <div class="lf-row">${field('Distance', 'dist', 'inputmode="decimal" placeholder="3.1"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
@@ -61,6 +63,7 @@ export function openLogMine(ctx) {
       el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
       if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; };
     });
+    f.querySelectorAll('#lm-type button').forEach((b) => { b.onclick = () => { S.type = b.dataset.type; S.msg = S.err = ''; draw(); }; });
     const pick = f.querySelector('#lm-photo');
     if (pick) pick.onchange = async () => {
       const file = pick.files && pick.files[0];

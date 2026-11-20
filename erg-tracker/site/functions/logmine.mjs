@@ -38,7 +38,10 @@ export async function handleLogMine(req, envFn, deps = {}) {
     form[k] = f[k];
   }
   if (!ACTIVITIES.includes(form.activity)) return json({ error: 'Choose a run, bike, swim or another activity that is not on an erg.' }, 422);
-  if (form.type !== 'oyo' && form.type !== 'practice') return json({ error: 'Choose On my own or At practice.' }, 422);
+  if (form.type !== 'oyo' && form.type !== 'practice' && form.type !== 'makeup') return json({ error: 'Choose On my own, At practice or Make up.' }, 422);
+  // Make up (David, 2026-11-20): saved as that day's practice, marked Modified, with "Make-up" at the front of the note.
+  // Done here so the Sheet needs no change; it still refuses a make-up row typed by an athlete.
+  if (form.type === 'makeup') { form.type = 'practice'; form.status = 'modified'; form.note = ('Make-up. ' + (form.note || '')).trim(); }
   const now = deps.now ? deps.now() : Date.now();
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.date || '');
   const t = day ? Date.UTC(+day[1], +day[2] - 1, +day[3]) : NaN;
