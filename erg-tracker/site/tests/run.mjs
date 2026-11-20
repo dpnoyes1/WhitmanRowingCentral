@@ -1859,6 +1859,102 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
   assert.deepStrictEqual(await handlePhotoEvent({ type: 'message', channel_type: 'im', bot_id: 'B1', user: 'UB' }, env, world().deps), { ignored: 'not a person message' });
 });
 
+test('slack photo: several photos in one message give one card each, saved separately (David, 2026-11-20)', async () => {
+  const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret', SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
+  const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
+  const jpeg = Buffer.concat([Buffer.from([0xff, 0xd8]), seg(0xc0, 'frame'), Buffer.from([0xff, 0xda, 0x00, 0x04, 0x01, 0x02, 0x11, 0x22, 0xff, 0xd9])]);
+  const piece = (time, meters, split) => ({ time, meters, split, rate: 24 });
+  const single = { title: '1500m', date: '', split_label: '/500m', total: { time: '6:00.0', meters: 1500, avg_split: '2:00.0', avg_rate: 24 }, total_time_incl_rest: '', rest_meters: null,
+    meters_column: 'cumulative', pieces: [piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 1000, '2:00.0'), piece('2:00.0', 1500, '2:00.0')], flags: [] };
+  const bad = { ...single, total: { ...single.total, time: '9:30.0' } };
+  const intervals = { ...single, title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
+    pieces: [0, 1, 2, 3].map(() => piece('1:40.0', 500, '1:40.0')) };
+  const oldDate = { ...single, date: 'Jan 01 2010' };
+  const world = (answers, role = 'coach') => {
+    const calls = []; const store = new Map(); let ai = 0;
+    const fake = { get: async (k) => store.get(k) || null, set: async (k, v) => { store.set(k, JSON.parse(JSON.stringify(v))); }, delete: async (k) => { store.delete(k); } };
+    const deps = { today: '2026-10-28', store: fake, athleteNames: async () => ['Olivia Fake', 'Maya Sample'], makeCopy: async () => ({ bytes: Buffer.from('small-copy') }), fetchImpl: async (url, init) => {
+      const body = init && init.body ? JSON.parse(init.body) : null;
+      calls.push({ url, body });
+      if (url === 'https://script.example/exec') {
+        if (body.action === 'slack-access') return Response.json(role === 'athlete' ? { status: 'ok', role: 'athlete', athlete: 'Olivia Fake' } : (body.athleteName ? { status: 'ok', athlete: 'Olivia Fake' } : { status: 'ok' }));
+        return Response.json({ status: 'ok', athlete: 'Olivia Fake', flagged: false });
+      }
+      if (url === 'https://files.slack.example/p.jpg') return new Response(jpeg, { status: 200 });
+      if (url === 'https://api.anthropic.com/v1/messages') return Response.json({ stop_reason: 'end_turn', content: [{ type: 'text', text: JSON.stringify(answers[Math.min(ai++, answers.length - 1)]) }], usage: { input_tokens: 1, output_tokens: 1 } });
+      return Response.json({ ok: true });
+    } };
+    const dms = () => calls.filter((c) => c.url === 'https://slack.com/api/chat.postMessage').map((c) => c.body).filter((b) => !/^:eyes: Got your/.test(b.text));
+    return { calls, store, deps, dms };
+  };
+  const file = { mimetype: 'image/jpeg', url_private_download: 'https://files.slack.example/p.jpg' };
+  const msg = (n, over = {}) => ({ type: 'message', channel_type: 'im', subtype: 'file_share', user: 'UC1', text: '', files: Array(n).fill(file), ...over });
+  const press = (id, token) => ({ type: 'block_actions', user: { id: 'UC1', name: 'coach.one' }, response_url: 'https://hooks.slack.example/r', channel: { id: 'D1' },
+    message: { ts: '1.2', text: '*For Olivia Fake:* card' }, actions: [{ action_id: id, value: token }] });
+  const saves = (w) => w.calls.filter((c) => c.body && c.body.action === 'slack-photo').map((c) => c.body);
+
+  // more than 4: warning, nothing read
+  let w = world([single]);
+  let out = await handlePhotoEvent(msg(5), env, w.deps);
+  assert.strictEqual(out.status, 'too_many_photos');
+  assert.ok(/up to 4 photos/.test(w.dms()[0].text));
+  assert.strictEqual(w.calls.filter((c) => c.url === 'https://api.anthropic.com/v1/messages').length, 0, 'nothing is read');
+  assert.ok(!w.store.has('pending:UC1'));
+
+  // coach, 3 photos: asked once, then one card each, saved separately
+  w = world([single, intervals, single]);
+  out = await handlePhotoEvent(msg(3), env, w.deps);
+  assert.strictEqual(out.status, 'asked');
+  assert.ok(/Read 3 photos/.test(w.dms()[0].text) && /Photo 2 of 3: 4x500m/.test(w.dms()[0].text), w.dms()[0].text);
+  out = await handlePhotoEvent({ type: 'message', channel_type: 'im', user: 'UC1', text: 'olivia' }, env, w.deps);
+  assert.deepStrictEqual([out.status, out.count], ['cards', 3]);
+  const cards = w.dms().slice(1);
+  assert.strictEqual(cards.length, 3);
+  assert.ok(cards.every((c, i) => new RegExp(`Photo ${i + 1} of 3`).test(c.text) && /For Olivia Fake/.test(c.text)), 'one card per photo, in order');
+  const tokens = cards.map((c) => c.blocks[1].elements[0].value);
+  assert.strictEqual(new Set(tokens).size, 3);
+  assert.ok(!w.store.has('pending:UC1'));
+  out = await handlePhotoButton(press('photo_save', tokens[1]), env, w.deps);
+  assert.strictEqual(out.status, 'ok');
+  assert.deepStrictEqual(saves(w).map((s) => s.photo.pieces.length), [4], 'only the pressed card saved');
+  assert.ok(w.store.has('card:' + tokens[0]) && w.store.has('card:' + tokens[2]), 'the others still wait');
+  assert.strictEqual((await handlePhotoButton(press('photo_save', tokens[1]), env, w.deps)).status, 'gone', 'a second press does not save twice');
+  await handlePhotoButton(press('photo_save', tokens[0]), env, w.deps);
+  await handlePhotoButton(press('photo_save', tokens[2]), env, w.deps);
+  assert.strictEqual(saves(w).length, 3);
+  assert.deepStrictEqual(new Set(saves(w).map((s) => s.token)).size, 3, 'each save has its own token');
+
+  // caption names the athlete at once
+  w = world([single, single]);
+  out = await handlePhotoEvent(msg(2, { text: 'Olivia' }), env, w.deps);
+  assert.deepStrictEqual([out.status, out.count], ['cards', 2]);
+
+  // athlete: no name question; one unreadable photo fails alone and is named
+  w = world([single, bad, bad, intervals], 'athlete');
+  out = await handlePhotoEvent(msg(3, { user: 'UA1' }), env, w.deps);
+  assert.deepStrictEqual([out.status, out.count], ['cards', 2]);
+  const ad = w.dms();
+  assert.ok(ad.some((d) => /Photo 2 of 3: I can't save this one yet/.test(d.text)), 'the bad photo is named');
+  assert.ok(/Photo 1 of 3/.test(ad[ad.length - 2].text) && /Photo 3 of 3/.test(ad[ad.length - 1].text), 'the good ones still get cards');
+
+  // every photo bad: nothing waits
+  w = world([bad], 'athlete');
+  out = await handlePhotoEvent(msg(2, { user: 'UA1' }), env, w.deps);
+  assert.strictEqual(out.status, 'none_readable');
+  assert.ok(!w.store.has('pending:UA1'));
+
+  // a far-off screen date asks with buttons on that card only
+  w = world([oldDate, single], 'athlete');
+  out = await handlePhotoEvent(msg(2, { user: 'UA1' }), env, w.deps);
+  const dd = w.dms();
+  const dateCard = dd.find((d) => /far from today/.test(d.text));
+  assert.ok(dateCard && /Photo 1 of 2/.test(dateCard.text) && !/reply with it/.test(dateCard.text), 'buttons only, no typed date');
+  assert.ok(!w.store.has('datewait:UA1'));
+  const t1 = dateCard.blocks[1].elements.find((b) => b.action_id === 'photo_date_today').value;
+  await handlePhotoButton(press('photo_date_today', t1), env, w.deps);
+  assert.ok(!/far from today/.test(dd.find((d) => /Photo 2 of 2/.test(d.text)).text), 'the other photo was not asked');
+});
+
 test('slack photo: router hands DM messages to the background function once, never retries or other channels', async () => {
   const env = (k) => ({ SLACK_SIGNING_SECRET: 'fake-secret' })[k];
   const NOW = 1_800_000_000;

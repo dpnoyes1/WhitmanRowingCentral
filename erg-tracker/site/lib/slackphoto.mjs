@@ -15,6 +15,7 @@ import { looksLikeNoErg, startRunCard, saveRunCard } from './slackrun.mjs';
 import { randomBytes } from 'node:crypto';
 
 const MAX_PIECES = 10;
+export const MAX_PHOTOS = 4;   // photos read from one message (David, 2026-11-20)
 export const READING = ':eyes: Got your photo, reading it now. This takes a few seconds.';
 export const SAVING = ':hourglass_flowing_sand: Saving, this can take several seconds. Please wait...';
 const TOO_OLD_MS = 24 * 3600 * 1000;   // a pending photo is forgotten after a day
@@ -111,7 +112,7 @@ export function dateBlocks(text, token, card) {
   els.push(btn('photo_date_today', `Use today (${dateLabel(card.today)})`, 'primary'), btn('photo_cancel', 'Cancel'));
   return [{ type: 'section', text: { type: 'mrkdwn', text } }, { type: 'actions', elements: els }];
 }
-const dateQuestion = (card) => `*For ${card.athlete}:* ${card.summary}.\nThe date on the erg screen is *${card.dateAsk.screen}*, which is far from today. Monitor clocks reset when the batteries change. Tap the right date, or reply with it (for example 11/3/2026).`;
+const dateQuestion = (card) => `*For ${card.athlete}:* ${card.summary}.\nThe date on the erg screen is *${card.dateAsk.screen}*, which is far from today. Monitor clocks reset when the batteries change. Tap the right date${card.multi ? '' : ', or reply with it (for example 11/3/2026)'}.`;
 
 /** What comes next on a card whose date is settled: the test question or Save. */
 function nextBlocks(card, token) {
@@ -228,8 +229,11 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
   if (!user || event.bot_id || (event.subtype && event.subtype !== 'file_share')) return { ignored: 'not a person message' };
   const say = (text, blocks) => dmBlocks(envFn, fetchImpl, user, text, blocks);
 
-  const image = (event.files || []).find(isImage);
-  if ((event.files || []).length && !image) { await say('I can only read JPEG or PNG photos of the erg screen.'); return { status: 'bad_file' }; }
+  const files = event.files || [];
+  const images = files.filter(isImage);
+  const image = images[0];
+  if (files.length && !image) { await say('I can only read JPEG or PNG photos of the erg screen.'); return { status: 'bad_file' }; }
+  if (images.length > MAX_PHOTOS) { await say(`:warning: I can read up to ${MAX_PHOTOS} photos at a time, and you sent ${images.length}. Please send them again in smaller groups.`); return { status: 'too_many_photos' }; }
 
   if (image) {
     const who = await callSheet(envFn, fetchImpl, { action: 'slack-access', slackUserId: user }).catch((e) => ({ status: 'error', error: e.message }));
@@ -237,41 +241,61 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
     if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the photo again in a minute.'); return { status: 'error' }; }
     const key = envFn('ANTHROPIC_API_KEY');
     if (!key) { await say(':warning: Photo reading is not set up yet (no API key). Use /log for now.'); return { status: 'no_key' }; }
-    await say(READING);   // she sees at once that the photo arrived
-    console.log('slack: photo step download', image.size || '', image.mimetype || '');
-    let bytes;
-    try { bytes = await download(envFn, fetchImpl, image); } catch (err) { await say(`:warning: I couldn't get that photo (${err.message}). Please send it again.`); return { status: 'download_failed' }; }
-    console.log('slack: photo step downloaded', bytes.length);
-    if (bytes.length > MAX_IMAGE_BYTES * 0.8) {   // too big for the reader: shrink it, she does nothing
-      try { bytes = await (deps.shrink || shrinkForReading)(bytes); } catch (err) { await say(`:warning: I couldn't shrink that photo (${err.message}). Please send it again, or use /log.`); return { status: 'shrink_failed' }; }
+    const several = images.length > 1;
+    await say(several ? `:eyes: Got your ${images.length} photos, reading them now. This takes a little longer.` : READING);   // she sees at once that the photo arrived
+
+    // Reads one photo. Returns { pending } to go on with, or { out } when this photo stops here (the athlete was told why).
+    // With several photos a problem is named by number and never stops the others.
+    const readOne = async (img, label) => {
+      const warn = (t) => say(`:warning: ${label ? label + ': ' : ''}${t}`);
+      console.log('slack: photo step download', img.size || '', img.mimetype || '');
+      let bytes;
+      try { bytes = await download(envFn, fetchImpl, img); } catch (err) { await warn(`I couldn't get that photo (${err.message}). Please send it again.`); return { out: { status: 'download_failed' } }; }
+      console.log('slack: photo step downloaded', bytes.length);
+      if (bytes.length > MAX_IMAGE_BYTES * 0.8) {   // too big for the reader: shrink it, she does nothing
+        try { bytes = await (deps.shrink || shrinkForReading)(bytes); } catch (err) { await warn(`I couldn't shrink that photo (${err.message}). Please send it again, or use /log.`); return { out: { status: 'shrink_failed' } }; }
+      }
+      console.log('slack: photo step reading', bytes.length);
+      const out = await readAndCheck({ client: anthropicClient(key, fetchImpl), bytes, today });
+      if (out.fail) { await warn(`I couldn't read that photo (${out.fail.message}). Please send a clearer one, or use /log.`); return { out: { status: out.fail.reason } }; }
+      const { read, issues, status } = out.checked;
+      if (!label && (deps.runPhotos ?? RUN_PHOTO_CHECK) && looksLikeNoErg(read)) {   // not a Concept2 screen: it may be a run (off until David says go; one photo at a time)
+        const run = await startRunCard({ client: anthropicClient(key, fetchImpl), bytes, who, user, envFn, fetchImpl, store, say, today, deps });
+        if (run) return { out: run };
+      }
+      if (status !== 'clean') { await say(`:warning: ${label ? label + ': ' : ''}I can't save this one yet.\n${problemText(issues)}`); return { out: { status } }; }
+      // Split rows that don't add up (a scrolled list, say): the total row is what counts, so save that and tell the coach.
+      const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum' || i.code === 'pieces_missing');
+      const pieces = unsure ? [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }] : entryPieces(read);
+      if (pieces.length > MAX_PIECES) { await warn(`That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { out: { status: 'too_many' } }; }
+      // The entry takes the date on the screen (David, 2026-11-07). Over 2 weeks from today, or one that can't be read, is asked about.
+      const shown = parseScreenDate(read.date, today);
+      const useShown = shown && Math.abs(dayDiff(today, shown)) <= DATE_OK_DAYS && shown <= today;
+      const dateAsk = !useShown && String(read.date || '').trim() ? { screen: String(read.date).trim().slice(0, 40), shown: shown && shown <= today ? shown : null } : null;
+      const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
+      if (pieces.length === 1 && read.pieces.length > 1 && !unsure) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
+      // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
+      let copy = '';
+      try { copy = (await (deps.makeCopy || makeKeepCopy)(bytes)).bytes.toString('base64'); } catch (err) { notes.push('No photo copy kept (' + err.message + ').'); }
+      return { pending: { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, check: unsure, today, dateAsk, note: notes.join(' | ').slice(0, 400), ...(label ? { label } : {}) } };
+    };
+
+    const items = [];
+    for (let i = 0; i < images.length; i++) {   // one after the other: easy on the reader's rate limit
+      const r = await readOne(images[i], several ? `Photo ${i + 1} of ${images.length}` : '');
+      if (r.pending) items.push(r.pending); else if (!several) return r.out;
     }
-    console.log('slack: photo step reading', bytes.length);
-    const out = await readAndCheck({ client: anthropicClient(key, fetchImpl), bytes, today });
-    if (out.fail) { await say(`:warning: I couldn't read that photo (${out.fail.message}). Please send a clearer one, or use /log.`); return { status: out.fail.reason }; }
-    const { read, issues, status } = out.checked;
-    if ((deps.runPhotos ?? RUN_PHOTO_CHECK) && looksLikeNoErg(read)) {   // not a Concept2 screen: it may be a run (off until David says go)
-      const run = await startRunCard({ client: anthropicClient(key, fetchImpl), bytes, who, user, envFn, fetchImpl, store, say, today, deps });
-      if (run) return run;
-    }
-    if (status !== 'clean') { await say(`:warning: I can't save this one yet.\n${problemText(issues)}`); return { status }; }
-    // Split rows that don't add up (a scrolled list, say): the total row is what counts, so save that and tell the coach.
-    const unsure = issues.some((i) => i.code === 'splits_sum' || i.code === 'meters_sum' || i.code === 'pieces_missing');
-    const pieces = unsure ? [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }] : entryPieces(read);
-    if (pieces.length > MAX_PIECES) { await say(`:warning: That screen has more than ${MAX_PIECES} pieces. Please use /log.`); return { status: 'too_many' }; }
-    // The entry takes the date on the screen (David, 2026-11-07). Over 2 weeks from today, or one that can't be read, is asked about.
-    const shown = parseScreenDate(read.date, today);
-    const useShown = shown && Math.abs(dayDiff(today, shown)) <= DATE_OK_DAYS && shown <= today;
-    const dateAsk = !useShown && String(read.date || '').trim() ? { screen: String(read.date).trim().slice(0, 40), shown: shown && shown <= today ? shown : null } : null;
-    const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
-    if (pieces.length === 1 && read.pieces.length > 1 && !unsure) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
-    // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
-    let copy = '';
-    try { copy = (await (deps.makeCopy || makeKeepCopy)(bytes)).bytes.toString('base64'); } catch (err) { notes.push('No photo copy kept (' + err.message + ').'); }
+    if (!items.length) return { status: 'none_readable' };
     await store.delete('datewait:' + user);
-    await store.set('pending:' + user, { at: Date.now(), image: copy, summary: summaryLine(read, pieces), machine: read.machine, title: read.title, date: useShown ? shown : today, pieces, check: unsure, today, dateAsk, note: notes.join(' | ').slice(0, 400) });
+    // One photo keeps the old single slot; several wait together and become one card each when the athlete is known.
+    await store.set('pending:' + user, several ? { at: Date.now(), multi: items } : items[0]);
     if (who.role === 'athlete') return nameStep(who.athlete, user, event, envFn, fetchImpl, store, say, deps, true);   // only ever herself
     const caption = String(event.text || '').trim();
-    if (!caption) { await say(`:eyes: Read: ${summaryLine(read, pieces)}.\nWhich athlete is this for? Reply with the athlete's name (first name is enough).`); return { status: 'asked' }; }
+    if (!caption) {
+      await say(several ? `:eyes: Read ${items.length} photos:\n${items.map((p) => `${p.label}: ${p.summary}`).join('\n')}\nThey must all be for one athlete. Which athlete? Reply with the athlete's name (first name is enough).`
+        : `:eyes: Read: ${items[0].summary}.\nWhich athlete is this for? Reply with the athlete's name (first name is enough).`);
+      return { status: 'asked' };
+    }
     return nameStep(caption, user, event, envFn, fetchImpl, store, say, deps);
   }
 
@@ -319,6 +343,17 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
   if (who.status === 'not_yourself') { await say(':lock: You can only log your own sessions. Send the photo again without a name.'); return { status: 'not_yourself' }; }
   if (who.status === 'unknown_name') { await say(`I can't find "${name}" as an active athlete on the roster. Reply with the athlete's name as it is on the roster.`); return { status: 'unknown_name' }; }
   if (who.status !== 'ok') { await say(':warning: I could not check the roster just now. Please send the name again in a minute.'); return { status: 'error' }; }
+  if (pending.multi) {   // several photos in one message: one card each, saved separately (David, 2026-11-20)
+    await store.delete('pending:' + user);
+    for (const item of pending.multi) {
+      const tok = randomBytes(9).toString('hex');
+      const c = { user, athlete: who.athlete, ...item, summary: `${item.label}: ${item.summary}`, ask: benchmarkShape(item.machine, item.pieces), multi: true };
+      await store.set('card:' + tok, c);
+      if (c.dateAsk) { const t = dateQuestion(c); await say(t, dateBlocks(t, tok, c)); }   // buttons only: a typed date could not say which photo
+      else { const n = nextBlocks(c, tok); await say(n.text, n.blocks); }
+    }
+    return { status: 'cards', athlete: who.athlete, count: pending.multi.length };
+  }
   const token = randomBytes(9).toString('hex');
   const shape = benchmarkShape(pending.machine, pending.pieces);
   const card = { user, athlete: who.athlete, ...pending, ask: shape };   // keeps the photo copy until she saves
