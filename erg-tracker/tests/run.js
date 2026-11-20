@@ -1189,7 +1189,7 @@ test('logbook: classify practice, OYO and possible make-up', () => {
 test('logbook: interval result becomes a pending entry with pieces', () => {
   const r = g.logbookRows(lbResult(), lbCtx());
   assert.strictEqual(r.entry['Source'], 'Logbook');
-  assert.strictEqual(r.entry['Review status'], 'Pending');
+  assert.strictEqual(r.entry['Review status'], '', 'a plain result counts at once (David, 2026-11-19)');
   assert.strictEqual(r.entry['Response ID'], 'logbook:122191976');
   assert.strictEqual(r.entry['Session type'], 'Practice');
   assert.strictEqual(r.entry['Status'], 'Full');
@@ -1255,6 +1255,12 @@ test('logbook: totals only, just row, possible make-up, benchmark shape, unsuppo
   assert.strictEqual(many.entry['Work s'], 840);
 });
 
+test('logbook: a 2k-shaped result still waits for the athlete; a plain one counts at once', () => {
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  assert.strictEqual(twoK.entry['Review status'], 'Pending');
+  assert.strictEqual(g.logbookRows(lbResult(), lbCtx()).entry['Review status'], '');
+});
+
 test('logbook: pending rows stay out of the feed', () => {
   assert.ok(g.feedPending_({ 'Review status': 'Pending' }));
   assert.ok(g.feedPending_({ 'Review status': 'Pending: possible make-up' }));
@@ -1301,6 +1307,11 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
     entry({ 'Entry ID': 'done', 'Review status': '' }),
     entry({ 'Entry ID': 'form', Source: 'Form', 'Review status': 'Pending' })
   ], now)), ['old']);
+  // since 2026-11-19 a plain Pending row left from before is accepted now; a test-shaped one still waits
+  const fresh = entry({ 'Entry ID': 'fresh', 'Submitted at': new Date(2026, 9, 30, 4, 30) });
+  const longer = entry({ 'Entry ID': 'long', 'Submitted at': new Date(2026, 9, 30, 4, 30), 'Work s': 1500, 'Work m': 5500 });
+  const lIv = [{ 'Entry ID': 'long', 'Interval #': 1, 'Work s': 1500, 'Work m': 5500 }];
+  assert.deepStrictEqual(Array.from(g.logbookDueIds([fresh, longer], now, [{ ...ivs[0], 'Entry ID': 'fresh' }].concat(lIv))), ['long']);
   // the pending list for the site: only pending Logbook rows of known athletes
   const list = g.feedLogbookPending_({
     entries: [entry(), entry({ 'Entry ID': 'E2', 'Review status': '' }), entry({ 'Entry ID': 'E3', 'Athlete ID': 'A999' }), entry({ 'Entry ID': 'E4', 'Review status': 'Pending: possible make-up', 'Make-up for date': day(2026, 10, 27) })],
