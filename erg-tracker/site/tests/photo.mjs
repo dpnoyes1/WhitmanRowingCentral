@@ -5,6 +5,7 @@ import * as R from '../lib/ergscreen.mjs';
 import * as C from '../lib/ergchecks.mjs';
 import { makeKeepCopy, shrinkForReading, READ_TARGET_BYTES, TARGET_BYTES } from '../lib/photocopy.mjs';
 import sharp from 'sharp';
+import { entryPieces } from '../lib/slackphoto.mjs';
 
 const TODAY = '2026-10-28';
 
@@ -150,12 +151,24 @@ export default function photoTests(test) {
     assert.strictEqual(C.formatClock(3723.4), '62:03.4');
   });
 
+  test('photo: 6x:30/3:30r saves six pieces, not one 3:00 piece', () => {
+    const rd = read({ title: '6x:30/3:30r', total: { time: '3:00.0', meters: 870, avg_split: '1:43.4', avg_rate: 38 }, total_time_incl_rest: '', rest_meters: null, meters_column: 'per_piece',
+      pieces: [145, 145, 145, 145, 145, 145].map((m) => piece(':30.0', m, '1:43.4', 38)), flags: [] });
+    const ps = entryPieces(rd);
+    assert.strictEqual(ps.length, 6);
+    assert.ok(ps.every((x) => x.timeS === 30));
+  });
+
   test('photo: titles', () => {
     assert.deepStrictEqual(C.parseTitle('2000m'), { kind: 'single', by: 'distance', value: 2000 });
     assert.deepStrictEqual(C.parseTitle('20:00'), { kind: 'single', by: 'time', value: 1200 });
     assert.deepStrictEqual(C.parseTitle('6x500m/2:00r'), { kind: 'intervals', reps: 6, by: 'distance', value: 500, restS: 120 });
     assert.deepStrictEqual(C.parseTitle('10x3:00/1:15r'), { kind: 'intervals', reps: 10, by: 'time', value: 180, restS: 75 });
     assert.deepStrictEqual(C.parseTitle('3x9:00/4:30r'), { kind: 'intervals', reps: 3, by: 'time', value: 540, restS: 270 });
+    // Nov 20 2026: the PM5 printed 6x:30/3:30r (no minutes digit) and the whole screen was saved as one 3:00 piece.
+    assert.deepStrictEqual(C.parseTitle('6x:30/3:30r'), { kind: 'intervals', reps: 6, by: 'time', value: 30, restS: 210 });
+    assert.deepStrictEqual(C.parseTitle('6x:30/:30r'), { kind: 'intervals', reps: 6, by: 'time', value: 30, restS: 30 });
+    assert.deepStrictEqual(C.parseTitle('6x0:30/3:30r'), C.parseTitle('6x:30/3:30r'));
     assert.strictEqual(C.parseTitle('Just Row'), null);
     assert.strictEqual(C.parseTitle(''), null);
   });

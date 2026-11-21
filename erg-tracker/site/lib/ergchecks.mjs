@@ -54,8 +54,9 @@ export function parseScreenDate(text, today) {
  */
 export function parseTitle(title) {
   const t = String(title || '').trim().toLowerCase().replace(/\s/g, '');
-  const clock = '(\\d{1,2}:\\d{2}(?:\\.\\d)?)';
-  const sec = (s) => { const [m, r] = s.split(':'); return Number(m) * 60 + Number(r); };
+  // The PM5 can print a short time without its minutes digit (":30" for 0:30), so minutes are optional.
+  const clock = '(\\d{0,2}:\\d{2}(?:\\.\\d)?)';
+  const sec = (s) => { const [m, r] = s.split(':'); return Number(m || 0) * 60 + Number(r); };
   let x;
   if ((x = t.match(new RegExp(`^(\\d+)x(\\d+)m/${clock}r$`)))) return { kind: 'intervals', reps: +x[1], by: 'distance', value: +x[2], restS: sec(x[3]) };
   if ((x = t.match(new RegExp(`^(\\d+)x${clock}/${clock}r$`)))) return { kind: 'intervals', reps: +x[1], by: 'time', value: sec(x[2]), restS: sec(x[3]) };
