@@ -998,6 +998,60 @@ test('matching several workouts (David, 2026-11-21): total-row saves, poor guess
   assert.strictEqual(g.planSubmittedMs_(''), 0);
 });
 
+test('extra work at practice counts as OYO (David, 2026-11-21)', () => {
+  const W = [
+    { 'Workout ID': 'ZW', Name: '15:00 Warm Up', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'ZS', Name: '6 x 0:30 Sprint', 'Piece #': 1, Reps: 6, 'Work type': 'Time', Work: '0:30', Rest: '3:30', Zone: 'Anaerobic' },
+    { 'Workout ID': 'ZC', Name: '20:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '20:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'Z4', Name: '4 x 15:00', 'Piece #': 1, Reps: 4, 'Work type': 'Time', Work: '15:00', Rest: '1:30', Zone: 'Aerobic' }
+  ];
+  const day = D(2026, 11, 20);
+  const row = (id, order) => ({ Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': id, Published: true, Order: order });
+  const three = [row('ZW', 1), row('ZS', 2), row('ZC', 3)];
+  const e = (id, at, o) => Object.assign({ 'Entry ID': id, 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)', 'Submitted at': at }, o || {});
+  const iv = (id, n, sec, m) => ({ 'Entry ID': id, 'Interval #': n, 'Work s': sec, 'Work m': m });
+  const work = (id, sec, m) => ({ 'Work s': sec, 'Work m': m });
+  const extras = (entries, ivs, sched, today) => JSON.parse(JSON.stringify(g.planExtras(entries, ivs, { A901: 'Varsity' }, { schedule: sched, workouts: W, benchmarks: [], settings: planSettings() }, today || new Date(2026, 10, 21, 9))));
+  // Early 30:00, then warm-up, sprint and cool-down: the 30:00 is extra (the cool-down was done by another entry).
+  const early = e('EX', '2026-11-20 15:30', work(0, 1800, 7000));
+  const day3 = [early, e('EW', '2026-11-20 16:00', work(0, 900, 3000)), e('ES', '2026-11-20 16:28', work(0, 180, 870)), e('EC', '2026-11-20 16:56', work(0, 1200, 4000))];
+  const ivs3 = [iv('EX', 1, 1800, 7000), iv('EW', 1, 900, 3000), ...[1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145)), iv('EC', 1, 1200, 4000)];
+  let x = extras(day3, ivs3, three);
+  assert.deepStrictEqual(x.map((r) => r.entryId), ['EX']);
+  assert.ok(/20:00 Cool Down was done by another entry/.test(x[0].why));
+  // Not until the day is over.
+  assert.deepStrictEqual(extras(day3, ivs3, three, new Date(2026, 10, 20, 19)), []);
+  // Only the 30:00 logged: it is the athlete's practice, not extra.
+  assert.deepStrictEqual(extras([early], [iv('EX', 1, 1800, 7000)], three), []);
+  // Under 15:00 stays practice; a coach-reviewed entry, a test and lifting are never moved.
+  const short = e('EX', '2026-11-20 15:30', work(0, 600, 2300));
+  assert.deepStrictEqual(extras([short, ...day3.slice(1)], [iv('EX', 1, 600, 2300), ...ivs3.slice(1)], three), []);
+  for (const o of [{ 'Review status': 'Reviewed, Full' }, { 'Benchmark ID': 'B1' }, { Activity: 'Lifting' }]) {
+    assert.deepStrictEqual(extras([Object.assign({}, early, o), ...day3.slice(1)], ivs3, three), [], JSON.stringify(o));
+  }
+  // The plan check's own Auto Modified mark does not protect it.
+  assert.deepStrictEqual(extras([Object.assign({}, early, { Status: 'Modified', 'Review status': 'Auto Modified' }), ...day3.slice(1)], ivs3, three).map((r) => r.entryId), ['EX']);
+  // One main workout: an early 30:00 and the full 4 x 15:00. The 30:00 is extra.
+  const main = [e('EX', '2026-11-20 15:30', work(0, 1800, 7000)), e('E4', '2026-11-20 17:00', work(0, 3600, 13000))];
+  const ivs4 = [iv('EX', 1, 1800, 7000), ...[1, 2, 3, 4].map((n) => iv('E4', n, 900, 3250))];
+  assert.deepStrictEqual(extras(main, ivs4, [row('Z4', 1)]).map((r) => r.entryId), ['EX']);
+  // The main workout cut short (3 of 4): the other piece may be the rest of it, so nothing moves.
+  const cut = [iv('EX', 1, 1800, 7000), ...[1, 2, 3].map((n) => iv('E4', n, 900, 3250))];
+  assert.deepStrictEqual(extras([main[0], e('E4', '2026-11-20 17:00', work(0, 2700, 9750))], cut, [row('Z4', 1)]), []);
+  // The same workout twice (a photo and Logbook): not extra work, left alone.
+  const dup = [e('E4', '2026-11-20 17:00', work(0, 3600, 13000)), e('E5', '2026-11-20 18:00', work(0, 3600, 13010))];
+  const ivsDup = [...[1, 2, 3, 4].map((n) => iv('E4', n, 900, 3250)), ...[1, 2, 3, 4].map((n) => iv('E5', n, 900, 3252))];
+  assert.deepStrictEqual(extras(dup, ivsDup, [row('Z4', 1)]), []);
+  // A 45:00 that fits nothing (closest the 15:00 warm-up, 300%) while the sprint and cool-down are logged: extra.
+  const stray = [e('EL', '2026-11-20 15:00', work(0, 2700, 10000)), e('ES', '2026-11-20 16:28', work(0, 180, 870)), e('EC', '2026-11-20 16:56', work(0, 1200, 4000))];
+  const ivsStray = [iv('EL', 1, 2700, 10000), ...[1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145)), iv('EC', 1, 1200, 4000)];
+  x = extras(stray, ivsStray, three);
+  assert.deepStrictEqual(x.map((r) => r.entryId), ['EL']);
+  assert.ok(/fits no planned workout/.test(x[0].why));
+  // ...but not when the sprint was not logged.
+  assert.deepStrictEqual(extras([stray[0], stray[2]], [ivsStray[0], ivsStray[7]], three), []);
+});
+
 test('incomplete workouts (David, 2026-11-17): stopped early, best of several workouts, skipped workout, auto Modified', () => {
   const s = planSettings();
   const W = [

@@ -96,6 +96,84 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   return out;
 }
 
+/** Extra practice work moves to OYO from this many seconds of work (David, 2026-11-21: 15 minutes, like the OYO minimum idea). */
+var PLAN_EXTRA_MIN_S = 900;
+/** Review status of a practice entry moved to OYO as extra work. */
+var PLAN_EXTRA_REVIEW = 'Extra work, OYO';
+
+/**
+ * Extra work at practice (David, 2026-11-21: "someone showed up early to erg for 30 minutes before doing the
+ * assigned workout"). Once a day is over, each athlete's Practice entries that day are matched to the planned
+ * workouts (plannedBestAll) and each workout keeps its best fit. An entry is extra when
+ *   (a) another entry is a better fit for the same workout and that one did at least 90% of it, or
+ *   (b) it is a poor guess (plannedBest `poor`) at a warm-up or cool-down while every other planned workout
+ *       has an entry that is not a guess.
+ * Only 15:00 or more of work (PLAN_EXTRA_MIN_S), never a test, a make-up, Lifting, an Out, or an entry a coach
+ * reviewed (only blank or the plan check's own "Auto Modified" Review status). An entry within 2% of its
+ * keeper's time and meters is left alone: it is more likely the same workout logged twice (photo and Logbook)
+ * than extra work, and moving it would count it twice as OYO. Returns [{ entryId, workout, why }].
+ * An extra entry counts as OYO, quietly (no Slack message). Pure.
+ */
+function planExtras(entries, intervals, squads, inp, today) {
+  var from = new Date(today.getFullYear(), today.getMonth(), today.getDate() - PLAN_FLAG_LOOKBACK_DAYS);
+  var todayKey = dayKey_(today);
+  var byEntry = {};
+  intervals.forEach(function (iv) { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
+  var names = {};
+  (inp.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || id); });
+  var practice = entries.filter(function (e) {
+    return String(e['Session type']) === 'Practice' && isDate_(e.Date) && e.Date >= from && dayKey_(e.Date) < todayKey;
+  });
+  var bestOf = plannedBestAll(practice, squads, inp.schedule, inp.workouts, byEntry);
+  var days = {}, order = [];
+  practice.forEach(function (e) {
+    var best = bestOf[e['Entry ID']];
+    if (!best || !best.row || !best.pieces.length) return;
+    var key = e['Athlete ID'] + '|' + dayKey_(e.Date);
+    if (!days[key]) { days[key] = []; order.push(key); }
+    days[key].push({ e: e, best: best, id: String(best.row['Workout ID']).trim() });
+  });
+  var out = [];
+  order.forEach(function (key) {
+    var list = days[key];
+    var keeper = {};
+    list.forEach(function (x) {
+      var k = keeper[x.id];
+      if (!k || x.best.score < k.best.score - PLAN_TIE) keeper[x.id] = x;
+    });
+    var movable = function (x) {
+      var e = x.e, review = String(e['Review status'] || '').trim();
+      return (review === '' || review === PLAN_FLAG_AUTO) && String(e['Benchmark ID'] || '') === '' &&
+        String(e.Status) !== 'Out' && !/lifting/i.test(String(e.Activity || '')) && Number(e['Work s']) >= PLAN_EXTRA_MIN_S;
+    };
+    if (list.some(function (x) { return String(x.e.Status) === 'Out'; })) return;
+    var first = list[0].e;
+    var mains = planCandidates(first, squads[first['Athlete ID']], inp.schedule, inp.workouts).filter(function (r) {
+      return isActive_(r.Published) && !isWarmCoolWorkout_(names[String(r['Workout ID']).trim()]);
+    });
+    var mainsDone = mains.every(function (r) {
+      var k = keeper[String(r['Workout ID']).trim()];
+      return k && !k.best.poor;
+    });
+    list.forEach(function (x) {
+      if (!movable(x)) return;
+      var k = keeper[x.id];
+      var beaten = k !== x && k.best.fraction >= 0.9 && !planSameWork_(x.e, k.e);
+      var stray = k === x && x.best.poor && isWarmCoolWorkout_(names[x.id]) && mains.length > 0 && mainsDone;
+      var name = names[x.id] || x.id;
+      if (beaten) out.push({ entryId: x.e['Entry ID'], workout: name, why: name + ' was done by another entry' });
+      else if (stray) out.push({ entryId: x.e['Entry ID'], workout: name, why: 'fits no planned workout and the planned workouts were all logged' });
+    });
+  });
+  return out;
+}
+
+/** Two entries with time and meters within 2% of each other: likely the same workout logged twice. */
+function planSameWork_(a, b) {
+  var near = function (x, y) { x = Number(x) || 0; y = Number(y) || 0; return Math.abs(x - y) <= 0.02 * Math.max(x, y); };
+  return near(a['Work s'], b['Work s']) && near(a['Work m'], b['Work m']);
+}
+
 /** The reason for a session that doesn't clearly match any planned workout that day (David, 2026-11-21). */
 function planPoorFitReason_(closest, fraction) {
   return "Doesn't clearly match a planned workout (closest: " + closest + ', ' + Math.round((Number(fraction) || 0) * 100) + '% of its work)';
@@ -213,11 +291,35 @@ function sweepPlanFlags() {
   try {
     var squads = {};
     readObjects_(TABS.ROSTER).forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
+    moveExtrasToOyo_(squads);
     return runPlanFlags_(function (posted) {
       return pendingPlanFlags(readObjects_(TABS.ENTRIES), readObjects_(TABS.INTERVALS), squads, planInputs_(), new Date(), posted);
     });
   } finally {
     lock.releaseLock();
+  }
+}
+
+/**
+ * Moves extra practice work (planExtras) to OYO: Session type OYO, Status blank (as OYO rows are), Review status
+ * "Extra work, OYO", a Coach note, each change in the Change log (Who = Plan check). No Slack message (David,
+ * 2026-11-21: quiet). The caller holds the script lock. Never throws, so the flags still run.
+ */
+function moveExtrasToOyo_(squads) {
+  try {
+    var extras = planExtras(readObjects_(TABS.ENTRIES), readObjects_(TABS.INTERVALS), squads, planInputs_(), new Date());
+    extras.forEach(function (x) {
+      var entry = entryRowById_(x.entryId);
+      if (!entry || String(entry['Session type']) !== 'Practice') return;
+      var note = String(entry['Coach note'] || '');
+      writeEntryCells_(entry, {
+        'Session type': 'OYO', 'Status': '', 'Review status': PLAN_EXTRA_REVIEW,
+        'Coach note': (note ? note + ' | ' : '') + 'Extra work at practice, counted as OYO (' + x.why + ')'
+      }, 'Plan check', 'extra work at practice, counted as OYO');
+    });
+    if (extras.length) SpreadsheetApp.flush();
+  } catch (err) {
+    logChange_({ Who: 'plan check', Tab: TABS.ENTRIES, Note: 'EXTRA WORK CHECK ERROR: ' + err.message });
   }
 }
 

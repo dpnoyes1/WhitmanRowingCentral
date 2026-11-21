@@ -360,24 +360,32 @@ function planFitScore_(intervals, pieces, activity) {
  * 20:00 and a 40:00 erg; the 40:00 must be checked against the 40:00). The first one it matches exactly,
  * else the closest (planFitScore_). Ties go to a workout not in `taken` (Workout IDs the athlete's earlier
  * entries that day already took; see plannedBestAll), then to the earlier one in the day. `intervals` are the
- * entry's own Intervals rows (BikeErg meters are halved here). Returns { row, pieces, poor } or null with no
- * plan that day. `poor` (David, 2026-11-21): the day has several workouts, none matches exactly, and the
- * closest got under half or over double its planned work, so it is a guess; `fraction` is that share.
+ * entry's own Intervals rows (BikeErg meters are halved here). Returns { row, pieces, exact, score, fraction,
+ * poor } or null with no plan that day: `exact` it matches the plan, `score` planFitScore_ (0 when exact),
+ * `fraction` the share of the planned work done, `poor` (David, 2026-11-21) the day has several workouts, none
+ * matches exactly, and the closest got under half or over double its planned work, so it is a guess.
  */
 function plannedBest(entry, athleteSquad, schedule, workouts, intervals, taken) {
   var rows = planCandidates(entry, athleteSquad, schedule, workouts);
   if (!rows.length) return null;
   var ivs = rowEquivalentIntervals(intervals || [], entry.Activity);
   var isTaken = function (r) { return !!(taken && taken[String(r['Workout ID']).trim()]); };
+  var result = function (c, poorOk) {
+    var planned = [];
+    c.pieces.forEach(function (p) { for (var k = 0; k < p.reps; k++) planned.push(p); });
+    var frac = planWorkFraction_(ivs, planned);
+    return { row: c.row, pieces: c.pieces, exact: !!c.exact, score: c.exact ? 0 : c.score, fraction: frac,
+      poor: !!poorOk && !c.exact && (frac < 0.5 || frac > 2) };
+  };
   var exact = null, best = null, tied = [];
   for (var i = 0; i < rows.length; i++) {
     var pieces;
     try { pieces = workoutPieces(workouts || [], rows[i]['Workout ID']); } catch (err) { continue; }
     if (!pieces.length) continue;
-    if (rows.length === 1) return { row: rows[i], pieces: pieces, poor: false };
     var c = { row: rows[i], pieces: pieces };
     if (checkAgainstPlan(ivs, pieces, {}, {}, entry.Activity).matches) {
-      if (!isTaken(rows[i])) return { row: rows[i], pieces: pieces, poor: false };
+      c.exact = true;
+      if (!isTaken(rows[i])) return result(c, rows.length > 1);
       if (!exact) exact = c;
       continue;
     }
@@ -385,15 +393,9 @@ function plannedBest(entry, athleteSquad, schedule, workouts, intervals, taken) 
     if (!best || c.score < best.score - PLAN_TIE) { best = c; tied = [c]; }
     else if (Math.abs(c.score - best.score) <= PLAN_TIE) tied.push(c);
   }
-  if (exact) return { row: exact.row, pieces: exact.pieces, poor: false };
-  if (best) {
-    var pick = tied.filter(function (x) { return !isTaken(x.row); })[0] || best;
-    var planned = [];
-    pick.pieces.forEach(function (p) { for (var k = 0; k < p.reps; k++) planned.push(p); });
-    var frac = planWorkFraction_(ivs, planned);
-    return { row: pick.row, pieces: pick.pieces, poor: frac < 0.5 || frac > 2, fraction: frac };
-  }
-  return { row: rows[0], pieces: [], poor: false };
+  if (exact) return result(exact, rows.length > 1);
+  if (best) return result(tied.filter(function (x) { return !isTaken(x.row); })[0] || best, rows.length > 1);
+  return { row: rows[0], pieces: [], exact: false, score: null, fraction: null, poor: false };
 }
 
 /** Fit scores this close count as a tie (plannedBest). */
