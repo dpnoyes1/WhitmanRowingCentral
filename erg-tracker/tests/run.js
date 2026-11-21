@@ -1244,9 +1244,14 @@ test('logbook: totals only, just row, possible make-up, benchmark shape, unsuppo
   const makeup = g.logbookRows(lbResult({ localTime: '21:00' }), lbCtx([{ date: '2026-10-26', type: 'Practice', status: 'Out' }]));
   assert.deepStrictEqual([makeup.entry['Session type'], makeup.entry['Review status']], ['Make-up', 'Pending: possible make-up']);
   assert.strictEqual(makeup.entry['Make-up for date'].getDate(), 27);
-  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m test' }), lbCtx());
   assert.ok(/possible benchmark/.test(twoK.entry['Coach note']));
   assert.strictEqual(twoK.benchmark, undefined);
+  // David, 2026-11-21: no "test" in the title (or warm up / cool down in it) means it is not a possible test.
+  const cool = g.logbookRows(lbResult({ intervals: [{ timeS: 1200, distanceM: 4100, rate: 20 }], timeS: 1200, distanceM: 4100, name: '20:00 Cool Down' }), lbCtx());
+  assert.ok(!/possible benchmark/.test(cool.entry['Coach note']) && cool.entry['Review status'] === '');
+  const plain20 = g.logbookRows(lbResult({ intervals: [{ timeS: 1200, distanceM: 4100, rate: 20 }], timeS: 1200, distanceM: 4100, name: '' }), lbCtx());
+  assert.strictEqual(plain20.entry['Review status'], '');
   const bike = g.logbookRows(lbResult({ machine: 'bikerg' }), lbCtx());
   assert.strictEqual(bike.entry['Activity'], 'BikeErg');
   assert.ok(g.logbookRows(lbResult({ machine: 'skierg' }), lbCtx()).skip);
@@ -1256,7 +1261,7 @@ test('logbook: totals only, just row, possible make-up, benchmark shape, unsuppo
 });
 
 test('logbook: a 2k-shaped result still waits for the athlete; a plain one counts at once', () => {
-  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m test' }), lbCtx());
   assert.strictEqual(twoK.entry['Review status'], 'Pending');
   assert.strictEqual(g.logbookRows(lbResult(), lbCtx()).entry['Review status'], '');
 });

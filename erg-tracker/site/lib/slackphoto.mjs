@@ -87,10 +87,20 @@ const problemText = (issues) => issues.filter((i) => i.level === 'hold' || i.lev
   .map((i) => (i.athlete || i.coach).replace(/ A coach has been told\.?/, '').replace(/ or type it in with \/log\./, ' or use /log.')).join('\n');
 
 /**
+ * A test always has "test" in its title (David, 2026-11-21), and a title with warm up or cool down in it is never a test.
+ * Applies to the photo's workout title and the Logbook workout name.
+ */
+export function titleSaysTest(title) {
+  const t = String(title || '');
+  return /test/i.test(t) && !/warm|cool/i.test(t);
+}
+
+/**
  * A single RowErg piece of exactly 2000 m or exactly 20:00 might be a benchmark
  * test (David, 2026-11-03). Returns '2000m', '20min' or '' (BikeErg never counts).
  */
-export function benchmarkShape(machine, pieces) {
+export function benchmarkShape(machine, pieces, title) {
+  if (!titleSaysTest(title)) return '';
   if (machine !== 'RowErg' || !pieces || pieces.length !== 1) return '';
   const p = pieces[0];
   if (Number(p.meters) === 2000) return '2000m';
@@ -347,7 +357,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
     await store.delete('pending:' + user);
     for (const item of pending.multi) {
       const tok = randomBytes(9).toString('hex');
-      const c = { user, athlete: who.athlete, ...item, summary: `${item.label}: ${item.summary}`, ask: benchmarkShape(item.machine, item.pieces), multi: true };
+      const c = { user, athlete: who.athlete, ...item, summary: `${item.label}: ${item.summary}`, ask: benchmarkShape(item.machine, item.pieces, item.title), multi: true };
       await store.set('card:' + tok, c);
       if (c.dateAsk) { const t = dateQuestion(c); await say(t, dateBlocks(t, tok, c)); }   // buttons only: a typed date could not say which photo
       else { const n = nextBlocks(c, tok); await say(n.text, n.blocks); }
@@ -355,7 +365,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
     return { status: 'cards', athlete: who.athlete, count: pending.multi.length };
   }
   const token = randomBytes(9).toString('hex');
-  const shape = benchmarkShape(pending.machine, pending.pieces);
+  const shape = benchmarkShape(pending.machine, pending.pieces, pending.title);
   const card = { user, athlete: who.athlete, ...pending, ask: shape };   // keeps the photo copy until she saves
   await store.set('card:' + token, card);
   await store.delete('pending:' + user);

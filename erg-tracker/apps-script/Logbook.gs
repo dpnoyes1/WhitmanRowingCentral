@@ -246,8 +246,15 @@ function sumPieces_(list) {
   };
 }
 
-/** One 2,000 m piece or one 20:00 piece: the shape of a 2k or 20' test. */
+/** A test always has "test" in its title; warm up or cool down in the title is never a test (David, 2026-11-21). Mirrors titleSaysTest in site/lib/slackphoto.mjs. */
+function titleSaysTest_(title) {
+  var t = String(title || '');
+  return /test/i.test(t) && !/warm|cool/i.test(t);
+}
+
+/** One 2,000 m piece or one 20:00 piece with "test" in its title: the shape of a 2k or 20' test. */
 function isBenchmarkShape_(result) {
+  if (!titleSaysTest_(result.name)) return false;
   var d = Number(result.distanceM);
   var t = Number(result.timeS);
   return result.machine === 'rower' && ((d >= 1990 && d <= 2010 && (result.intervals || []).length <= 1) ||
