@@ -936,6 +936,68 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.ok(g.OPS_TRIGGERS.indexOf('sweepPlanFlags') >= 0);
 });
 
+test('matching several workouts (David, 2026-11-21): total-row saves, poor guesses, ties in the order done', () => {
+  const s = planSettings();
+  const W = [
+    { 'Workout ID': 'YW', Name: '15:00 Warm Up', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'YS', Name: '6 x 0:30 Sprint', 'Piece #': 1, Reps: 6, 'Work type': 'Time', Work: '0:30', Rest: '3:30', Zone: 'Anaerobic' },
+    { 'Workout ID': 'YC', Name: '20:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '20:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'YC15', Name: '15:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' }
+  ];
+  const day = D(2026, 11, 20);
+  const row = (id, order) => ({ Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': id, Published: true, Order: order });
+  const sched = [row('YW', 1), row('YS', 2), row('YC', 3)];
+  const entry = (id, at) => ({ 'Entry ID': id, 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)', 'Submitted at': at });
+  const iv = (id, n, sec, m) => ({ 'Entry ID': id, 'Interval #': n, 'Work s': sec, 'Work m': m });
+  const best = (e, ivs, sc) => g.plannedBest(e, 'Varsity', sc || sched, W, ivs);
+  // Six 0:30 intervals match the sprint exactly.
+  const six = [1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145));
+  assert.strictEqual(best(entry('ES'), six).row['Workout ID'], 'YS');
+  // The same sprint saved as one 3:00 total row (Nov 20) is compared on total work: the sprint, not the 15:00 warm-up.
+  const one = [iv('E1', 1, 180, 869)];
+  let b = best(entry('E1'), one);
+  assert.strictEqual(b.row['Workout ID'], 'YS');
+  assert.strictEqual(b.poor, false);
+  // A 14:00 warm-up still finds the warm-up, a 19:00 cool-down the cool-down.
+  assert.strictEqual(best(entry('E2'), [iv('E2', 1, 840, 3000)]).row['Workout ID'], 'YW');
+  assert.strictEqual(best(entry('E3'), [iv('E3', 1, 1140, 4000)]).row['Workout ID'], 'YC');
+  // A 5:00 row fits nothing well: closest is the warm-up, marked as a guess.
+  b = best(entry('E4'), [iv('E4', 1, 300, 1100)]);
+  assert.strictEqual(b.row['Workout ID'], 'YW');
+  assert.strictEqual(b.poor, true);
+  assert.ok(Math.abs(b.fraction - 1 / 3) < 1e-9);
+  // One workout that day: never a guess, the old rules apply.
+  assert.strictEqual(best(entry('E4'), [iv('E4', 1, 300, 1100)], [row('YW', 1)]).poor, false);
+  // The coach message says it is a guess, flags it even though the closest is a warm-up, and keeps it Modified, not Missed.
+  const inp = { schedule: sched, workouts: W, benchmarks: [], settings: s };
+  const flags = (entries, ivs) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, { A901: 'Varsity' }, inp, new Date(2026, 10, 21, 9), [])));
+  let f = flags([entry('E4', '2026-11-20 16:30')], [iv('E4', 1, 300, 1100)]);
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].flag, "Doesn't clearly match a planned workout (closest: 15:00 Warm Up, 33% of its work). Not logged: 6 x 0:30 Sprint");
+  assert.deepStrictEqual(f[0].missedIds, []);
+  // Nov 20 again: warm-up, the sprint as a 3:00 total row, cool-down. The sprint is not "Not logged"; it is flagged as 1 of 6 pieces.
+  f = flags([entry('EW', '2026-11-20 16:00'), entry('E1', '2026-11-20 16:28'), entry('EC', '2026-11-20 16:56')],
+    [iv('EW', 1, 900, 3000), ...one, iv('EC', 1, 1200, 4000)]);
+  assert.strictEqual(f.length, 1);
+  assert.deepStrictEqual(f[0].entryIds, ['E1']);
+  assert.ok(!/Not logged/.test(f[0].flag), f[0].flag);
+  // Ties go in the order done: a 15:00 warm-up and a 15:00 cool-down, two 15:00 rows.
+  const same = [row('YW', 1), row('YS', 2), row('YC15', 3)];
+  const first = entry('EA', '2026-11-20 16:00'), second = entry('EB', '2026-11-20 16:56');
+  const ivs = { EA: [iv('EA', 1, 900, 3000)], EB: [iv('EB', 1, 900, 3100)] };
+  let all = g.plannedBestAll([second, first], { A901: 'Varsity' }, same, W, ivs);   // sheet order reversed: time decides
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  all = g.plannedBestAll([first, second], { A901: 'Varsity' }, same, W, ivs);
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  // Same submitted time: sheet order decides. Short pieces tie too (14:00 and 14:00).
+  const short = { EA: [iv('EA', 1, 840, 3000)], EB: [iv('EB', 1, 840, 3000)] };
+  all = g.plannedBestAll([entry('EA', '2026-11-20 18:24'), entry('EB', '2026-11-20 18:24')], { A901: 'Varsity' }, same, W, short);
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  // No tie: a different athlete or a later day does not take anything.
+  assert.strictEqual(g.planSubmittedMs_('2026-11-20 16:00') < g.planSubmittedMs_('2026-11-20 16:56'), true);
+  assert.strictEqual(g.planSubmittedMs_(''), 0);
+});
+
 test('incomplete workouts (David, 2026-11-17): stopped early, best of several workouts, skipped workout, auto Modified', () => {
   const s = planSettings();
   const W = [

@@ -65,6 +65,38 @@ export function parseTitle(title) {
   return null;
 }
 
+/**
+ * How a screen's rows are saved (David, 2026-11-21). The title decides when it can be read:
+ * { kind: 'intervals', reps, by, value, restS, from: 'title' } or { kind: 'single', from: 'title' }.
+ * When it can't be read (on Nov 20 "6x:30/3:30r" was missed and six intervals were saved as one 3:00 piece),
+ * an interval screen is still known by its rest: rest meters ("r1957") or a Total Time longer than the work,
+ * with two or more rows whose times add up to the total row (and meters too, when the rows show them).
+ * Those rows are intervals ({ ..., from: 'rows' }; rest per piece = the extra Total Time over the rows, a rest
+ * after each piece). A single piece shows no rest, so its split rows are never taken for intervals. Else
+ * { kind: 'single', from: '' }.
+ */
+export function screenShape(read) {
+  const title = parseTitle(read.title);
+  if (title) return title.kind === 'intervals' ? { ...title, from: 'title' } : { kind: 'single', from: 'title' };
+  const pieces = read.pieces || [];
+  const n = pieces.length;
+  const single = { kind: 'single', from: '' };
+  if (n < 2 || read.totalTimeS == null || pieces.some((p) => p.timeS == null)) return single;
+  const extra = read.totalTimeInclRestS != null ? read.totalTimeInclRestS - read.totalTimeS : null;
+  if (read.restMeters == null && !(extra > 1)) return single;
+  const sum = tenths(pieces.reduce((a, p) => a + p.timeS, 0));
+  if (Math.abs(sum - read.totalTimeS) > 0.1 * n + 0.3) return single;
+  const perPiece = read.metersColumn !== 'none' && read.metersColumn !== 'unclear' && pieces.every((p) => p.meters != null);
+  if (perPiece && read.totalMeters != null && Math.abs(pieces.reduce((a, p) => a + p.meters, 0) - read.totalMeters) > 2) return single;
+  return { kind: 'intervals', reps: n, by: 'time', value: null, restS: extra > 1 ? tenths(extra / n) : 0, from: 'rows' };
+}
+
+/** A workout title worth a coach note when it can't be read: anything printed except Just Row. */
+export function titleNotUnderstood(title) {
+  const t = String(title || '').trim();
+  return !!t && !parseTitle(t) && !/^just\s*row$/i.test(t);
+}
+
 /** Meters per split unit: the RowErg split is per 500 m, the BikeErg split per 1000 m. */
 const splitUnit = (machine) => (machine === 'BikeErg' ? 1000 : 500);
 

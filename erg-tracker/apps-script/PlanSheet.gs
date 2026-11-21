@@ -135,9 +135,11 @@ function checkWeekAgainstPlan() {
   readObjects_(TABS.INTERVALS).forEach(function (iv) { (byEntry[iv['Entry ID']] = byEntry[iv['Entry ID']] || []).push(iv); });
 
   var out = [['Date', 'Athlete', 'Session type', 'Planned workout', 'Did the plan', 'Hit target', 'Detail', 'Flag']];
-  readObjects_(TABS.ENTRIES).forEach(function (e) {
+  var entries = readObjects_(TABS.ENTRIES);
+  var bestOf = plannedBestAll(entries, squads, inp.schedule, inp.workouts, byEntry);   // ties go in the order done
+  entries.forEach(function (e) {
     if (!(e.Date instanceof Date) || e.Date < start || e.Date >= end || e.Status === 'Out') return;
-    var best = plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
+    var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
     if (!best) return;
     var planned = best.row, pieces = best.pieces;
     var bases = {};

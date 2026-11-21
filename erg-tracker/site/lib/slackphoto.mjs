@@ -6,7 +6,7 @@
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES, MAX_DOWNLOAD_BYTES } from './ergscreen.mjs';
-import { runChecks, parseScreenDate, parseTitle, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
+import { runChecks, parseScreenDate, screenShape, titleNotUnderstood, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
 import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
 import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { getFeed } from './feed.mjs';
@@ -46,18 +46,28 @@ async function defaultStore() {
 
 const meters = (n) => `${n} m`;
 
-/** What goes in the entry: one piece of totals for a single piece, the pieces for an interval workout. */
+/**
+ * What goes in the entry: one piece of totals for a single piece, the pieces for an interval workout
+ * (from the title, or from the rows when the title can't be read but the screen shows rest; screenShape).
+ */
 export function entryPieces(read) {
-  const title = parseTitle(read.title);
-  if (title && title.kind === 'intervals' && read.pieces.length) {
+  const shape = screenShape(read);
+  if (shape.kind === 'intervals' && read.pieces.length) {
     return read.pieces.map((p, i) => ({
       timeS: p.timeS,
-      meters: p.meters != null ? p.meters : (title.by === 'distance' ? title.value : null),
+      meters: p.meters != null ? p.meters : (shape.by === 'distance' ? shape.value : null),
       rate: p.rate,
-      restS: i < read.pieces.length - 1 ? title.restS : 0
+      restS: i < read.pieces.length - 1 ? shape.restS : 0
     }));
   }
   return [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }];
+}
+
+/** The coach note for a title ErgBot can't read (David, 2026-11-21), so a new screen format is seen the first time. '' when the title is fine. */
+export function titleNote(read) {
+  if (!titleNotUnderstood(read.title)) return '';
+  const shape = screenShape(read);
+  return `Title "${String(read.title).trim().slice(0, 40)}" not understood` + (shape.from === 'rows' ? `; saved as ${read.pieces.length} intervals from the rows` : '');
 }
 
 /** One line describing the read, for the coach. */
@@ -282,7 +292,8 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
       const shown = parseScreenDate(read.date, today);
       const useShown = shown && Math.abs(dayDiff(today, shown)) <= DATE_OK_DAYS && shown <= today;
       const dateAsk = !useShown && String(read.date || '').trim() ? { screen: String(read.date).trim().slice(0, 40), shown: shown && shown <= today ? shown : null } : null;
-      const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
+      const tnote = titleNote(read);   // first, so the 400-character cut never drops it
+      const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...(tnote ? [tnote] : []), ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
       if (pieces.length === 1 && read.pieces.length > 1 && !unsure) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
       // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
       let copy = '';

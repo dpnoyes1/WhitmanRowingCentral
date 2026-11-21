@@ -5,7 +5,7 @@ import * as R from '../lib/ergscreen.mjs';
 import * as C from '../lib/ergchecks.mjs';
 import { makeKeepCopy, shrinkForReading, READ_TARGET_BYTES, TARGET_BYTES } from '../lib/photocopy.mjs';
 import sharp from 'sharp';
-import { entryPieces } from '../lib/slackphoto.mjs';
+import { entryPieces, titleNote } from '../lib/slackphoto.mjs';
 
 const TODAY = '2026-10-28';
 
@@ -157,6 +157,43 @@ export default function photoTests(test) {
     const ps = entryPieces(rd);
     assert.strictEqual(ps.length, 6);
     assert.ok(ps.every((x) => x.timeS === 30));
+  });
+
+  test('photo: an interval screen whose title cannot be read is saved from its rows (rest shows)', () => {
+    const rows = [145, 144, 147, 142, 145, 146].map((m) => piece(':30.0', m, '1:43.4', 38));
+    const base = { title: '6x?30/3?30r', total: { time: '3:00.0', meters: 869, avg_split: '1:43.5', avg_rate: 38 }, meters_column: 'per_piece', pieces: rows, flags: [] };
+    // rest meters at the bottom and a Total Time of work plus 6 rests
+    let ps = entryPieces(read({ ...base, rest_meters: 1957, total_time_incl_rest: '24:00.0' }));
+    assert.strictEqual(ps.length, 6);
+    assert.deepStrictEqual(ps.map((x) => x.restS), [210, 210, 210, 210, 210, 0]);
+    assert.deepStrictEqual(ps.map((x) => x.meters), [145, 144, 147, 142, 145, 146]);
+    // rest meters alone: intervals, rest unknown
+    ps = entryPieces(read({ ...base, rest_meters: 1957 }));
+    assert.strictEqual(ps.length, 6);
+    assert.strictEqual(ps[0].restS, 0);
+    // no sign of rest: a single piece with split rows stays one piece
+    assert.strictEqual(entryPieces(read({ ...base, rest_meters: null, total_time_incl_rest: '' })).length, 1);
+    // rows that don't add up to the total are not taken for intervals
+    assert.strictEqual(entryPieces(read({ ...base, rest_meters: 1957, pieces: rows.slice(0, 5) })).length, 1);
+    // a single 20:00 with equal 4:00 split rows never becomes five intervals
+    const twenty = read({ title: '', total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 }, meters_column: 'cumulative',
+      pieces: [1000, 2000, 3000, 4000, 5000].map((m) => piece('4:00.0', m, '2:00.0', 22)) });
+    assert.strictEqual(entryPieces(twenty).length, 1);
+    // the coach is told about a title that could not be read
+    assert.ok(/not understood; saved as 6 intervals from the rows/.test(titleNote(read({ ...base, rest_meters: 1957 }))));
+    assert.strictEqual(titleNote(read({ ...base, title: '6x:30/3:30r', rest_meters: 1957 })), '');
+    assert.strictEqual(titleNote(read({ ...base, title: 'Just Row' })), '');
+    assert.strictEqual(titleNote(read({ ...base, title: '' })), '');
+    assert.ok(/^Title "v500m\/1:00r" not understood$/.test(titleNote(read({ title: 'v500m/1:00r' }))));
+  });
+
+  test('photo: every PM5 title seen on real screens so far is understood', () => {
+    // Titles ErgBot read from team photos through 2026-11-20 (no names or results here). Add new ones as they appear.
+    const seen = {
+      '2000m': 'single', '5000m': 'single', '20:00': 'single', '20:06': 'single', '12:53': 'single',
+      '4x15:00/1:30r': 'intervals', '4x15:00/2:00r': 'intervals', '3x20:00/2:00r': 'intervals', '6x:30/3:30r': 'intervals',
+    };
+    for (const [t, kind] of Object.entries(seen)) assert.strictEqual((C.parseTitle(t) || {}).kind, kind, t);
   });
 
   test('photo: titles', () => {

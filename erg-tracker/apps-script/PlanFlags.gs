@@ -35,6 +35,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   var names = {};
   (inp.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || id); });
   var groups = {}, order = [];
+  var bestOf = plannedBestAll(entries, squads, inp.schedule, inp.workouts, byEntry);   // ties go in the order done
   entries.forEach(function (e) {
     var type = String(e['Session type'] || '');
     if (type !== 'Practice' && type !== 'Make-up') return;
@@ -42,7 +43,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     var review = String(e['Review status'] || '').trim();
     if (/reject|^pending/i.test(review)) return;
     try {
-      var best = plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
+      var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
       if (!best || !best.pieces.length) return;
       var key = e['Athlete ID'] + '|' + dayKey_(best.row.Date);
       if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], done: {}, out: false }; order.push(key); }
@@ -57,10 +58,13 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
         if (bw) bases[b] = bw.watts;
       });
       var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
-      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17).
-      var warmCool = isWarmCoolWorkout_(names[String(best.row['Workout ID']).trim()]);
-      var flag = warmCool ? '' : planFlag(e, c);
-      var missed = !!flag && !!c.notDone;
+      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17). A poor
+      // guess (plannedBest `poor`: nothing on a several-workout day fits well) is always flagged and says it is a
+      // guess, and is Modified, never Missed, since it isn't known which workout it was (David, 2026-11-21).
+      var name = names[String(best.row['Workout ID']).trim()] || String(best.row['Workout ID']).trim();
+      var warmCool = isWarmCoolWorkout_(name);
+      var flag = best.poor ? planPoorFitReason_(name, best.fraction) : warmCool ? '' : planFlag(e, c);
+      var missed = !!flag && !!c.notDone && !best.poor;
       g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
@@ -90,6 +94,11 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     });
   });
   return out;
+}
+
+/** The reason for a session that doesn't clearly match any planned workout that day (David, 2026-11-21). */
+function planPoorFitReason_(closest, fraction) {
+  return "Doesn't clearly match a planned workout (closest: " + closest + ', ' + Math.round((Number(fraction) || 0) * 100) + '% of its work)';
 }
 
 /** "Tue Oct 28" */
