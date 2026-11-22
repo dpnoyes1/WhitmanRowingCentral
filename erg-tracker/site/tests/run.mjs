@@ -1309,6 +1309,10 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
+  assert.ok(/marked Modified/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
+  assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
+  assert.ok(!/Modified/.test(SL.flagReply('Missed')));
+  assert.strictEqual(SL.flagReply(false), '');
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
   assert.ok(/Coach greta logged a workout for you \(Practice, Run, 1 piece\)/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', by: 'Coach greta', sessionType: 'Practice', activity: 'Run', pieces: 1 })));
   assert.ok(/marked you Out/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', entryStatus: 'Out' })));

@@ -1116,7 +1116,13 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   const wf = (entries, ivs) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, squads, withWarm, new Date(2026, 10, 11, 9), [])));
   assert.deepStrictEqual(wf([eW, e40, e20], ivW.concat(both)), [], 'short warm-up, both workouts done: no flag');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([eW], ivW, squads, withWarm, new Date(2026, 10, 10, 18), []))), [], 'same day, warm-up alone: no flag');
-  assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['EW', 'E40'], 'a skipped workout still flags the day');
+  assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['E40'], 'a skipped workout still flags the day, but not the warm-up (David, 2026-11-22)');
+  const ros = { 'Slack member ID': 'UFAKE01' };
+  assert.ok(/marked Missed/.test(g.logbookFlagNotice({ Date: '' }, ros, true).notice), 'Logbook DM says Missed when Missed');
+  assert.ok(/marked Modified/.test(g.logbookFlagNotice({ Date: '' }, ros, false).notice));
+  const onlyWarm = wf([eW], ivW);
+  assert.deepStrictEqual(onlyWarm[0].entryIds, ['EW'], 'only the warm-up logged: it carries the day\'s Modified mark');
+  assert.ok(/Not logged: 40 min steady, 20 min steady|Not logged: .*40/.test(onlyWarm[0].flag), onlyWarm[0].flag);
   // Stopped early on the 40:00, and the 20:00 skipped: one message for the day.
   f = flags([e40], [Object.assign(iv(1, 1800), { 'Entry ID': 'E40' })], new Date(2026, 10, 11, 9));
   assert.strictEqual(f.length, 1);

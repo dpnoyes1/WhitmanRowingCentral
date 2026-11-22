@@ -7,7 +7,7 @@
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES, MAX_DOWNLOAD_BYTES } from './ergscreen.mjs';
 import { runChecks, parseScreenDate, screenShape, titleNotUnderstood, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
-import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
+import { todayEastern, NOT_ON_ROSTER, fyiText, flagReply } from './slacklog.mjs';
 import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { getFeed } from './feed.mjs';
 import { RUN_PHOTO_CHECK } from './runscreen.mjs';
@@ -486,7 +486,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
     const kind = result.sessionType === 'OYO' ? ' as OYO (on your own)' : result.sessionType === 'Make-up' && result.makeupFor ? ` as a make-up for ${dateLabel(result.makeupFor)}` : '';
-    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}${kind}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '') +
+    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}${kind}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + flagReply(result.flagged) +
       (card.check ? ' The rows on the photo didn\'t add up to the total, so it was saved from the total row and a coach will check it.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : ''));
   } else if (result.status === 'merged') {

@@ -151,12 +151,22 @@ export function validateLogForm(f, today = todayEastern()) {
 export const NOT_ON_ROSTER = ':lock: I don\'t know this Slack account yet. Ask a coach to add your Slack member ID to the Roster, or use the Form: whitmanrowingcentral.netlify.app/logworkout';
 
 /** DM text after the Sheet answers. */
+/**
+ * The sentence added to a save reply when the plan check marked it (David, 2026-11-22: say Missed when it is
+ * Missed). `flagged` is 'Missed', 'Modified', true (an older Sheet script: Modified) or false.
+ */
+export function flagReply(flagged) {
+  if (!flagged) return '';
+  if (flagged === 'Missed') return ' It is under half of the planned workout, so it is marked Missed (the make-up is still open) and the coaches were told.';
+  return ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.';
+}
+
 export function logReply(result) {
   if (result.status === 'ok') {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
     if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
     const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
-    return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '');
+    return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + flagReply(result.flagged);
   }
   if (result.status === 'duplicate') return ':information_source: That was already saved. Nothing changed.';
   if (result.status === 'not_allowed') return NOT_ON_ROSTER;

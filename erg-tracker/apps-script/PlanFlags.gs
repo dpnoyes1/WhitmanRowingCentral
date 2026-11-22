@@ -65,7 +65,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       var warmCool = isWarmCoolWorkout_(name);
       var flag = best.poor ? planPoorFitReason_(name, best.fraction) : warmCool ? '' : planFlag(e, c);
       var missed = !!flag && !!c.notDone && !best.poor;
-      g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed });
+      g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed, warmCool: warmCool && !best.poor });
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
@@ -82,7 +82,10 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
         if (skipped.indexOf(names[id] || id) < 0) skipped.push(names[id] || id);
       });
     }
-    var hit = skipped.length ? g.rows : g.rows.filter(function (x) { return x.flag; });
+    // A skipped workout marks the day's other work Modified, but never a warm-up or cool-down (David, 2026-11-22),
+    // unless that is all that was logged, so the day still reads Modified.
+    var hit = g.rows.filter(function (x) { return x.flag || (skipped.length && !x.warmCool); });
+    if (!hit.length && skipped.length) hit = g.rows;
     if (!hit.length) return;
     var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; });
     if (skipped.length) reasons.push('Not logged: ' + skipped.join(', '));
@@ -326,7 +329,8 @@ function moveExtrasToOyo_(squads) {
 /**
  * Right after a Slack or site save (the caller holds the script lock): runs the plan check for that
  * athlete's recent entries, so a workout that isn't the plan is marked Modified and posted at once.
- * True when the saved entry was flagged. Never throws: the save has already happened.
+ * 'Missed' or 'Modified' when the saved entry was flagged (so the reply says the mark it got), else false.
+ * Never throws: the save has already happened.
  */
 function planFlagsAfterSave_(entry, squads) {
   try {
@@ -337,7 +341,10 @@ function planFlagsAfterSave_(entry, squads) {
     var hit = false;
     runPlanFlags_(function (posted) {
       var items = pendingPlanFlags(mine, ivs, squads, planInputs_(), new Date(), posted);
-      hit = items.some(function (it) { return it.entryIds.indexOf(entry['Entry ID']) >= 0; });
+      items.forEach(function (it) {
+        if (it.entryIds.indexOf(entry['Entry ID']) < 0) return;
+        hit = (it.missedIds || []).indexOf(entry['Entry ID']) >= 0 ? 'Missed' : 'Modified';
+      });
       return items;
     });
     return hit;
