@@ -6,6 +6,8 @@ const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
 // Photo first (David, 2026-11-17, live): On, picking a screenshot fills distance and time (via /api/run-photo,
 // which itself answers 404 until RUN_PHOTO_CHECK is true) and the athlete checks the numbers and saves. Typing stays as the fallback.
 const PHOTO_FIRST = true;
+/** Machines that show no distance: the athlete can leave Distance blank and it is saved as 0 m (minutes still count). */
+export const NO_DISTANCE = ['Stair stepper', 'Elliptical'];
 const UNITS = { mi: ['miles', 1609.344], km: ['kilometers', 1000], m: ['meters', 1] };
 
 export function paceText(timeS, meters) {
@@ -50,7 +52,7 @@ export function openLogMine(ctx) {
 </div>
         <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'On my own'], ['practice', 'At practice'], ['makeup', 'Make up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
           ${S.type === 'makeup' ? '<span class="muted small">Counts as that day\'s practice, marked Modified.</span>' : ''}</div>
-        <div class="lf-row">${field('Distance', 'dist', 'inputmode="decimal" placeholder="3.1"')}
+        <div class="lf-row">${field(NO_DISTANCE.includes(S.activity) ? 'Distance (optional)' : 'Distance', 'dist', 'inputmode="decimal" placeholder="' + (NO_DISTANCE.includes(S.activity) ? 'leave blank' : '3.1') + '"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
@@ -61,7 +63,7 @@ export function openLogMine(ctx) {
     const f = app.querySelector('#logmine');
     f.querySelectorAll('[data-f]').forEach((el) => {
       el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
-      if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; };
+      if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; if (el.dataset.f === 'activity') draw(); };
     });
     f.querySelectorAll('#lm-type button').forEach((b) => { b.onclick = () => { S.type = b.dataset.type; S.msg = S.err = ''; draw(); }; });
     const pick = f.querySelector('#lm-photo');
@@ -86,10 +88,11 @@ export function openLogMine(ctx) {
     f.onsubmit = async (ev) => {
       ev.preventDefault();
       const sec = parseDuration(S.time), m = meters();
-      if (!m) { S.err = 'Type your distance.'; draw(); return; }
+      const noDist = NO_DISTANCE.includes(S.activity) && !String(S.dist).trim();
+      if (!m && !noDist) { S.err = 'Type your distance.'; draw(); return; }
       if (!sec) { S.err = 'Type your time like 25:30.'; draw(); return; }
       S.busy = true; S.err = S.msg = ''; draw();
-      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m}`, note: S.note.trim() };
+      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim() };
       const pace = paceText(sec, m);
       try {
         const res = await fetch('/api/log-mine', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: S.rid, form, ...(S.photo ? { photo: S.photo } : {}) }) });

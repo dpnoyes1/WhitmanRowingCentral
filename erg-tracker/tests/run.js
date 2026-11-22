@@ -1381,6 +1381,7 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   assert.throws(() => g.parsePiecesText('10:00'), /Piece 1: work meters are missing/);
   assert.strictEqual(g.parsePiecesText('1:01:52.0, 10000')[0].WORK_TIME, '1:01:52.0', 'a run over an hour is accepted');
   assert.strictEqual(g.parseTime('1:01:52.0'), 3712);
+  assert.strictEqual(g.parsePiecesText('1:00:00.0, 0')[0].WORK_M, '0', 'a stair stepper has no distance: 0 m is accepted');
   assert.throws(() => g.parsePiecesText('10:00,2650\n10:99,2650'), /Piece 2: work time "10:99" should look like/);
   assert.throws(() => g.parsePiecesText(Array(11).fill('1:00,100').join('\n')), /At most 10/);
 
