@@ -113,10 +113,13 @@ export function openLogMine(ctx) {
         const out = await res.json().catch(() => ({}));
         if (res.status === 401) { signedOut(); return; }
         if (!res.ok) S.err = out.error || 'Nothing was saved.';
-        else {
+        else if (out.status === 'already' || out.status === 'duplicate') {
+          // A repeat of a workout already saved (David, 2026-11-22): a warning, not a second "Saved". The form stays as typed.
+          S.err = `Already saved${out.savedAt ? ' at ' + out.savedAt : ''}. Not added again. Press Save once.`;
+        } else {
           const when = S.date === days[0] ? 'today' : S.date === days[1] ? 'yesterday' : fmtDay(S.date);
           const what = `${S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
-          S.done = { what, pace, already: out.status === 'already' || out.status === 'duplicate', savedAt: out.savedAt || '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
+          S.done = { what, pace, already: false, savedAt: '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
           Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', rid: rid() });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
