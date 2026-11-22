@@ -4,7 +4,7 @@
 export const ACTIVITIES = ['Erg (RowErg)', 'BikeErg', 'Bike', 'Run', 'Stair stepper', 'Swim', 'Elliptical', 'Lifting'];
 export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 export const MAX_INTERVALS = 10;
-export const TIME_RE = /^\s*\d{1,3}:[0-5]\d(\.\d)?\s*$/;
+export const TIME_RE = /^\s*(\d{1,2}:[0-5]\d:[0-5]\d(\.\d)?|\d{1,3}:[0-5]\d(\.\d)?)\s*$/;   // m:ss.0 or h:mm:ss.0
 
 const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice'], ['test', "Test (2k / 20')"]];
 const TEST_WHERE = [['practice', 'At practice'], ['oyo', 'On my own']];
@@ -81,7 +81,7 @@ export function piecesError(textValue) {
     const f = lines[i].split(',').map((x) => x.trim());
     const where = `Piece ${i + 1}: `;
     if (f.length > 5) return where + 'too many commas (work time, meters, rate, rest time, rest meters)';
-    const time = (v, what) => (v !== '' && !TIME_RE.test(v) ? `${where}${what} "${v}" should look like 2:00.0` : '');
+    const time = (v, what) => (v !== '' && !TIME_RE.test(v) ? `${where}${what} "${v}" should look like 2:00.0 or 1:01:52.0` : '');
     const num = (v, what, max) => (v !== '' && (!/^\d+(\.\d+)?$/.test(v) || Number(v) > max) ? `${where}${what} "${v}" is not a number I can use` : '');
     if (f[0] === '') return where + 'work time is missing';
     let e = time(f[0], 'work time');
@@ -93,7 +93,7 @@ export function piecesError(textValue) {
   return '';
 }
 
-const toSeconds = (t) => { const m = /^(\d+):([0-5]\d(?:\.\d)?)$/.exec(String(t).trim()); return m ? Number(m[1]) * 60 + Number(m[2]) : NaN; };
+const toSeconds = (t) => { const m = /^(?:(\d{1,2}):)?(\d+):([0-5]\d(?:\.\d)?)$/.exec(String(t).trim()); return m ? Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : NaN; };
 
 /** What's wrong with a Test's pieces box (one piece of exactly 2000 m or 20:00), or ''. Call after piecesError is ''. */
 export function testPieceError(textValue) {

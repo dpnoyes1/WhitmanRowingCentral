@@ -2816,6 +2816,9 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
   [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
   assert.strictEqual(parseDuration(autoClock('2530')), 1530);
+  assert.strictEqual(SL.piecesError('1:01:52.0, 10000'), '', 'H:MM:SS pieces are accepted');
+  assert.strictEqual(SL.piecesError('1:01:52, 10000'), '');
+  assert.match(SL.piecesError('1:61:52, 10000'), /should look like/);
   ['', 'abc', '25:75', '1:2:3:4'].forEach((x) => assert.strictEqual(parseDuration(x), null, x));
   assert.strictEqual(paceText(1500, 5000), 'Pace 8:03 per mile, 5:00 per km.');
   assert.strictEqual(paceText(0, 5000), '');

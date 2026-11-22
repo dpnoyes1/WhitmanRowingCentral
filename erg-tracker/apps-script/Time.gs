@@ -4,8 +4,8 @@
  * way out (display). Never store formatted time text in a data tab.
  */
 
-/** Regex used by the Google Form to validate m:ss.0 input. */
-var TIME_PATTERN = '^\\s*\\d{1,3}:[0-5]\\d(\\.\\d)?\\s*$';
+/** Regex used by the Form, /log and the site to validate m:ss.0 input; h:mm:ss.0 is also fine (a run over an hour). */
+var TIME_PATTERN = '^\\s*(\\d{1,2}:[0-5]\\d:[0-5]\\d(\\.\\d)?|\\d{1,3}:[0-5]\\d(\\.\\d)?)\\s*$';
 
 /**
  * Parses "m:ss.0", "m:ss", "h:mm:ss.0" or a plain number of seconds.
