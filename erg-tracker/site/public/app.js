@@ -1322,7 +1322,7 @@ async function showLogFor() {
   const dayOpts = Array.from({ length: 15 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
   const S = { athlete: '', date: today, type: 'practice', status: 'full', makeup: dayOpts[1], activity: 'Erg (RowErg)', photo: '', photoName: '', mode: 'single', time: '', dist: '', rate: '', pieces: '', rpe: '', drag: '', note: '', test: null, msg: '', err: '', busy: false, rid: crypto.randomUUID ? crypto.randomUUID() : String(Date.now()) };
   const onErg = () => S.activity === 'Erg (RowErg)';
-  const tenths = (t) => { const m = /^(\d{1,3}):([0-5]\d)(?:\.(\d))?$/.exec(String(t).trim()); return m ? (+m[1] * 60 + +m[2]) * 10 + (m[3] ? +m[3] : 0) : null; };
+  const tenths = (t) => { const m = /^(?:(\d{1,2}):)?(\d{1,3}):([0-5]\d)(?:\.(\d))?$/.exec(String(t).trim()); return m ? ((+(m[1] || 0)) * 3600 + +m[2] * 60 + +m[3]) * 10 + (m[4] ? +m[4] : 0) : null; };
   const lines = () => String(S.pieces).split(/\r?\n/).map((l) => l.trim()).filter(Boolean);
   const pieceText = () => (S.mode === 'single' ? `${S.time.trim()}, ${S.dist.replace(/[,\s]/g, '')}${onErg() && S.rate.trim() ? ', ' + S.rate.trim() : ''}` : lines().join('\n'));
   /** The test this entry could be, or null: exactly one piece, 2000 m, 500 m or 100 m (any time), or exactly 20:00.0. */
