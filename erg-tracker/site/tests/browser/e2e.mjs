@@ -86,8 +86,11 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   assert.equal(await page.inputValue('[data-f=time]'), '25:30');
   assert.match(await page.textContent('#lm-pace'), /\d:\d\d/);
   await page.click('#logmine button[type=submit]');
-  await page.waitForSelector('#logmine .notice');
-  assert.match(await page.textContent('#logmine .notice'), /^Saved/);
+  await page.waitForSelector('.logdone');
+  assert.match(await page.textContent('.logdone h2'), /^Saved/);
+  assert.match(await page.textContent('.logdone-what'), /Run, 3\.1 miles, 25:30, today/);
+  await page.click('#lm-again');
+  await page.waitForSelector('#logmine');
   const log = server.state.logs.at(-1);
   assert.equal(log.athleteId, server.athlete.id);
   assert.equal(log.self, true);

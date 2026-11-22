@@ -1783,6 +1783,18 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
   ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  // identical workout saved again (Nov 22): same athlete, day, activity, type, time and meters, not Rejected
+  const dupRow = (o) => Object.assign({ 'Athlete ID': 'A004', Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566, Source: 'Site', 'Review status': '', 'Submitted at': '2026-11-22 14:21' }, o);
+  const newRun = { Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566 };
+  assert.ok(g.siteDuplicateEntry_([dupRow({})], 'A004', newRun), 'identical row is a repeat');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Athlete ID': 'A020' })], 'A004', newRun), null, 'other athlete');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Date: new Date(2026, 10, 21) })], 'A004', newRun), null, 'other day');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Work m': 5000 })], 'A004', newRun), null, 'other distance');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Activity: 'Bike' })], 'A004', newRun), null, 'other activity');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Review status': 'Rejected' })], 'A004', newRun), null, 'a Rejected row does not count');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Source: 'Logbook' })], 'A004', newRun), null, 'only site rows');
+  assert.strictEqual(g.siteSavedAtText_('2026-11-22 14:21'), '2:21 PM');
+  assert.strictEqual(g.siteSavedAtText_('2026-11-22 00:05'), '12:05 AM');
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', test: 'yes' }));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'practice', status: 'out' }));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', makeup_for: '2026-11-02' }));

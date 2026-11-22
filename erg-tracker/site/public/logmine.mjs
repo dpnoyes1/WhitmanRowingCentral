@@ -38,10 +38,23 @@ export function openLogMine(ctx) {
   const { app, esc, fmtDay, signedOut } = ctx;
   const days = Array.from({ length: 8 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
   const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-  const S = { activity: 'Run', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid() };
+  const S = { activity: 'Run', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid(), done: null };
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
+  const drawDone = () => {
+    const d = S.done;
+    app.innerHTML = `<div class="head"><div><h1>Log activity</h1></div></div>
+      <div class="card logdone" role="status" aria-live="polite"><div class="logdone-tick" aria-hidden="true">✓</div>
+        <h2>${d.already ? 'Already saved' : 'Saved'}</h2>
+        <p class="logdone-what"><strong>${esc(d.what)}</strong></p>
+        <p class="muted">${esc(d.already ? `This workout was already saved${d.savedAt ? ' at ' + d.savedAt : ''}. Nothing was added, so you don't need to submit again.` : 'Your coaches can see it now. You do not need to submit it again.')}${d.photo ? ' ' + esc(d.photo) : ''}</p>
+        ${d.pace ? `<p class="muted small">${esc(d.pace)}</p>` : ''}
+        <div class="actions"><button class="btn" type="button" id="lm-again">Log another</button></div></div>`;
+    app.querySelector('#lm-again').onclick = () => { S.done = null; draw(); };
+    window.scrollTo && window.scrollTo(0, 0);
+  };
   const draw = () => {
+    if (S.done) { drawDone(); return; }
     const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
           <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>`;
     app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
@@ -91,6 +104,7 @@ export function openLogMine(ctx) {
       const noDist = NO_DISTANCE.includes(S.activity) && !String(S.dist).trim();
       if (!m && !noDist) { S.err = 'Type your distance.'; draw(); return; }
       if (!sec) { S.err = 'Type your time like 25:30.'; draw(); return; }
+      if (S.busy) return;
       S.busy = true; S.err = S.msg = ''; draw();
       const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim() };
       const pace = paceText(sec, m);
@@ -100,8 +114,10 @@ export function openLogMine(ctx) {
         if (res.status === 401) { signedOut(); return; }
         if (!res.ok) S.err = out.error || 'Nothing was saved.';
         else {
-          S.msg = `Saved${out.photo === 'failed' ? ', but the photo could not be saved' : out.photo ? ' with your photo' : ''}. ${pace}`.trim();
-          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', rid: rid() });
+          const when = S.date === days[0] ? 'today' : S.date === days[1] ? 'yesterday' : fmtDay(S.date);
+          const what = `${S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
+          S.done = { what, pace, already: out.status === 'already' || out.status === 'duplicate', savedAt: out.savedAt || '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
+          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', rid: rid() });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
       S.busy = false; draw();

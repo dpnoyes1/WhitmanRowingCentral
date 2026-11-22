@@ -58,6 +58,8 @@ export async function handleLogMine(req, envFn, deps = {}) {
   }
   if (out.status === 'invalid') return json({ error: out.message }, 422);
   if (out.status === 'duplicate') return json({ status: 'duplicate' });
+  // The same workout was already saved today (David, 2026-11-22): nothing is added, and the page says so.
+  if (out.status === 'already') return json({ status: 'already', savedAt: typeof out.savedAt === 'string' ? out.savedAt.slice(0, 20) : '' });
   if (out.status !== 'ok') {
     console.error('log mine said:', out.error);
     return json({ error: 'The Sheet could not save that. Nothing was changed.' }, 502);

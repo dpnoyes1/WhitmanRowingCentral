@@ -2809,6 +2809,9 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
   assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }), now })).status, 502);
   assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'duplicate' }), now })).status, 200);
+  // Same workout already saved (David, 2026-11-22): the page is told so, with the earlier time.
+  res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'already', savedAt: '2:21 PM' }), now });
+  assert.deepStrictEqual(await res.json(), { status: 'already', savedAt: '2:21 PM' });
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
