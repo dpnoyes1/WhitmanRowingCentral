@@ -41,7 +41,8 @@ test('formatTime', () => {
 test('form time regex', () => {
   const re = new RegExp(g.TIME_PATTERN);
   ['7:42.8', '0:17.5', '15:00', '120:00.0'].forEach(t => assert.ok(re.test(t), t));
-  ['7:4', '7:60', '742.8', '7:42.85', ':42.8'].forEach(t => assert.ok(!re.test(t), t));
+  ['1:01:52', '1:01:52.0', '2:00:00.5'].forEach(t => assert.ok(re.test(t), t));
+  ['7:4', '7:60', '742.8', '7:42.85', ':42.8', '1:60:00', '1:00:60', '1:2:3:4'].forEach(t => assert.ok(!re.test(t), t));
 });
 
 test('GMS 2k at reference weight', () => {
@@ -1378,6 +1379,9 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   assert.strictEqual(p[1].RATE, '');
   assert.throws(() => g.parsePiecesText(''), /at least one/);
   assert.throws(() => g.parsePiecesText('10:00'), /Piece 1: work meters are missing/);
+  assert.strictEqual(g.parsePiecesText('1:01:52.0, 10000')[0].WORK_TIME, '1:01:52.0', 'a run over an hour is accepted');
+  assert.strictEqual(g.parseTime('1:01:52.0'), 3712);
+  assert.strictEqual(g.parsePiecesText('1:00:00.0, 0')[0].WORK_M, '0', 'a stair stepper has no distance: 0 m is accepted');
   assert.throws(() => g.parsePiecesText('10:00,2650\n10:99,2650'), /Piece 2: work time "10:99" should look like/);
   assert.throws(() => g.parsePiecesText(Array(11).fill('1:00,100').join('\n')), /At most 10/);
 

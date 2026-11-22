@@ -60,7 +60,7 @@ function parsePiecesText(text) {
     if (f.length > 5) throw new Error(where + 'too many commas (work time, meters, rate, rest time, rest meters)');
     var time = function (v, what) {
       if (v === '') return;
-      if (!new RegExp(TIME_PATTERN).test(v)) throw new Error(where + what + ' "' + v + '" should look like 2:00.0');
+      if (!new RegExp(TIME_PATTERN).test(v)) throw new Error(where + what + ' "' + v + '" should look like 2:00.0 or 1:01:52.0');
     };
     var number = function (v, what, max) {
       if (v === '') return;
