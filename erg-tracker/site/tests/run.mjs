@@ -28,6 +28,7 @@ import { handleLineupNames, cleanNames } from '../functions/lineup-names.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
+import { callSheet as callSheetBusyTest } from '../lib/slack.mjs';
 import { handlePhotoEvent, handlePhotoButton, benchmarkShape, resolveName } from '../lib/slackphoto.mjs';
 import * as SL from '../lib/slacklog.mjs';
 import * as SLB from '../lib/slacklogbook.mjs';
@@ -3306,6 +3307,17 @@ test('run photo check (built, switched off): reading and comparing a run screen'
 
 photoTests(test);
 askTests(test);
+
+test('callSheet: an HTML page from Google is retried, not shown as a JSON error', async () => {
+  const env = (k) => ({ FEED_URL: 'https://script.example/exec', FEED_KEY: 'k' })[k];
+  let n = 0;
+  const f = async () => (++n < 3 ? new Response('<!DOCTYPE html><html>Lock timeout</html>', { status: 200 }) : Response.json({ status: 'ok' }));
+  assert.deepStrictEqual(await callSheetBusyTest(env, f, { a: 1 }, { retries: 3, delayMs: 1 }), { status: 'ok' });
+  assert.strictEqual(n, 3);
+  n = -10;
+  await assert.rejects(() => callSheetBusyTest(env, f, { a: 1 }), /busy/);
+  assert.strictEqual(n, -9, 'no retry unless asked');
+});
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }

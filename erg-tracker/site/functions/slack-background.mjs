@@ -112,7 +112,7 @@ export async function handleSlackAction(req, envFn, deps = {}) {
   try {
     result = await callSheet(envFn, fetchImpl, {
       action: 'plan-flag-action', entryId: action.value, op, slackUserId: payload.user.id, slackName: name
-    });
+    }, { retries: 4, delayMs: 5000 });
   } catch (err) {
     result = { status: 'error', error: err.message };
   }

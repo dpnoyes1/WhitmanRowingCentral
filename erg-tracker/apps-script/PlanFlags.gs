@@ -425,7 +425,8 @@ function entryRowById_(entryId) {
  */
 function applyPlanFlagAction_(body) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  // Many buttons pressed at once queue on the lock. A timeout used to escape as Google's HTML error page; answer 'busy' so the site retries.
+  if (!lock.tryLock(30000)) return { status: 'busy' };
   try {
     var ids = String(body.entryId || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
     if (!ids.length) return { status: 'missing' };
