@@ -377,10 +377,11 @@ function feedWeekResults_(sessions, inputs, start) {
   inputs.roster.forEach(function (r) { squadOf[r['Athlete ID']] = r.Squad; });
   var ivByEntry = {};
   (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
+  var bestOf = plannedBestAll(inputs.entries, squadOf, inputs.schedule, inputs.workouts, ivByEntry);   // ties go in the order done
   sessions.forEach(function (sn) { sn.results = []; });
   inputs.entries.forEach(function (e) {
     if (!isDate_(e.Date) || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
-    var best = plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
+    var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
     var planned = best && best.row;
     if (!planned || planned.Date < start || planned.Date >= end) return;
     var sn = sessions.filter(function (x) {
@@ -427,6 +428,7 @@ function feedLogged_(inputs, yearStart, s) {
   inputs.roster.forEach(function (r) { squadOf[r['Athlete ID']] = r.Squad; });
   var ivByEntry = {};
   (inputs.intervals || []).forEach(function (iv) { (ivByEntry[iv['Entry ID']] = ivByEntry[iv['Entry ID']] || []).push(iv); });
+  var bestOf = plannedBestAll(inputs.entries, squadOf, inputs.schedule, inputs.workouts, ivByEntry);   // ties go in the order done
   var out = [];
   inputs.entries.forEach(function (e) {
     if (!isDate_(e.Date) || e.Date < yearStart || !(e['Athlete ID'] in squadOf) || feedRejected_(e) || feedPending_(e) || String(e.Status) === 'Out') return;
@@ -435,7 +437,7 @@ function feedLogged_(inputs, yearStart, s) {
     var test = String(e['Benchmark ID'] || '') !== '';
     var ivs = rowEquivalentIntervals((ivByEntry[e['Entry ID']] || []).slice()
       .sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }), activity);
-    var best = plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
+    var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squadOf[e['Athlete ID']], inputs.schedule, inputs.workouts, ivByEntry[e['Entry ID']] || []);
     var planned = best && best.row;
     var pieces = best ? best.pieces : [];
     var bases = {};

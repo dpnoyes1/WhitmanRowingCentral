@@ -937,6 +937,122 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.ok(g.OPS_TRIGGERS.indexOf('sweepPlanFlags') >= 0);
 });
 
+test('matching several workouts (David, 2026-11-21): total-row saves, poor guesses, ties in the order done', () => {
+  const s = planSettings();
+  const W = [
+    { 'Workout ID': 'YW', Name: '15:00 Warm Up', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'YS', Name: '6 x 0:30 Sprint', 'Piece #': 1, Reps: 6, 'Work type': 'Time', Work: '0:30', Rest: '3:30', Zone: 'Anaerobic' },
+    { 'Workout ID': 'YC', Name: '20:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '20:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'YC15', Name: '15:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' }
+  ];
+  const day = D(2026, 11, 20);
+  const row = (id, order) => ({ Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': id, Published: true, Order: order });
+  const sched = [row('YW', 1), row('YS', 2), row('YC', 3)];
+  const entry = (id, at) => ({ 'Entry ID': id, 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)', 'Submitted at': at });
+  const iv = (id, n, sec, m) => ({ 'Entry ID': id, 'Interval #': n, 'Work s': sec, 'Work m': m });
+  const best = (e, ivs, sc) => g.plannedBest(e, 'Varsity', sc || sched, W, ivs);
+  // Six 0:30 intervals match the sprint exactly.
+  const six = [1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145));
+  assert.strictEqual(best(entry('ES'), six).row['Workout ID'], 'YS');
+  // The same sprint saved as one 3:00 total row (Nov 20) is compared on total work: the sprint, not the 15:00 warm-up.
+  const one = [iv('E1', 1, 180, 869)];
+  let b = best(entry('E1'), one);
+  assert.strictEqual(b.row['Workout ID'], 'YS');
+  assert.strictEqual(b.poor, false);
+  // A 14:00 warm-up still finds the warm-up, a 19:00 cool-down the cool-down.
+  assert.strictEqual(best(entry('E2'), [iv('E2', 1, 840, 3000)]).row['Workout ID'], 'YW');
+  assert.strictEqual(best(entry('E3'), [iv('E3', 1, 1140, 4000)]).row['Workout ID'], 'YC');
+  // A 5:00 row fits nothing well: closest is the warm-up, marked as a guess.
+  b = best(entry('E4'), [iv('E4', 1, 300, 1100)]);
+  assert.strictEqual(b.row['Workout ID'], 'YW');
+  assert.strictEqual(b.poor, true);
+  assert.ok(Math.abs(b.fraction - 1 / 3) < 1e-9);
+  // One workout that day: never a guess, the old rules apply.
+  assert.strictEqual(best(entry('E4'), [iv('E4', 1, 300, 1100)], [row('YW', 1)]).poor, false);
+  // The coach message says it is a guess, flags it even though the closest is a warm-up, and keeps it Modified, not Missed.
+  const inp = { schedule: sched, workouts: W, benchmarks: [], settings: s };
+  const flags = (entries, ivs) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, { A901: 'Varsity' }, inp, new Date(2026, 10, 21, 9), [])));
+  let f = flags([entry('E4', '2026-11-20 16:30')], [iv('E4', 1, 300, 1100)]);
+  assert.strictEqual(f.length, 1);
+  assert.strictEqual(f[0].flag, "Doesn't clearly match a planned workout (closest: 15:00 Warm Up, 33% of its work). Not logged: 6 x 0:30 Sprint");
+  assert.deepStrictEqual(f[0].missedIds, []);
+  // Nov 20 again: warm-up, the sprint as a 3:00 total row, cool-down. The sprint is not "Not logged"; it is flagged as 1 of 6 pieces.
+  f = flags([entry('EW', '2026-11-20 16:00'), entry('E1', '2026-11-20 16:28'), entry('EC', '2026-11-20 16:56')],
+    [iv('EW', 1, 900, 3000), ...one, iv('EC', 1, 1200, 4000)]);
+  assert.strictEqual(f.length, 1);
+  assert.deepStrictEqual(f[0].entryIds, ['E1']);
+  assert.ok(!/Not logged/.test(f[0].flag), f[0].flag);
+  // Ties go in the order done: a 15:00 warm-up and a 15:00 cool-down, two 15:00 rows.
+  const same = [row('YW', 1), row('YS', 2), row('YC15', 3)];
+  const first = entry('EA', '2026-11-20 16:00'), second = entry('EB', '2026-11-20 16:56');
+  const ivs = { EA: [iv('EA', 1, 900, 3000)], EB: [iv('EB', 1, 900, 3100)] };
+  let all = g.plannedBestAll([second, first], { A901: 'Varsity' }, same, W, ivs);   // sheet order reversed: time decides
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  all = g.plannedBestAll([first, second], { A901: 'Varsity' }, same, W, ivs);
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  // Same submitted time: sheet order decides. Short pieces tie too (14:00 and 14:00).
+  const short = { EA: [iv('EA', 1, 840, 3000)], EB: [iv('EB', 1, 840, 3000)] };
+  all = g.plannedBestAll([entry('EA', '2026-11-20 18:24'), entry('EB', '2026-11-20 18:24')], { A901: 'Varsity' }, same, W, short);
+  assert.deepStrictEqual([all.EA.row['Workout ID'], all.EB.row['Workout ID']], ['YW', 'YC15']);
+  // No tie: a different athlete or a later day does not take anything.
+  assert.strictEqual(g.planSubmittedMs_('2026-11-20 16:00') < g.planSubmittedMs_('2026-11-20 16:56'), true);
+  assert.strictEqual(g.planSubmittedMs_(''), 0);
+});
+
+test('extra work at practice counts as OYO (David, 2026-11-21)', () => {
+  const W = [
+    { 'Workout ID': 'ZW', Name: '15:00 Warm Up', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '15:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'ZS', Name: '6 x 0:30 Sprint', 'Piece #': 1, Reps: 6, 'Work type': 'Time', Work: '0:30', Rest: '3:30', Zone: 'Anaerobic' },
+    { 'Workout ID': 'ZC', Name: '20:00 Cool Down', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '20:00', Rest: '', Zone: 'Aerobic' },
+    { 'Workout ID': 'Z4', Name: '4 x 15:00', 'Piece #': 1, Reps: 4, 'Work type': 'Time', Work: '15:00', Rest: '1:30', Zone: 'Aerobic' }
+  ];
+  const day = D(2026, 11, 20);
+  const row = (id, order) => ({ Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': id, Published: true, Order: order });
+  const three = [row('ZW', 1), row('ZS', 2), row('ZC', 3)];
+  const e = (id, at, o) => Object.assign({ 'Entry ID': id, 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)', 'Submitted at': at }, o || {});
+  const iv = (id, n, sec, m) => ({ 'Entry ID': id, 'Interval #': n, 'Work s': sec, 'Work m': m });
+  const work = (id, sec, m) => ({ 'Work s': sec, 'Work m': m });
+  const extras = (entries, ivs, sched, today) => JSON.parse(JSON.stringify(g.planExtras(entries, ivs, { A901: 'Varsity' }, { schedule: sched, workouts: W, benchmarks: [], settings: planSettings() }, today || new Date(2026, 10, 21, 9))));
+  // Early 30:00, then warm-up, sprint and cool-down: the 30:00 is extra (the cool-down was done by another entry).
+  const early = e('EX', '2026-11-20 15:30', work(0, 1800, 7000));
+  const day3 = [early, e('EW', '2026-11-20 16:00', work(0, 900, 3000)), e('ES', '2026-11-20 16:28', work(0, 180, 870)), e('EC', '2026-11-20 16:56', work(0, 1200, 4000))];
+  const ivs3 = [iv('EX', 1, 1800, 7000), iv('EW', 1, 900, 3000), ...[1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145)), iv('EC', 1, 1200, 4000)];
+  let x = extras(day3, ivs3, three);
+  assert.deepStrictEqual(x.map((r) => r.entryId), ['EX']);
+  assert.ok(/20:00 Cool Down was done by another entry/.test(x[0].why));
+  // Not until the day is over.
+  assert.deepStrictEqual(extras(day3, ivs3, three, new Date(2026, 10, 20, 19)), []);
+  // Only the 30:00 logged: it is the athlete's practice, not extra.
+  assert.deepStrictEqual(extras([early], [iv('EX', 1, 1800, 7000)], three), []);
+  // Under 15:00 stays practice; a coach-reviewed entry, a test and lifting are never moved.
+  const short = e('EX', '2026-11-20 15:30', work(0, 600, 2300));
+  assert.deepStrictEqual(extras([short, ...day3.slice(1)], [iv('EX', 1, 600, 2300), ...ivs3.slice(1)], three), []);
+  for (const o of [{ 'Review status': 'Reviewed, Full' }, { 'Benchmark ID': 'B1' }, { Activity: 'Lifting' }]) {
+    assert.deepStrictEqual(extras([Object.assign({}, early, o), ...day3.slice(1)], ivs3, three), [], JSON.stringify(o));
+  }
+  // The plan check's own Auto Modified mark does not protect it.
+  assert.deepStrictEqual(extras([Object.assign({}, early, { Status: 'Modified', 'Review status': 'Auto Modified' }), ...day3.slice(1)], ivs3, three).map((r) => r.entryId), ['EX']);
+  // One main workout: an early 30:00 and the full 4 x 15:00. The 30:00 is extra.
+  const main = [e('EX', '2026-11-20 15:30', work(0, 1800, 7000)), e('E4', '2026-11-20 17:00', work(0, 3600, 13000))];
+  const ivs4 = [iv('EX', 1, 1800, 7000), ...[1, 2, 3, 4].map((n) => iv('E4', n, 900, 3250))];
+  assert.deepStrictEqual(extras(main, ivs4, [row('Z4', 1)]).map((r) => r.entryId), ['EX']);
+  // The main workout cut short (3 of 4): the other piece may be the rest of it, so nothing moves.
+  const cut = [iv('EX', 1, 1800, 7000), ...[1, 2, 3].map((n) => iv('E4', n, 900, 3250))];
+  assert.deepStrictEqual(extras([main[0], e('E4', '2026-11-20 17:00', work(0, 2700, 9750))], cut, [row('Z4', 1)]), []);
+  // The same workout twice (a photo and Logbook): not extra work, left alone.
+  const dup = [e('E4', '2026-11-20 17:00', work(0, 3600, 13000)), e('E5', '2026-11-20 18:00', work(0, 3600, 13010))];
+  const ivsDup = [...[1, 2, 3, 4].map((n) => iv('E4', n, 900, 3250)), ...[1, 2, 3, 4].map((n) => iv('E5', n, 900, 3252))];
+  assert.deepStrictEqual(extras(dup, ivsDup, [row('Z4', 1)]), []);
+  // A 45:00 that fits nothing (closest the 15:00 warm-up, 300%) while the sprint and cool-down are logged: extra.
+  const stray = [e('EL', '2026-11-20 15:00', work(0, 2700, 10000)), e('ES', '2026-11-20 16:28', work(0, 180, 870)), e('EC', '2026-11-20 16:56', work(0, 1200, 4000))];
+  const ivsStray = [iv('EL', 1, 2700, 10000), ...[1, 2, 3, 4, 5, 6].map((n) => iv('ES', n, 30, 145)), iv('EC', 1, 1200, 4000)];
+  x = extras(stray, ivsStray, three);
+  assert.deepStrictEqual(x.map((r) => r.entryId), ['EL']);
+  assert.ok(/fits no planned workout/.test(x[0].why));
+  // ...but not when the sprint was not logged.
+  assert.deepStrictEqual(extras([stray[0], stray[2]], [ivsStray[0], ivsStray[7]], three), []);
+});
+
 test('incomplete workouts (David, 2026-11-17): stopped early, best of several workouts, skipped workout, auto Modified', () => {
   const s = planSettings();
   const W = [
@@ -1000,7 +1116,13 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   const wf = (entries, ivs) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, squads, withWarm, new Date(2026, 10, 11, 9), [])));
   assert.deepStrictEqual(wf([eW, e40, e20], ivW.concat(both)), [], 'short warm-up, both workouts done: no flag');
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([eW], ivW, squads, withWarm, new Date(2026, 10, 10, 18), []))), [], 'same day, warm-up alone: no flag');
-  assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['EW', 'E40'], 'a skipped workout still flags the day');
+  assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['E40'], 'a skipped workout still flags the day, but not the warm-up (David, 2026-11-22)');
+  const ros = { 'Slack member ID': 'UFAKE01' };
+  assert.ok(/marked Missed/.test(g.logbookFlagNotice({ Date: '' }, ros, true).notice), 'Logbook DM says Missed when Missed');
+  assert.ok(/marked Modified/.test(g.logbookFlagNotice({ Date: '' }, ros, false).notice));
+  const onlyWarm = wf([eW], ivW);
+  assert.deepStrictEqual(onlyWarm[0].entryIds, ['EW'], 'only the warm-up logged: it carries the day\'s Modified mark');
+  assert.ok(/Not logged: 40 min steady, 20 min steady|Not logged: .*40/.test(onlyWarm[0].flag), onlyWarm[0].flag);
   // Stopped early on the 40:00, and the 20:00 skipped: one message for the day.
   f = flags([e40], [Object.assign(iv(1, 1800), { 'Entry ID': 'E40' })], new Date(2026, 10, 11, 9));
   assert.strictEqual(f.length, 1);
@@ -1245,9 +1367,14 @@ test('logbook: totals only, just row, possible make-up, benchmark shape, unsuppo
   const makeup = g.logbookRows(lbResult({ localTime: '21:00' }), lbCtx([{ date: '2026-10-26', type: 'Practice', status: 'Out' }]));
   assert.deepStrictEqual([makeup.entry['Session type'], makeup.entry['Review status']], ['Make-up', 'Pending: possible make-up']);
   assert.strictEqual(makeup.entry['Make-up for date'].getDate(), 27);
-  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m test' }), lbCtx());
   assert.ok(/possible benchmark/.test(twoK.entry['Coach note']));
   assert.strictEqual(twoK.benchmark, undefined);
+  // David, 2026-11-21: no "test" in the title (or warm up / cool down in it) means it is not a possible test.
+  const cool = g.logbookRows(lbResult({ intervals: [{ timeS: 1200, distanceM: 4100, rate: 20 }], timeS: 1200, distanceM: 4100, name: '20:00 Cool Down' }), lbCtx());
+  assert.ok(!/possible benchmark/.test(cool.entry['Coach note']) && cool.entry['Review status'] === '');
+  const plain20 = g.logbookRows(lbResult({ intervals: [{ timeS: 1200, distanceM: 4100, rate: 20 }], timeS: 1200, distanceM: 4100, name: '' }), lbCtx());
+  assert.strictEqual(plain20.entry['Review status'], '');
   const bike = g.logbookRows(lbResult({ machine: 'bikerg' }), lbCtx());
   assert.strictEqual(bike.entry['Activity'], 'BikeErg');
   assert.ok(g.logbookRows(lbResult({ machine: 'skierg' }), lbCtx()).skip);
@@ -1257,7 +1384,7 @@ test('logbook: totals only, just row, possible make-up, benchmark shape, unsuppo
 });
 
 test('logbook: a 2k-shaped result still waits for the athlete; a plain one counts at once', () => {
-  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m' }), lbCtx());
+  const twoK = g.logbookRows(lbResult({ intervals: [{ timeS: 440, distanceM: 2000, rate: 28 }], timeS: 440, distanceM: 2000, name: '2000m test' }), lbCtx());
   assert.strictEqual(twoK.entry['Review status'], 'Pending');
   assert.strictEqual(g.logbookRows(lbResult(), lbCtx()).entry['Review status'], '');
 });
@@ -1656,6 +1783,18 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
   ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  // identical workout saved again (Nov 22): same athlete, day, activity, type, time and meters, not Rejected
+  const dupRow = (o) => Object.assign({ 'Athlete ID': 'A004', Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566, Source: 'Site', 'Review status': '', 'Submitted at': '2026-11-22 14:21' }, o);
+  const newRun = { Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566 };
+  assert.ok(g.siteDuplicateEntry_([dupRow({})], 'A004', newRun), 'identical row is a repeat');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Athlete ID': 'A020' })], 'A004', newRun), null, 'other athlete');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Date: new Date(2026, 10, 21) })], 'A004', newRun), null, 'other day');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Work m': 5000 })], 'A004', newRun), null, 'other distance');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Activity: 'Bike' })], 'A004', newRun), null, 'other activity');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ 'Review status': 'Rejected' })], 'A004', newRun), null, 'a Rejected row does not count');
+  assert.strictEqual(g.siteDuplicateEntry_([dupRow({ Source: 'Logbook' })], 'A004', newRun), null, 'only site rows');
+  assert.strictEqual(g.siteSavedAtText_('2026-11-22 14:21'), '2:21 PM');
+  assert.strictEqual(g.siteSavedAtText_('2026-11-22 00:05'), '12:05 AM');
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', test: 'yes' }));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'practice', status: 'out' }));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'oyo', makeup_for: '2026-11-02' }));

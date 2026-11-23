@@ -81,8 +81,37 @@ function siteSelfLogError_(form) {
 }
 
 /**
+ * The athlete's earlier row that this new self-logged entry repeats, or null (David, 2026-11-22: Annaliese, Madeleine
+ * and others tapped Save again because nothing said it had worked, so identical rows piled up). Same athlete, day,
+ * activity, session type, work time and meters, and not Rejected. Pure: rows = Entries objects, entry = the new row.
+ */
+function siteDuplicateEntry_(rows, athleteId, entry) {
+  var day = isDate_(entry.Date) ? dayKey_(entry.Date) : '';
+  if (!day) return null;
+  for (var i = 0; i < rows.length; i++) {
+    var r = rows[i];
+    if (String(r['Athlete ID']).trim() !== String(athleteId).trim() || !isDate_(r.Date) || dayKey_(r.Date) !== day) continue;
+    if (/reject/i.test(String(r['Review status'] || ''))) continue;
+    if (String(r.Source) !== 'Site') continue;
+    if (String(r.Activity) !== String(entry.Activity) || String(r['Session type']) !== String(entry['Session type'])) continue;
+    if (Number(r['Work s']) !== Number(entry['Work s']) || Number(r['Work m']) !== Number(entry['Work m'])) continue;
+    return r;
+  }
+  return null;
+}
+
+/** "2:21 PM" for the Submitted at of a row (a Date or a "yyyy-MM-dd HH:mm" string), or ''. */
+function siteSavedAtText_(v) {
+  var d = isDate_(v) ? v : null;
+  var m = d ? null : /(\d{1,2}):(\d{2})\s*$/.exec(String(v || ''));
+  var h = d ? d.getHours() : m ? +m[1] : null, min = d ? d.getMinutes() : m ? +m[2] : null;
+  if (h === null) return '';
+  return (h % 12 || 12) + ':' + ('0' + min).slice(-2) + ' ' + (h < 12 ? 'AM' : 'PM');
+}
+
+/**
  * doPost action 'site-log': body { athleteId, coachName, requestId, form }. Answers
- * { status: 'ok' | 'invalid' | 'duplicate' | 'error', message, entryId, athlete, test }. One write under the script lock;
+ * { status: 'ok' | 'invalid' | 'duplicate' | 'already' | 'error', message, entryId, athlete, test }. One write under the script lock;
  * requestId stops a double tap from saving twice.
  */
 function processSiteLog_(body) {
@@ -107,6 +136,10 @@ function processSiteLog_(body) {
       return { status: 'invalid', message: err.message };
     }
     result.entry.Source = 'Site';
+    if (self) {
+      var again = siteDuplicateEntry_(readObjects_(TABS.ENTRIES), id, result.entry);
+      if (again) return { status: 'already', savedAt: siteSavedAtText_(again['Submitted at']), entryId: again['Entry ID'] };
+    }
     if (result.benchmark) result.benchmark.Source = 'Site';
     // Optional proof photo (David, 2026-11-12): a failed photo never blocks the workout.
     var photoState = '';

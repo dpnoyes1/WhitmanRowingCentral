@@ -1309,6 +1309,10 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
+  assert.ok(/marked Modified/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
+  assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
+  assert.ok(!/Modified/.test(SL.flagReply('Missed')));
+  assert.strictEqual(SL.flagReply(false), '');
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
   assert.ok(/Coach greta logged a workout for you \(Practice, Run, 1 piece\)/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', by: 'Coach greta', sessionType: 'Practice', activity: 'Run', pieces: 1 })));
   assert.ok(/marked you Out/.test(SL.fyiText({ status: 'ok', notifySlackId: 'UJ1', entryStatus: 'Out' })));
@@ -1506,8 +1510,8 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
   const piece = (time, meters, split) => ({ time, meters, split, rate: 24 });
   const single = { title: '1500m', date: '', split_label: '/500m', total: { time: '6:00.0', meters: 1500, avg_split: '2:00.0', avg_rate: 24 }, total_time_incl_rest: '', rest_meters: null,
     meters_column: 'cumulative', pieces: [piece('2:00.0', 500, '2:00.0'), piece('2:00.0', 1000, '2:00.0'), piece('2:00.0', 1500, '2:00.0')], flags: [] };
-  const twoK = { ...single, title: '2000m', total: { time: '8:00.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, pieces: [...single.pieces, piece('2:00.0', 2000, '2:00.0')] };
-  const twenty = { ...single, title: '20:00', total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 }, total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 },
+  const twoK = { ...single, title: '2000m test', total: { time: '8:00.0', meters: 2000, avg_split: '2:00.0', avg_rate: 24 }, pieces: [...single.pieces, piece('2:00.0', 2000, '2:00.0')] };
+  const twenty = { ...single, title: '20:00 test', total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 }, total: { time: '20:00.0', meters: 5000, avg_split: '2:00.0', avg_rate: 22 },
     pieces: [piece('20:00.0', 5000, '2:00.0')], meters_column: 'cumulative' };
   const bad = { ...single, total: { ...single.total, time: '9:30.0' } };   // time does not match meters at that split
   const intervals = { ...single, title: '4x500m/2:00r', meters_column: 'per_piece', total: { time: '6:40.0', meters: 2000, avg_split: '1:40.0', avg_rate: 28 },
@@ -1832,12 +1836,16 @@ test('slack photo: coach sends a screen, bot asks which athlete, Save button sav
   w = world({ answers: [single], sheet: { access: athleteAccess } });
   assert.strictEqual((await handlePhotoEvent(photoMsg({ user: 'UA1' }), env, w.deps)).asked, undefined, 'any other size is not asked');
   const bikePieces = [{ timeS: 480, meters: 2000, rate: 24, restS: 0 }];
-  assert.strictEqual(benchmarkShape('RowErg', bikePieces), '2000m');
-  assert.strictEqual(benchmarkShape('BikeErg', bikePieces), '', 'BikeErg never counts');
-  assert.strictEqual(benchmarkShape('RowErg', [{ ...bikePieces[0], meters: 2001 }]), '');
-  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1200, meters: 5000 }]), '20min');
-  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1199.9, meters: 5000 }]), '');
-  assert.strictEqual(benchmarkShape('RowErg', [...bikePieces, ...bikePieces]), '');
+  assert.strictEqual(benchmarkShape('RowErg', bikePieces, '2000m test'), '2000m');
+  assert.strictEqual(benchmarkShape('BikeErg', bikePieces, '2000m test'), '', 'BikeErg never counts');
+  assert.strictEqual(benchmarkShape('RowErg', [{ ...bikePieces[0], meters: 2001 }], 'test'), '');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1200, meters: 5000 }], 'Test'), '20min');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1199.9, meters: 5000 }], 'Test'), '');
+  assert.strictEqual(benchmarkShape('RowErg', [...bikePieces, ...bikePieces], 'test'), '');
+  // David, 2026-11-21: a test always says "test" in its title; warm up or cool down in the title is never a test.
+  assert.strictEqual(benchmarkShape('RowErg', bikePieces, '2000m'), '', 'no "test" in the title');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1200, meters: 5000 }], '20:00 Cool Down'), '');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 1200, meters: 5000 }], 'Warm Up test'), '');
 
   // guards: Slack accounts not on the Roster, missing key, unreadable numbers (retried on the stronger model), wrong file type
   w = world();
@@ -2801,6 +2809,9 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
   assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'error', error: 'boom' }), now })).status, 502);
   assert.strictEqual((await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'duplicate' }), now })).status, 200);
+  // Same workout already saved (David, 2026-11-22): the page is told so, with the earlier time.
+  res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'already', savedAt: '2:21 PM' }), now });
+  assert.deepStrictEqual(await res.json(), { status: 'already', savedAt: '2:21 PM' });
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;

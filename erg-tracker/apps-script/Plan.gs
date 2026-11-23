@@ -341,6 +341,14 @@ function planFitScore_(intervals, pieces, activity) {
     var want = p.workType === 'Time' ? p.workS : p.workM;
     score += want > 0 ? Math.min(1, Math.abs((got || 0) - want) / want) : 1;
   }
+  // A session saved as one total row (a photo saved from its total row, a totals-only Logbook result) can't line
+  // up piece by piece with a several-piece plan, so it is also compared on total work. The closer of the two
+  // counts, plus 0.5 so a workout that lines up piece by piece still wins (David, 2026-11-21: a 3:00 total of a
+  // 6 x 0:30 sprint was matched to the 15:00 warm-up).
+  if (done.length === 1 && planned.length > 1) {
+    var byTotal = Math.min(1, Math.abs(planWorkFraction_(done, planned) - 1)) + 0.5;
+    if (byTotal < score) score = byTotal;
+  }
   var isRun = String(activity || '') === 'Run';
   var planRun = pieces.length > 0 && pieces.every(function (p) { return p.activity === 'Run'; });
   if (isRun !== planRun) score += 1;
@@ -350,25 +358,84 @@ function planFitScore_(intervals, pieces, activity) {
 /**
  * The planned workout a logged session was most likely meant for (David, 2026-11-17: a practice can have a
  * 20:00 and a 40:00 erg; the 40:00 must be checked against the 40:00). The first one it matches exactly,
- * else the closest (planFitScore_), ties to the earlier one in the day. `intervals` are the entry's own
- * Intervals rows (BikeErg meters are halved here). Returns { row, pieces } or null with no plan that day.
+ * else the closest (planFitScore_). Ties go to a workout not in `taken` (Workout IDs the athlete's earlier
+ * entries that day already took; see plannedBestAll), then to the earlier one in the day. `intervals` are the
+ * entry's own Intervals rows (BikeErg meters are halved here). Returns { row, pieces, exact, score, fraction,
+ * poor } or null with no plan that day: `exact` it matches the plan, `score` planFitScore_ (0 when exact),
+ * `fraction` the share of the planned work done, `poor` (David, 2026-11-21) the day has several workouts, none
+ * matches exactly, and the closest got under half or over double its planned work, so it is a guess.
  */
-function plannedBest(entry, athleteSquad, schedule, workouts, intervals) {
+function plannedBest(entry, athleteSquad, schedule, workouts, intervals, taken) {
   var rows = planCandidates(entry, athleteSquad, schedule, workouts);
   if (!rows.length) return null;
   var ivs = rowEquivalentIntervals(intervals || [], entry.Activity);
-  var best = null;
+  var isTaken = function (r) { return !!(taken && taken[String(r['Workout ID']).trim()]); };
+  var result = function (c, poorOk) {
+    var planned = [];
+    c.pieces.forEach(function (p) { for (var k = 0; k < p.reps; k++) planned.push(p); });
+    var frac = planWorkFraction_(ivs, planned);
+    return { row: c.row, pieces: c.pieces, exact: !!c.exact, score: c.exact ? 0 : c.score, fraction: frac,
+      poor: !!poorOk && !c.exact && (frac < 0.5 || frac > 2) };
+  };
+  var exact = null, best = null, tied = [];
   for (var i = 0; i < rows.length; i++) {
     var pieces;
     try { pieces = workoutPieces(workouts || [], rows[i]['Workout ID']); } catch (err) { continue; }
     if (!pieces.length) continue;
-    if (rows.length === 1) return { row: rows[i], pieces: pieces };
-    if (checkAgainstPlan(ivs, pieces, {}, {}, entry.Activity).matches) return { row: rows[i], pieces: pieces };
-    var score = planFitScore_(ivs, pieces, entry.Activity);
-    if (!best || score < best.score) best = { row: rows[i], pieces: pieces, score: score };
+    var c = { row: rows[i], pieces: pieces };
+    if (checkAgainstPlan(ivs, pieces, {}, {}, entry.Activity).matches) {
+      c.exact = true;
+      if (!isTaken(rows[i])) return result(c, rows.length > 1);
+      if (!exact) exact = c;
+      continue;
+    }
+    c.score = planFitScore_(ivs, pieces, entry.Activity);
+    if (!best || c.score < best.score - PLAN_TIE) { best = c; tied = [c]; }
+    else if (Math.abs(c.score - best.score) <= PLAN_TIE) tied.push(c);
   }
-  if (best) return { row: best.row, pieces: best.pieces };
-  return { row: rows[0], pieces: [] };
+  if (exact) return result(exact, rows.length > 1);
+  if (best) return result(tied.filter(function (x) { return !isTaken(x.row); })[0] || best, rows.length > 1);
+  return { row: rows[0], pieces: [], exact: false, score: null, fraction: null, poor: false };
+}
+
+/** Fit scores this close count as a tie (plannedBest). */
+var PLAN_TIE = 1e-6;
+
+/**
+ * plannedBest for many entries at once, so two workouts that fit equally well (a 15:00 warm-up and a 15:00
+ * cool-down) go in the order they were done (David, 2026-11-21): each athlete's entries for a planned day are
+ * taken in the order they were submitted, and an earlier one keeps its workout from the later ones on a tie.
+ * Photos carry the time they were sent, so a cool-down photo sent first still takes the warm-up. Out,
+ * rejected and pending entries are left out. Returns { entryId: best }.
+ */
+function plannedBestAll(entries, squadOf, schedule, workouts, ivByEntry) {
+  var groups = {}, order = [];
+  entries.forEach(function (e, i) {
+    if (!isDate_(e.Date) || String(e.Status) === 'Out' || /reject|^pending/i.test(String(e['Review status'] || ''))) return;
+    var type = e['Session type'];
+    var day = type === 'Make-up' ? e['Make-up for date'] : e.Date;
+    if (!isDate_(day)) return;
+    var key = e['Athlete ID'] + '|' + dayKey_(day) + '|' + (type === 'OYO' ? 'OYO' : 'Practice');
+    if (!groups[key]) { groups[key] = []; order.push(key); }
+    groups[key].push({ e: e, i: i, t: planSubmittedMs_(e['Submitted at']) });
+  });
+  var out = {};
+  order.forEach(function (key) {
+    var taken = {};
+    groups[key].sort(function (a, b) { return (a.t - b.t) || (a.i - b.i); }).forEach(function (x) {
+      var best = plannedBest(x.e, squadOf[x.e['Athlete ID']], schedule, workouts, ivByEntry[x.e['Entry ID']] || [], taken);
+      out[x.e['Entry ID']] = best;
+      if (best && best.row) taken[String(best.row['Workout ID']).trim()] = true;
+    });
+  });
+  return out;
+}
+
+/** "2026-11-20 16:01" or a Date -> milliseconds for ordering; 0 when unreadable. */
+function planSubmittedMs_(v) {
+  if (v instanceof Date) return v.getTime();
+  var m = String(v || '').match(/^(\d{4})-(\d{2})-(\d{2})[ T](\d{1,2}):(\d{2})(?::(\d{2}))?/);
+  return m ? new Date(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] || 0)).getTime() : 0;
 }
 
 /** A warm-up or cool-down scheduled as its own workout. It is logged in the session's warmup and cooldown, so it is never "skipped". */

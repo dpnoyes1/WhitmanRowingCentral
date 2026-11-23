@@ -6,8 +6,8 @@
 // in a small Netlify Blobs store; tests pass a fake `deps.store`.
 import { callSheet, dmBlocks, sendReply } from './slack.mjs';
 import { readErgScreen, MODELS, MAX_IMAGE_BYTES, MAX_DOWNLOAD_BYTES } from './ergscreen.mjs';
-import { runChecks, parseScreenDate, parseTitle, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
-import { todayEastern, NOT_ON_ROSTER, fyiText } from './slacklog.mjs';
+import { runChecks, parseScreenDate, screenShape, titleNotUnderstood, formatClock, DATE_OK_DAYS } from './ergchecks.mjs';
+import { todayEastern, NOT_ON_ROSTER, fyiText, flagReply } from './slacklog.mjs';
 import { makeKeepCopy, shrinkForReading } from './photocopy.mjs';
 import { getFeed } from './feed.mjs';
 import { RUN_PHOTO_CHECK } from './runscreen.mjs';
@@ -46,18 +46,28 @@ async function defaultStore() {
 
 const meters = (n) => `${n} m`;
 
-/** What goes in the entry: one piece of totals for a single piece, the pieces for an interval workout. */
+/**
+ * What goes in the entry: one piece of totals for a single piece, the pieces for an interval workout
+ * (from the title, or from the rows when the title can't be read but the screen shows rest; screenShape).
+ */
 export function entryPieces(read) {
-  const title = parseTitle(read.title);
-  if (title && title.kind === 'intervals' && read.pieces.length) {
+  const shape = screenShape(read);
+  if (shape.kind === 'intervals' && read.pieces.length) {
     return read.pieces.map((p, i) => ({
       timeS: p.timeS,
-      meters: p.meters != null ? p.meters : (title.by === 'distance' ? title.value : null),
+      meters: p.meters != null ? p.meters : (shape.by === 'distance' ? shape.value : null),
       rate: p.rate,
-      restS: i < read.pieces.length - 1 ? title.restS : 0
+      restS: i < read.pieces.length - 1 ? shape.restS : 0
     }));
   }
   return [{ timeS: read.totalTimeS, meters: read.totalMeters, rate: read.avgRate, restS: 0 }];
+}
+
+/** The coach note for a title ErgBot can't read (David, 2026-11-21), so a new screen format is seen the first time. '' when the title is fine. */
+export function titleNote(read) {
+  if (!titleNotUnderstood(read.title)) return '';
+  const shape = screenShape(read);
+  return `Title "${String(read.title).trim().slice(0, 40)}" not understood` + (shape.from === 'rows' ? `; saved as ${read.pieces.length} intervals from the rows` : '');
 }
 
 /** One line describing the read, for the coach. */
@@ -87,10 +97,20 @@ const problemText = (issues) => issues.filter((i) => i.level === 'hold' || i.lev
   .map((i) => (i.athlete || i.coach).replace(/ A coach has been told\.?/, '').replace(/ or type it in with \/log\./, ' or use /log.')).join('\n');
 
 /**
+ * A test always has "test" in its title (David, 2026-11-21), and a title with warm up or cool down in it is never a test.
+ * Applies to the photo's workout title and the Logbook workout name.
+ */
+export function titleSaysTest(title) {
+  const t = String(title || '');
+  return /test/i.test(t) && !/warm|cool/i.test(t);
+}
+
+/**
  * A single RowErg piece of exactly 2000 m or exactly 20:00 might be a benchmark
  * test (David, 2026-11-03). Returns '2000m', '20min' or '' (BikeErg never counts).
  */
-export function benchmarkShape(machine, pieces) {
+export function benchmarkShape(machine, pieces, title) {
+  if (!titleSaysTest(title)) return '';
   if (machine !== 'RowErg' || !pieces || pieces.length !== 1) return '';
   const p = pieces[0];
   if (Number(p.meters) === 2000) return '2000m';
@@ -272,7 +292,8 @@ export async function handlePhotoEvent(event, envFn, deps = {}) {
       const shown = parseScreenDate(read.date, today);
       const useShown = shown && Math.abs(dayDiff(today, shown)) <= DATE_OK_DAYS && shown <= today;
       const dateAsk = !useShown && String(read.date || '').trim() ? { screen: String(read.date).trim().slice(0, 40), shown: shown && shown <= today ? shown : null } : null;
-      const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
+      const tnote = titleNote(read);   // first, so the 400-character cut never drops it
+      const notes = [`Logged from an erg photo${who.role === 'athlete' ? '' : ' by a coach'}.`, ...(tnote ? [tnote] : []), ...issues.filter((i) => i.coach).map((i) => i.coach), ...read.flags];
       if (pieces.length === 1 && read.pieces.length > 1 && !unsure) notes.push('Splits: ' + read.pieces.map((p) => (p.splitS != null ? formatClock(p.splitS) : '?')).join(', '));
       // The small copy kept in Drive (step 6). A failure here never blocks logging the workout.
       let copy = '';
@@ -347,7 +368,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
     await store.delete('pending:' + user);
     for (const item of pending.multi) {
       const tok = randomBytes(9).toString('hex');
-      const c = { user, athlete: who.athlete, ...item, summary: `${item.label}: ${item.summary}`, ask: benchmarkShape(item.machine, item.pieces), multi: true };
+      const c = { user, athlete: who.athlete, ...item, summary: `${item.label}: ${item.summary}`, ask: benchmarkShape(item.machine, item.pieces, item.title), multi: true };
       await store.set('card:' + tok, c);
       if (c.dateAsk) { const t = dateQuestion(c); await say(t, dateBlocks(t, tok, c)); }   // buttons only: a typed date could not say which photo
       else { const n = nextBlocks(c, tok); await say(n.text, n.blocks); }
@@ -355,7 +376,7 @@ async function nameStep(name, user, event, envFn, fetchImpl, store, say, deps = 
     return { status: 'cards', athlete: who.athlete, count: pending.multi.length };
   }
   const token = randomBytes(9).toString('hex');
-  const shape = benchmarkShape(pending.machine, pending.pieces);
+  const shape = benchmarkShape(pending.machine, pending.pieces, pending.title);
   const card = { user, athlete: who.athlete, ...pending, ask: shape };   // keeps the photo copy until she saves
   await store.set('card:' + token, card);
   await store.delete('pending:' + user);
@@ -465,7 +486,7 @@ export async function handlePhotoButton(payload, envFn, deps = {}) {
     const fyi = fyiText(result);
     if (fyi) await dmBlocks(envFn, fetchImpl, result.notifySlackId, fyi);
     const kind = result.sessionType === 'OYO' ? ' as OYO (on your own)' : result.sessionType === 'Make-up' && result.makeupFor ? ` as a make-up for ${dateLabel(result.makeupFor)}` : '';
-    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}${kind}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + (result.flagged ? ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.' : '') +
+    await done(`:white_check_mark: Saved for ${result.athlete}. Logged on ${dateLabel(card.date)}${kind}.` + (result.benchmark ? ` It is on the ${TEST_NAME[benchmark] || ''} board as a test.` : '') + flagReply(result.flagged) +
       (card.check ? ' The rows on the photo didn\'t add up to the total, so it was saved from the total row and a coach will check it.' : '') +
       (result.photo === 'failed' ? ' The workout is saved, but the photo copy could not be kept.' : ''));
   } else if (result.status === 'merged') {
