@@ -2927,6 +2927,13 @@ test('plan page: a saved workout loads back into the builder, or says it cannot'
   assert.strictEqual(test2k.pace, '1:45.0');
   assert.strictEqual(previewOf({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).note.includes('Goal pace 1:45.0'), true);
   assert.strictEqual(parseNL('5k run threshold').act, 'Run');
+  // Open workout (David, 2026-11-23): any activity, N minutes counted at the activity weights.
+  const openB = { ...base, ...plain, type: 'open', openT: '60:00' };
+  assert.deepStrictEqual(buildPieces(openB).pieces, [{ workType: 'Open', reps: '1', work: '60:00', rest: '', startEvery: '', zone: '', base: '', lowPct: '', highPct: '', rate: '' }]);
+  assert.ok(buildPieces({ ...openB, openT: 'an hour' }).err);
+  assert.ok(previewOf(openB).text.includes('1:00:00') || previewOf(openB).text.includes('60:00'), previewOf(openB).text);
+  assert.strictEqual(fromPieces(buildPieces(openB).pieces, 'Open day').type, 'open');
+  assert.strictEqual(fromPieces(buildPieces(openB).pieces, 'Open day').openT, '60:00');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '1', work: '20:00', lowPct: '80' }]), null, 'targets the builder cannot show');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '3', work: '20:00' }]), null, 'intervals with no rest');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '2', work: '20:00', rest: '1:00' }, { workType: 'Time', reps: '1', work: '10:00' }]), null, 'mixed reps');

@@ -74,6 +74,25 @@ flow('plan: add a workout to Thursday, it shows on that day', async ({ browser, 
   await page.context().close();
 });
 
+flow('plan: an open workout (any activity, 60 minutes) saves with no activity or zone', async ({ browser, server }) => {
+  const page = await newPage(browser, 390);
+  await signInCoach(page, server.url, '#/plan');
+  await page.click('[data-add="2026-10-22"]');
+  await page.click('[data-type=open]');
+  assert.equal(await page.locator('[data-act]').count(), 0, 'no Erg / Run choice for an open workout');
+  assert.equal(await page.locator('[data-paceon]').count(), 0, 'no pace target for an open workout');
+  assert.match(await page.textContent('#pv'), /Open/);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'nothing scrolls sideways');
+  await page.fill('input[data-k=name]', "60' any activity");
+  await page.evaluate(() => document.querySelector('[data-save=publish]').click());   // the phone's tab bar can sit over the button for a real click
+  await page.waitForSelector('#pnotice .notice');
+  const save = server.state.saves.at(-1);
+  assert.equal(save.pieces[0].workType, 'Open');
+  assert.equal(save.pieces[0].work, '60:00');
+  assert.equal(save.pieces[0].zone, '');
+  await page.context().close();
+});
+
 flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ browser, server }) => {
   const page = await newPage(browser, 390);
   await signInAthlete(page, server.url, server.athlete, '#/logrun');

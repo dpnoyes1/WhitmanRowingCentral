@@ -403,7 +403,7 @@ test('workout pieces: variable intervals, start-every, undefined rest', () => {
   assert.strictEqual(g.pieceLabel(s8), '8 x 500m start every 3:30 Anaerobic');
   assert.ok(s8.restUndefined);
   assert.strictEqual(g.pieceLabel(g.workoutPieces(WORKOUTS, 'U8')[0]), '8 x 500m r undefined Anaerobic');
-  assert.throws(() => g.workoutPieces([{ 'Workout ID': 'B', 'Piece #': 1, 'Work type': 'Laps', Work: '3' }], 'B'), /Time or Distance/);
+  assert.throws(() => g.workoutPieces([{ 'Workout ID': 'B', 'Piece #': 1, 'Work type': 'Laps', Work: '3' }], 'B'), /Time, Distance or Open/);
   assert.throws(() => g.workoutPieces([{ 'Workout ID': 'B', 'Piece #': 1, 'Work type': 'Distance', Work: 'far' }], 'B'), /Work is missing/);
 });
 
@@ -2028,6 +2028,65 @@ test('attendance override: plan for one athlete and day (David, 2026-11-18)', ()
   assert.deepStrictEqual(plain(g.attendanceMarkPlan_(entries, 'A1', '2026-11-19', 'Full', day)), { update: [], create: true, nothing: false }, 'another day');
   assert.strictEqual(g.ATTENDANCE_MARK_ACTION, 'attendance-mark');
   assert.deepStrictEqual(plain(g.ATTENDANCE_MARKS), { Full: 'Full', Modified: 'Modified', Missed: 'Missed' });
+});
+
+test('open workout: any activity counts weighted minutes toward the day (David, 2026-11-23)', () => {
+  const D2 = (y, m, d) => new Date(y, m - 1, d);
+  const plain = (x) => JSON.parse(JSON.stringify(x));
+  const W = [{ 'Workout ID': 'OP', Name: "60' any", 'Piece #': 1, Reps: 1, 'Work type': 'Open', Work: '60:00', Rest: '', Zone: '', Activity: 'Any activity' }];
+  const pieces = g.workoutPieces(W, 'OP');
+  assert.strictEqual(pieces[0].workType, 'Open');
+  assert.strictEqual(pieces[0].workS, 3600);
+  assert.strictEqual(g.pieceLabel(pieces[0]), 'Open: 60:00 of any activity (counted at activity multipliers)');
+  assert.strictEqual(g.planIsOpen_(pieces), true);
+  assert.strictEqual(g.checkAgainstPlan([], pieces, {}, {}, 'Run').matches, true, 'whatever was logged fits an open workout');
+  const settings = { 'multiplier.Run': '1.2', 'multiplier.BikeErg': '1', 'multiplier.Bike': '0.6', 'multiplier.Lifting': '0' };
+  assert.strictEqual(g.planActivityMultiplier_('Run', settings), 1.2);
+  assert.strictEqual(g.planActivityMultiplier_('Lifting', settings), 0, 'a 0 weight counts as 0');
+  assert.strictEqual(g.planActivityMultiplier_('Erg (RowErg)', {}), 1, 'default weight when Settings has none');
+  assert.strictEqual(g.planActivityMultiplier_('Mystery', {}), 1);
+  assert.strictEqual(g.planOpenCountedS_([{ Activity: 'Run', 'Work s': 3000 }], settings), 3600, '50:00 of running counts as 60:00');
+  assert.strictEqual(g.planOpenCountedS_([{ Activity: 'Run', 'Work s': 3000, Status: 'Out' }], settings), 0);
+  let r = g.planOpenResult_(3600, 3600);
+  assert.strictEqual(r.met, true);
+  assert.strictEqual(g.planOpenResult_(3599.5, 3600).met, true, 'within a second of the target');
+  assert.strictEqual(g.planOpenResult_(3598, 3600).met, false);
+  assert.strictEqual(g.planOpenResult_(4800, 3600).met, true, 'more than the target (80 minutes) counts');
+  assert.strictEqual(g.planOpenResult_(1799, 3600).missed, true, 'under half is Missed');
+  assert.strictEqual(g.planOpenResult_(1800, 3600).missed, false, 'exactly half is not under half');
+  // The Workout builder saves an Open row with no zone, rest or activity of its own.
+  const row = g.workoutBuildRows_('W9', { name: "60' any", pieces: [{ workType: 'Open', work: '60:00' }] });
+  assert.ok(!row.error, row.error);
+  assert.strictEqual(row.rows[0]['Work type'], 'Open');
+  assert.strictEqual(row.rows[0].Activity, 'Any activity');
+  assert.ok(g.workoutBuildRows_('W9', { name: 'x', pieces: [{ workType: 'Open', work: 'soon' }] }).error);
+  // Several chunks in one day, judged once the day is over.
+  const sched = [{ Date: D2(2026, 11, 23), Squad: 'All', Session: 'Practice', 'Workout ID': 'OP', Published: true }];
+  const inp = { schedule: sched, workouts: W, benchmarks: [], settings };
+  const E = (id, activity, sec, extra = {}) => Object.assign({ 'Entry ID': id, Date: D2(2026, 11, 23), 'Athlete ID': 'A901', Athlete: 'Test A', 'Session type': 'Practice', Status: 'Full', Activity: activity, 'Work s': sec, 'Review status': '', 'Submitted at': '2026-11-23 16:00' }, extra);
+  const flags = (entries, now) => plain(g.pendingPlanFlags(entries, [], { A901: 'Varsity' }, inp, now, []));
+  const dayOver = new Date(2026, 10, 24, 9), sameDay = new Date(2026, 10, 23, 18);
+  const three = [E('P1', 'Erg (RowErg)', 1200), E('P2', 'BikeErg', 1200), E('P3', 'Erg (RowErg)', 1200)];
+  assert.deepStrictEqual(flags(three, dayOver), [], '3 x 20:00 across two machines reaches 60:00: nothing to flag');
+  assert.deepStrictEqual(flags([E('P1', 'Erg (RowErg)', 1200)], sameDay), [], 'nothing is judged while the day is still open');
+  const eighty = [E('N1', 'Erg (RowErg)', 4800, { 'Intervals': 4 })];
+  assert.deepStrictEqual(flags(eighty, dayOver), [], '80 minutes counts (100% or more)');
+  const run = [E('R1', 'Run', 3000)];
+  assert.deepStrictEqual(flags(run, dayOver), [], '50:00 of running is 60:00 weighted');
+  const under = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500)], dayOver);   // 25:00 + 25:00 x 0.6 = 40:00
+  assert.strictEqual(under.length, 1);
+  assert.deepStrictEqual(under[0].entryIds, ['U1', 'U2'], 'one item for the athlete and day');
+  assert.strictEqual(under[0].flag, 'Open workout: 40 of 60 weighted minutes (67%)');
+  assert.deepStrictEqual(under[0].missedIds, []);
+  const half = flags([E('H1', 'Erg (RowErg)', 1500)], dayOver);
+  assert.deepStrictEqual(half[0].missedIds, ['H1'], 'under half is Missed');
+  const rawHalf = Array.from(g.pendingPlanFlags([E('H1', 'Erg (RowErg)', 1500)], [], { A901: 'Varsity' }, inp, dayOver, []));
+  assert.ok(/Marked Missed.*Open workout: 25 of 60 weighted minutes \(42%\)/.test(g.planFlagMessage(rawHalf[0], 'https://x').text), g.planFlagMessage(rawHalf[0], 'https://x').text);
+  // A coach's decision is kept, but that entry's minutes still count toward the day.
+  const decided = flags([E('D1', 'Erg (RowErg)', 2400, { 'Review status': 'Reviewed, Full' }), E('D2', 'Erg (RowErg)', 1200)], dayOver);
+  assert.deepStrictEqual(decided, [], '40:00 reviewed + 20:00 = 60:00');
+  // Open entries are never moved to OYO as "extra work".
+  assert.deepStrictEqual(plain(g.planExtras([E('X1', 'Erg (RowErg)', 1800), E('X2', 'Erg (RowErg)', 1800)], [], { A901: 'Varsity' }, inp, dayOver)), []);
 });
 
 console.log(`${passed} tests passed`);

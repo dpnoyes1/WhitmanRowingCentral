@@ -24,8 +24,8 @@ function addPlanValidation_(sheet, name) {
         .setAllowInvalid(false).build());
   };
   if (name === TABS.WORKOUTS) {
-    list('Work type', ['Time', 'Distance']);
-    list('Activity', ACTIVITIES.map(function (a) { return a[0]; }));
+    list('Work type', ['Time', 'Distance', 'Open']);
+    list('Activity', ACTIVITIES.map(function (a) { return a[0]; }).concat([PLAN_OPEN_ACTIVITY]));
     list('Zone', ZONES);
     list('Base', Object.keys(PLAN_BASES));
     timeText('Rest', true);

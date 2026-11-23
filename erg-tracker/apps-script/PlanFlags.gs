@@ -51,6 +51,13 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       if (String(e.Status) === 'Out') { g.out = true; return; }
       g.done[String(best.row['Workout ID']).trim()] = true;
       var open = String(e.Status) === 'Full' && review === '' && posted.indexOf(e['Entry ID']) < 0;
+      // An open workout (any activity, N weighted minutes) is judged on the whole day's total, once the day is over.
+      if (planIsOpen_(best.pieces)) {
+        g.openPlan = g.openPlan || { wantS: best.pieces[0].workS, pieces: best.pieces, all: [], flaggable: [] };
+        g.openPlan.all.push(e);
+        if (open) g.openPlan.flaggable.push(e);
+        return;
+      }
       if (!open) return;
       var bases = {};
       Object.keys(PLAN_BASES).forEach(function (b) {
@@ -73,6 +80,13 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   var out = [];
   order.forEach(function (key) {
     var g = groups[key];
+    if (g.openPlan && !g.out && g.day < todayKey && g.openPlan.flaggable.length) {
+      var res = planOpenResult_(planOpenCountedS_(g.openPlan.all, inp.settings), g.openPlan.wantS);
+      var openFlag = res.met ? '' : planOpenFlagText_(res);
+      g.openPlan.flaggable.forEach(function (oe) {
+        g.rows.push({ e: oe, pieces: g.openPlan.pieces, flag: openFlag, missed: !res.met && res.missed, warmCool: false });
+      });
+    }
     if (!g.rows.length) return;
     var skipped = [];
     if (!g.out && g.day < todayKey) {
@@ -87,7 +101,8 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     var hit = g.rows.filter(function (x) { return x.flag || (skipped.length && !x.warmCool); });
     if (!hit.length && skipped.length) hit = g.rows;
     if (!hit.length) return;
-    var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; });
+    var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; })
+      .filter(function (r, i, all) { return all.indexOf(r) === i; });   // an open day gives every entry the same reason
     if (skipped.length) reasons.push('Not logged: ' + skipped.join(', '));
     out.push({
       entryIds: hit.map(function (x) { return x.e['Entry ID']; }), entryId: hit[0].e['Entry ID'],
@@ -97,6 +112,12 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     });
   });
   return out;
+}
+
+/** "Open workout: 48 of 60 weighted minutes (80%)" for a day under its target. Pure. */
+function planOpenFlagText_(res) {
+  var min = function (s) { return Math.round(s / 60 * 10) / 10; };
+  return 'Open workout: ' + min(res.gotS) + ' of ' + min(res.wantS) + ' weighted minutes (' + Math.round(res.fraction * 100) + '%)';
 }
 
 /** Extra practice work moves to OYO from this many seconds of work (David, 2026-11-21: 15 minutes, like the OYO minimum idea). */
@@ -131,7 +152,7 @@ function planExtras(entries, intervals, squads, inp, today) {
   var days = {}, order = [];
   practice.forEach(function (e) {
     var best = bestOf[e['Entry ID']];
-    if (!best || !best.row || !best.pieces.length) return;
+    if (!best || !best.row || !best.pieces.length || planIsOpen_(best.pieces)) return;   // open days: every entry counts toward the total
     var key = e['Athlete ID'] + '|' + dayKey_(e.Date);
     if (!days[key]) { days[key] = []; order.push(key); }
     days[key].push({ e: e, best: best, id: String(best.row['Workout ID']).trim() });

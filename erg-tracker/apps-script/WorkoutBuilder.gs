@@ -32,14 +32,14 @@ function workoutNextId_(existingIds) {
 function workoutPieceRow_(workoutId, name, n, p) {
   var where = 'Piece ' + n + ': ';
   var type = String(p.workType || '').trim();
-  if (type !== 'Time' && type !== 'Distance') return { error: where + 'choose Time or Distance.' };
+  if (type !== 'Time' && type !== 'Distance' && type !== 'Open') return { error: where + 'choose Time, Distance or Open.' };
   var reps = Number(p.reps === undefined || p.reps === '' ? 1 : p.reps);
   if (!(reps >= 1 && reps <= 30) || Math.floor(reps) !== reps) return { error: where + 'reps must be a whole number from 1 to 30.' };
   var work = String(p.work === undefined ? '' : p.work).trim();
-  if (type === 'Time') {
+  if (type === 'Time' || type === 'Open') {
     var wt;
     try { wt = parseTime(work); } catch (e) { wt = null; }
-    if (!(wt > 0)) return { error: where + 'work time like 20:00 is needed.' };
+    if (!(wt > 0)) return { error: where + (type === 'Open' ? 'the target minutes like 60:00 are needed.' : 'work time like 20:00 is needed.') };
   } else if (!/^\d{2,5}\s*m?$/i.test(work)) {
     return { error: where + 'work distance in meters, like 500, is needed.' };
   }
@@ -56,6 +56,12 @@ function workoutPieceRow_(workoutId, name, n, p) {
   if ((low !== '' && !(low > 0 && low <= 200)) || (high !== '' && !(high > 0 && high <= 200))) return { error: where + 'target % must be a number from 1 to 200.' };
   var base = String(p.base || '').trim();
   if (base && !PLAN_BASES[base]) return { error: where + 'base must be 2k or 20\'.' };
+  // An open workout counts any activity (weighted), so it carries no activity, zone, rest or target of its own.
+  if (type === 'Open') {
+    return { 'Workout ID': workoutId, 'Name': name, 'Piece #': n, 'Reps': 1, 'Work type': 'Open', 'Work': work, 'Rest': '', 'Start every': '',
+      'Activity': PLAN_OPEN_ACTIVITY, 'Zone': '', 'Base': '', 'Target low %': '', 'Target high %': '', 'Rate': '',
+      'Notes': String(p.notes || '').trim().slice(0, 200), 'Unit': '', 'Pace target': '' };
+  }
   var activity = String(p.activity || 'Erg (RowErg)').trim();
   if (!ACTIVITIES.some(function (a) { return a[0] === activity; })) return { error: where + 'unknown activity.' };
   // A Run by distance is kept in metres, with the unit (mi or km) the coach thinks in.

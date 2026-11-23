@@ -58,6 +58,11 @@ export function parseNL(s) {
 
 /** The builder state -> the pieces the Sheet saves, or { err } in plain words. Exported for the tests. */
 export function buildPieces(B) {
+  // Open: any activity counts toward a target of weighted minutes (David, 2026-11-23). No zone, rest or pace.
+  if (B.type === 'open') {
+    if (tsec(B.openT) === null) return { err: 'Type the target as minutes:seconds, like 60:00.' };
+    return { pieces: [{ workType: 'Open', reps: '1', work: String(B.openT).trim(), rest: '', startEvery: '', zone: '', base: '', lowPct: '', highPct: '', rate: '' }] };
+  }
   const tim = B.by === 'time', zone = ZONE_OF[B.cat] || '';
   const run = B.act === RUN;
   const bad = tim ? 'Type the time as minutes:seconds, like 30:00.' : run ? `Type the distance in ${B.unit === 'km' ? 'kilometers' : 'miles'}, like 3.1.` : 'Type the distance in meters, like 2000.';
@@ -88,6 +93,10 @@ export function buildPieces(B) {
 
 /** What the coach reads under Preview. Exported for the tests. */
 export function previewOf(B) {
+  if (B.type === 'open') {
+    const b = buildPieces(B);
+    return b.err ? { err: b.err } : { text: `Open · ${hms(tsec(B.openT))} of any activity`, note: 'Any activity, any format. Each athlete\'s minutes count at their activity weight, and the day is Completed at 100% or more' };
+  }
   const b = buildPieces(B);
   if (b.err) return { err: b.err };
   const tim = B.by === 'time', fmtTot = (n) => (tim ? hms(n) : B.act === RUN ? Math.round(n * 100) / 100 + (B.unit === 'km' ? ' km' : ' mi') : n.toLocaleString('en-US') + ' m');
@@ -112,6 +121,9 @@ const mondayOf = (d) => addDays(d, -((toDate(d).getUTCDay() + 6) % 7));
 /** A saved workout's pieces -> builder fields, or null when the builder cannot show it faithfully. Exported for the tests. */
 export function fromPieces(pieces, name = '') {
   if (!Array.isArray(pieces) || !pieces.length || pieces.length > 12) return null;
+  if (pieces.length === 1 && pieces[0].workType === 'Open') {
+    return tsec(pieces[0].work || '') === null ? null : { name, cat: 'Other', by: 'time', act: ERG, unit: 'mi', paceOn: false, pace: '', type: 'open', openT: pieces[0].work };
+  }
   const types = new Set(pieces.map((p) => p.workType));
   if (types.size !== 1 || !['Time', 'Distance'].includes(pieces[0].workType)) return null;
   if (pieces.some((p) => p.startEvery || p.base || p.lowPct || p.highPct || p.rate || p.notes)) return null;
@@ -147,7 +159,7 @@ export function openPlan(v, ctx) {
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
     open: false, edit: null, day: '', also: [], useId: '', keep: false, pick: '', act: ERG, unit: 'mi', paceOn: false, pace: '',
-    notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30',
+    notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', openT: '60:00', n: '2', work: '30:00', rest: '1:30',
     rows: { distance: PRESET.distance(), time: PRESET.time() }, nl: '', squad: 'All', session: 'Practice', published: false,
     week: startWeek()
   };
@@ -171,6 +183,8 @@ export function openPlan(v, ctx) {
   const wLabel = (t) => (t ? 'Time (min : sec)' : dLabel());
   const fields = () => {
     const t = tim();
+    if (B.type === 'open') return `<div class="fgrid">${fld('Target (min : sec, weighted)', 'openT', B.openT, { big: 1, ok: tsec(B.openT) !== null })}<div></div></div>
+      <p class="note">Athletes can do it on any machine, in any format. Their minutes count at the team's activity weights (set in Settings), and the day is Completed at 100% or more. It is checked once the day is over.</p>`;
     if (B.type === 'single') return `<div class="fgrid">${byseg()}${fld(wLabel(t), 'single', B.single, { big: 1, ok: okW(B.single), mode: run() && !t ? 'decimal' : 'text' })}</div>`;
     if (B.type === 'intervals') {
       return `<div class="fgrid">${fld('Intervals', 'n', B.n, { big: 1, mode: 'numeric', ok: /^\d{1,2}$/.test(B.n.trim()) && +B.n >= 1 })}${byseg()}</div>
@@ -186,6 +200,7 @@ export function openPlan(v, ctx) {
   const pvHtml = () => {
     const p = previewOf(B);
     return p.err ? ['–', `<span class="warn-text">${esc(p.err)}</span>`]
+      : B.type === 'open' ? [esc(p.text), esc(p.note) + '.']
       : [esc(p.text), esc(p.note) + (B.paceOn ? '. Everyone sees this goal pace.' : B.act === RUN ? '.' : '. Athletes see this with their own pace window, worked out from a percentage of their 20\' watts.')];
   };
 
@@ -241,12 +256,12 @@ export function openPlan(v, ctx) {
       : `<div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
         <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
-      <div class="f">Activity${seg([[ERG, 'Erg'], [RUN, 'Run']], B.act, 'data-act')}</div>
-      ${run() && B.by === 'distance' ? `<div class="f">Run distance in${seg([['mi', 'Miles'], ['km', 'Kilometers']], B.unit, 'data-unit')}</div>` : ''}
-      ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable']], B.type, 'data-type')}
+      ${B.type === 'open' ? '' : `<div class="f">Activity${seg([[ERG, 'Erg'], [RUN, 'Run']], B.act, 'data-act')}</div>`}
+      ${B.type !== 'open' && run() && B.by === 'distance' ? `<div class="f">Run distance in${seg([['mi', 'Miles'], ['km', 'Kilometers']], B.unit, 'data-unit')}</div>` : ''}
+      ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable'], ['open', 'Open']], B.type, 'data-type')}
       ${fields()}
-      <div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
-        ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>
+      ${B.type === 'open' ? '' : `<div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
+        ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>`}
       <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my saved workouts (to reuse later)</label><span class="sub">Leave this off for a one-off. It is still planned for the day.</span></div>
       <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
     const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
@@ -312,7 +327,7 @@ export function openPlan(v, ctx) {
   };
 
   const resetBuilder = () => {
-    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', keep: false, also: [], act: ERG, unit: 'mi', paceOn: false, pace: '' });
+    Object.assign(B, { notes: '', name: '', cat: 'Aerobic', type: 'intervals', by: 'time', single: '30:00', openT: '60:00', n: '2', work: '30:00', rest: '1:30', nl: '', useId: '', keep: false, also: [], act: ERG, unit: 'mi', paceOn: false, pace: '' });
     B.rows = { distance: PRESET.distance(), time: PRESET.time() };
     nameTouched = false; nlMsg = null; asking = false;
   };
