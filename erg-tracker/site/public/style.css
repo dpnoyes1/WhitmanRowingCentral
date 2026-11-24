@@ -82,6 +82,9 @@ h2 { font-size: 1.05rem; margin: 0 0 12px; }
 .side nav a, .side-foot a { display: flex; align-items: center; gap: 12px; padding: 9px 12px; min-height: 44px; border-radius: 12px; font-weight: 500; }
 .side nav a:hover, .side-foot a:hover { background: var(--hover); }
 .side a.on { background: var(--accent); color: var(--accent-ink); font-weight: 600; box-shadow: 0 0 0 2px rgba(116, 176, 218, .35); }
+/* Show the pointer (hand) cursor on everything clickable; disabled controls get the normal arrow. */
+a[href], button, summary, select, label[for], label.chk, [role="button"], [role="tab"], input[type="checkbox"], input[type="radio"], input[type="file"], input[type="button"], input[type="submit"] { cursor: pointer; }
+button:disabled, [aria-disabled="true"], input:disabled, select:disabled { cursor: default; }
 a:focus-visible, button:focus-visible, input:focus-visible, select:focus-visible, summary:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .side a:focus-visible, .tabbar a:focus-visible, .tabbar button:focus-visible, .icon-btn:focus-visible, .theme-toggle:focus-visible, .menu-toggle:focus-visible { outline: 2px solid var(--link); outline-offset: 2px; }
 .side-foot { display: flex; flex-direction: column; gap: 2px; padding-top: 8px; }
