@@ -574,6 +574,16 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn.sm { min-height: 40px; padding: 6px 14px; }
 .wkhead { display: flex; align-items: center; gap: 10px; }
+.wkbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.wkbar .pbulkrow { margin: 0; flex-wrap: nowrap; }
+.wkbar .pbulkrow .btn { min-height: 44px; white-space: nowrap; }
+@media (max-width: 719px) {
+  .wkbar { width: 100%; flex-direction: column; align-items: stretch; gap: 10px; }
+  .wkhead { width: 100%; }
+  .wkhead .eyebrow { text-align: center; }
+  .wkbar .pbulkrow { width: 100%; flex-direction: column; }
+  .wkbar .pbulkrow .btn { width: 100%; }
+}
 .wkhead .eyebrow { flex: 1; }
 .pbulkrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
 .pbulkrow .btn { min-height: 48px; }
@@ -585,7 +595,8 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .chk input { width: 22px; height: 22px; flex: none; }
 .pday { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
 .pday.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.prow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 12px 4px; cursor: pointer; border-radius: 12px; }
+.prow { -webkit-appearance: none; appearance: none; display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; border-radius: 12px; box-sizing: border-box; }
+.prowin { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 12px 4px; box-sizing: border-box; }
 .prow:hover { background: var(--hover); }
 .prow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pdt { flex: none; width: 76px; display: flex; flex-direction: column; }
@@ -599,7 +610,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .pbody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
 .pbody[hidden] { display: none; }
 @media (max-width: 719px) {
-  .prow { align-items: flex-start; gap: 10px; }
+  .prowin { align-items: flex-start; gap: 10px; }
   .pdt { width: 74px; }
   .ptitles { flex-direction: column; gap: 3px; }
   .ptitle { border: 0; background: none; padding: 0; white-space: normal; }
@@ -931,4 +942,12 @@ table.avg-results th { white-space: normal; }
 @media (min-width: 721px) and (max-width: 900px) {
   table.gmsrank th:first-child, table.gmsrank td:first-child { display: none; }
   table.gmsrank td.next-star { min-width: 6em; }
+}
+
+/* Phone: no Preview box in the builder; "Also add to" is one row of compact day chips (David, 2026-11-24). */
+@media (max-width: 719px) {
+  .ppreview { display: none; }
+  .alsodays { flex-wrap: nowrap; gap: 6px; }
+  .alsodays button { flex: 1 1 0; min-width: 0; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; font-size: .85rem; }
+  .alsodays button .num { font-size: 1.05rem; font-weight: 700; }
 }
