@@ -165,6 +165,18 @@ export function openPlan(v, ctx) {
   };
   { const f = data.library.find((w) => w.saved !== false); B.pick = f ? f.id : ''; }
   let nameTouched = false;
+  // A field's "change" fires the moment the mouse goes down on a button, and redrawing then replaces the
+  // button before the click lands (first click lost, second works). So a redraw asked for while the
+  // pointer is down waits until the click is over.
+  let ptrDown = false, redrawLater = false;
+  const redrawField = () => { if (ptrDown) redrawLater = true; else draw(); };
+  if (app.__planPtr) app.__planPtr();
+  const onDown = () => { ptrDown = true; };
+  const onUp = () => setTimeout(() => { ptrDown = false; if (redrawLater) { redrawLater = false; draw(); } }, 0);
+  document.addEventListener('pointerdown', onDown, true);
+  document.addEventListener('pointerup', onUp, true);
+  document.addEventListener('pointercancel', onUp, true);
+  app.__planPtr = () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('pointerup', onUp, true); document.removeEventListener('pointercancel', onUp, true); };
 
   const opt = (list, cur) => list.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('');
   const seg = (items, cur, attr, cls = '') => `<div class="seg fill ${cls}" role="group">${items.map(([k, l]) => `<button type="button" ${attr}="${k}" aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
@@ -377,7 +389,7 @@ export function openPlan(v, ctx) {
       if (ok) { const f = data.library.find((w) => w.saved !== false); if (!lib(B.pick) || (lib(B.pick) || {}).saved === false) B.pick = f ? f.id : ''; }
       scrollTo = '#pnotice'; draw(); }; });
     const kp = app.querySelector('[data-keep]'); if (kp) kp.onchange = () => { B.keep = kp.checked; };
-    const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; draw(); };
+    const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; redrawField(); };
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });
     app.querySelectorAll('[data-pub]').forEach((b) => { b.onclick = () => { B.published = b.dataset.pub === 'published'; draw(); }; });
     app.querySelectorAll('[data-also]').forEach((b) => { b.onclick = () => { const d = b.dataset.also, i = B.also.indexOf(d); if (i >= 0) B.also.splice(i, 1); else B.also.push(d); B.also.sort(); draw(); }; });
@@ -388,7 +400,7 @@ export function openPlan(v, ctx) {
         if (el.dataset.k !== 'nl' && el.dataset.k !== 'name' && el.dataset.k !== 'notes') refreshPreview();
       };
       if (el.dataset.k === 'nl') el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); fill(); } };
-      else el.onchange = draw;   // redraw once a field is left, so a wrong number is marked
+      else el.onchange = redrawField;   // redraw once a field is left, so a wrong number is marked
     });
     app.querySelectorAll('select[data-k]').forEach((el) => { el.onchange = () => { setK(el.dataset.k, el.value); if (el.dataset.k === 'cat') refreshPreview(); }; });
     const f = app.querySelector('[data-fill]'); if (f) f.onclick = fill;

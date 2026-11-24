@@ -74,6 +74,23 @@ flow('plan: add a workout to Thursday, it shows on that day', async ({ browser, 
   await page.context().close();
 });
 
+flow('plan: Save and Cancel work on the first click right after typing in a field', async ({ browser, server }) => {
+  const page = await newPage(browser, 1280);
+  await signInCoach(page, server.url, '#/plan');
+  await page.click('[data-add="2026-10-22"]');
+  await page.click('[data-type=open]');
+  await page.fill('input[data-k=name]', "60' any activity");   // still focused when the button is pressed
+  await page.click('[data-save=draft]');
+  await page.waitForSelector('#pnotice .notice');
+  assert.equal(server.state.saves.at(-1).publish, false, 'one click on Save draft saved the draft');
+  await page.click('[data-add="2026-10-23"]');
+  await page.click('[data-type=open]');
+  await page.fill('input[data-k=name]', 'to cancel');
+  await page.click('[data-cancel]');
+  assert.equal(await page.locator('[data-cancel]').count(), 0, 'one click on Cancel closed the builder');
+  await page.context().close();
+});
+
 flow('plan: an open workout (any activity, 60 minutes) saves with no activity or zone', async ({ browser, server }) => {
   const page = await newPage(browser, 390);
   await signInCoach(page, server.url, '#/plan');
