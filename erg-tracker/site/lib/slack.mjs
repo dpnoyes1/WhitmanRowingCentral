@@ -46,11 +46,12 @@ async function callSheetOnce(env, fetchImpl, body) {
 }
 
 // plan_confirm / plan_full since 2026-11-17 (entries are marked Modified first); the other two are on older messages.
-const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_reviewed: 'reviewed' };
+const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_missed: 'missed', plan_reviewed: 'reviewed' };
 const DONE = {
   confirm: (n) => `:white_check_mark: Marked by ${n}`,
   full: (n) => `:white_check_mark: Kept Completed by ${n}`,
   modified: (n) => `:white_check_mark: Set to Modified by ${n}`,
+  missed: (n) => `:white_check_mark: Marked Missed by ${n}`,
   reviewed: (n) => `:white_check_mark: Looks right, marked by ${n}`
 };
 export const planOp = (actionId) => OPS[actionId] || null;

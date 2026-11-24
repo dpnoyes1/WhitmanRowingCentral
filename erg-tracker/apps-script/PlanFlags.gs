@@ -359,24 +359,18 @@ function planBatchItems(items) {
 
 /** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
-  var allMissed = !!(item.missedIds && item.missedIds.length && item.missedIds.length === (item.entryIds || [item.entryId]).length);
-  // Since 2026-11-23 (David) a log counts as Completed by default; the coach decides whether it was Modified. Only
-  // under half of the plan is marked Missed at once (the make-up opens), with the usual buttons.
+  // Since 2026-11-23 (David) any log in the practice window is Completed by default, even under half of the plan;
+  // the coach downgrades it with a button. `missedIds` now only says the entry did under half of the plan.
+  var underHalf = !!(item.missedIds && item.missedIds.length);
   var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' +
-    (allMissed ? 'Marked Missed (an open make-up; the minutes still count)' : 'Counted as Completed, but it may be Modified') +
+    'Counted as Completed, but it may be ' + (underHalf ? 'Modified or Missed' : 'Modified') +
     ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
   var ids = (item.entryIds || [item.entryId]).join(',');
-  return {
-    text: text,
-    blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text: text } },
-      { type: 'actions', elements: [
-        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: allMissed ? 'Confirm Missed' : 'Mark Modified' } },
-        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: allMissed ? 'Set back to Completed' : 'Keep Completed' } },
-        { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
-      ] }
-    ]
-  };
+  var buttons = [{ type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: 'Mark Modified' } }];
+  if (underHalf) buttons.push({ type: 'button', action_id: 'plan_missed', value: ids, text: { type: 'plain_text', text: 'Mark Missed' } });
+  buttons.push({ type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Keep Completed' } });
+  buttons.push({ type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } });
+  return { text: text, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: text } }, { type: 'actions', elements: buttons }] };
 }
 
 /** Slack member IDs allowed to press the buttons, from Settings slack.coach_ids. */
@@ -393,7 +387,8 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   if (!slackUserId || coachIds.indexOf(String(slackUserId)) < 0) return { status: 'forbidden' };
   if (!row) return { status: 'missing' };
   var review = String(row['Review status'] || '').trim();
-  if (['confirm', 'full', 'modified', 'reviewed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
+  if (['confirm', 'full', 'modified', 'reviewed', 'missed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
+  if (op === 'missed' && (review === PLAN_FLAG_AUTO || review === '')) return { status: 'ok', mark: 'Missed', set: { 'Status': 'Missed', 'Review status': PLAN_FLAG_MISSED } };
   if (review === PLAN_FLAG_AUTO) {
     var wasMissed = String(row.Status) === 'Missed';
     // A flagged entry is still Completed (Full) until the coach says otherwise; older ones were already marked Modified.
@@ -412,7 +407,8 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
  */
 function planFlagAutoSet_(row, missed) {
   if (!row || String(row.Status) !== 'Full' || String(row['Review status'] || '').trim() !== '') return null;
-  return missed ? { 'Status': 'Missed', 'Review status': PLAN_FLAG_AUTO } : { 'Review status': PLAN_FLAG_AUTO };   // Modified stays Full until a coach presses Mark Modified
+  // David, 2026-11-23: any log in the practice window is Completed by default, even under half; a coach downgrades it.
+  return { 'Review status': PLAN_FLAG_AUTO };
 }
 
 // ---- Sheet side ----

@@ -1314,7 +1314,7 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   // A mistyped athlete name in /log gets a "did you mean" (David, 2026-11-23).
   assert.ok(/Did you mean \*Fake Name\*\?/.test(SL.logReply({ status: 'unknown_name' }, ['Fake Name'])));
   assert.ok(/check the spelling/.test(SL.logReply({ status: 'unknown_name' })));
-  assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
+  assert.ok(/under half of the planned workout. It counts as Completed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'under half still counts as Completed (David, 2026-11-23)');
   assert.ok(!/Modified/.test(SL.flagReply('Missed')));
   assert.strictEqual(SL.flagReply(false), '');
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));

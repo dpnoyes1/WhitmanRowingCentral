@@ -540,7 +540,7 @@ function logbookFlagNotice(entry, rosterRow, missed) {
   var d = entry['Date'];
   var when = d instanceof Date ? Utilities.formatDate(d, ss_().getSpreadsheetTimeZone(), 'EEE MMM d') : 'today';
   return { slackUserId: id, notice: ':warning: Your Logbook workout on ' + when + (missed
-    ? ' was under half of the planned workout, so it is marked Missed (you can still make it up)'
+    ? ' was under half of the planned workout. It counts as Completed for now'
     : ' was not the planned workout in full. It counts as Completed for now') + ' and your coaches were told. If that is wrong, tell a coach.' };
 }
 

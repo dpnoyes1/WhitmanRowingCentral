@@ -1118,7 +1118,7 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   assert.deepStrictEqual(JSON.parse(JSON.stringify(g.pendingPlanFlags([eW], ivW, squads, withWarm, new Date(2026, 10, 10, 18), []))), [], 'same day, warm-up alone: no flag');
   assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['E40'], 'a skipped workout still flags the day, but not the warm-up (David, 2026-11-22)');
   const ros = { 'Slack member ID': 'UFAKE01' };
-  assert.ok(/marked Missed/.test(g.logbookFlagNotice({ Date: '' }, ros, true).notice), 'Logbook DM says Missed when Missed');
+  assert.ok(/under half of the planned workout. It counts as Completed/.test(g.logbookFlagNotice({ Date: '' }, ros, true).notice), 'Logbook DM says under half, still Completed');
   assert.ok(/counts as Completed for now/.test(g.logbookFlagNotice({ Date: '' }, ros, false).notice));
   const onlyWarm = wf([eW], ivW);
   assert.deepStrictEqual(onlyWarm[0].entryIds, ['EW'], 'only the warm-up logged: it carries the day\'s Modified mark');
@@ -2006,15 +2006,16 @@ test('plan check: under half of the planned work is Not done, marked Missed (Dav
   assert.strictEqual(g.checkAgainstPlan([{ 'Interval #': 1, 'Work s': 480, 'Work m': 1000 }, { 'Interval #': 2, 'Work s': 480, 'Work m': 1000 }], D, {}, s).notDone, false);
   // The marks and the buttons.
   const plain = (x) => JSON.parse(JSON.stringify(x));
-  assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, true)), { Status: 'Missed', 'Review status': 'Auto Modified' });
+  assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, true)), { 'Review status': 'Auto Modified' }, 'even under half stays Completed (David, 2026-11-23)');
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction({ 'Entry ID': 'E1', Status: 'Full', 'Review status': 'Auto Modified' }, 'missed', 'U1', ['U1'])), { status: 'ok', mark: 'Missed', set: { Status: 'Missed', 'Review status': 'Reviewed, Missed' } });
   assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, false)), { 'Review status': 'Auto Modified' });
   const auto = { 'Entry ID': 'E1', Status: 'Missed', 'Review status': 'Auto Modified' };
   assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'confirm', 'U1', ['U1'])), { status: 'ok', mark: 'Missed', set: { 'Review status': 'Reviewed, Missed' } });
   assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'full', 'U1', ['U1'])), { status: 'ok', set: { Status: 'Full', 'Review status': 'Reviewed, Full' } });
   const msg = g.planFlagMessage({ athlete: 'Fake Athlete', date: new Date(2026, 10, 18), sessionType: 'Practice', flag: 'x', entryIds: ['E1'], missedIds: ['E1'], detail: '' }, 'https://sheet.example');
-  assert.match(msg.text, /Marked Missed/); assert.strictEqual(msg.blocks[1].elements[0].text.text, 'Confirm Missed');
+  assert.match(msg.text, /Counted as Completed, but it may be Modified or Missed/); assert.deepStrictEqual(Array.from(msg.blocks[1].elements.map((b) => b.text.text)), ['Mark Modified', 'Mark Missed', 'Keep Completed', 'Open in Sheet']);
   const mixed = g.planFlagMessage({ athlete: 'Fake Athlete', date: new Date(2026, 10, 18), sessionType: 'Practice', flag: 'x', entryIds: ['E1', 'E2'], missedIds: ['E1'], detail: '' }, 'https://sheet.example');
-  assert.match(mixed.text, /Counted as Completed/); assert.deepStrictEqual(Array.from(mixed.blocks[1].elements.slice(0, 2).map((b) => b.text.text)), ['Mark Modified', 'Keep Completed']);
+  assert.match(mixed.text, /Counted as Completed/); assert.deepStrictEqual(Array.from(mixed.blocks[1].elements.slice(0, 3).map((b) => b.text.text)), ['Mark Modified', 'Mark Missed', 'Keep Completed']);
   // A Missed practice entry is not a practice done: it never covers a make-up window.
   const pr = [{ date: '2026-11-17', squad: 'Girls', canceled: false }];
   assert.deepStrictEqual(plain(g.openMakeups_('Varsity', '2026-11-18', pr, [{ date: '2026-11-17', type: 'Practice', status: 'Missed', makeupFor: '' }])), ['2026-11-17']);
@@ -2086,7 +2087,7 @@ test('open workout: any activity counts weighted minutes toward the day (David, 
   const half = flags([E('H1', 'Erg (RowErg)', 1500)], dayOver);
   assert.deepStrictEqual(half[0].missedIds, ['H1'], 'under half is Missed');
   const rawHalf = Array.from(g.pendingPlanFlags([E('H1', 'Erg (RowErg)', 1500)], [], { A901: 'Varsity' }, inp, dayOver, []));
-  assert.ok(/Marked Missed.*Open workout: 25 of 60 weighted minutes \(42%\)/.test(g.planFlagMessage(rawHalf[0], 'https://x').text), g.planFlagMessage(rawHalf[0], 'https://x').text);
+  assert.ok(/Counted as Completed.*Open workout: 25 of 60 weighted minutes \(42%\)/.test(g.planFlagMessage(rawHalf[0], 'https://x').text), g.planFlagMessage(rawHalf[0], 'https://x').text);
   // A coach's decision is kept, but that entry's minutes still count toward the day.
   const decided = flags([E('D1', 'Erg (RowErg)', 2400, { 'Review status': 'Reviewed, Full' }), E('D2', 'Erg (RowErg)', 1200)], dayOver);
   assert.deepStrictEqual(decided, [], '40:00 reviewed + 20:00 = 60:00');
