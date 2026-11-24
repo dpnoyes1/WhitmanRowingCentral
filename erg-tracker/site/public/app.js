@@ -1019,7 +1019,7 @@ function logbookCard(p) {
     <p class="small"><label>Counts as <select class="lb-type">${types}</select></label>
       <label class="lb-mk"${p.sessionType === 'Make-up' ? '' : ' hidden'}> for the practice on <input type="date" class="lb-mkdate" value="${esc(p.makeupFor || '')}"></label>
       ${p.benchmark ? `<label><input type="checkbox" class="lb-bench"> This was my ${p.benchmark === '2000m' ? '2k' : "20'"} test</label>` : ''}</p>
-    <p><button class="btn lb-confirm">Confirm</button> <span class="muted small lb-msg">If you do nothing, it counts after 20 hours${p.possibleMakeup ? ' (make-ups wait for you)' : ''}.</span></p></div>`;
+    <p><button class="btn lb-confirm">Confirm</button> <span class="muted small lb-msg">If you do nothing, it counts after a day${p.possibleMakeup ? ' (make-ups wait for you)' : ''}.</span></p></div>`;
 }
 
 function wireLogbookCard(card, p) {

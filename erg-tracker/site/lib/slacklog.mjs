@@ -161,7 +161,7 @@ export function flagReply(flagged) {
   return ' It isn\'t exactly the planned workout. It counts as Completed for now and the coaches were told.';
 }
 
-export function logReply(result) {
+export function logReply(result, near = []) {
   if (result.status === 'ok') {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
     if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
@@ -171,7 +171,10 @@ export function logReply(result) {
   if (result.status === 'duplicate') return ':information_source: That was already saved. Nothing changed.';
   if (result.status === 'not_allowed') return NOT_ON_ROSTER;
   if (result.status === 'not_yourself') return ':lock: Not saved: you can only log for yourself. Leave the Athlete box blank and run /log again.';
-  if (result.status === 'unknown_name') return ':warning: Not saved: that name isn\'t an active athlete on the Roster. Coaches: check the spelling and run /log again.';
+  if (result.status === 'unknown_name') {
+    const guess = near.length ? ` Did you mean ${near.map((n) => '*' + n + '*').join(' or ')}? Run /log again with that name.` : ' Coaches: check the spelling and run /log again.';
+    return ":warning: Not saved: that name isn't an active athlete on the Roster." + guess;
+  }
   return `:warning: Not saved: ${result.error || 'unknown problem'}. Run /log again, or use the Form.`;
 }
 

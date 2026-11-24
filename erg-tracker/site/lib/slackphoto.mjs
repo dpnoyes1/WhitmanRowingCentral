@@ -215,6 +215,14 @@ export function resolveName(typed, names) {
   return { kind: 'none', names: [] };
 }
 
+/** Names close to a mistyped athlete name, for the /log "did you mean" reply (David, 2026-11-23). [] when none or the list can't be read. */
+export async function nearNames(typed, envFn, fetchImpl, deps = {}) {
+  const names = await activeNames(envFn, fetchImpl, deps);
+  if (!names) return [];
+  const r = resolveName(typed, names);
+  return r.kind === 'suggest' || r.kind === 'choose' ? r.names : [];
+}
+
 async function activeNames(envFn, fetchImpl, deps) {
   if (deps.athleteNames) return deps.athleteNames();
   try {

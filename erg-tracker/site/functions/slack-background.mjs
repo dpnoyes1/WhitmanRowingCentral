@@ -10,19 +10,21 @@
 import { signatureValid, callSheet, planOp, planFlagReply, sendReply, dmUser, chatUpdate } from '../lib/slack.mjs';
 import { readLogForm, logReply, fyiText } from '../lib/slacklog.mjs';
 import { readChange, changeRequest, confirmRequest, confirmReply } from '../lib/slacklogbook.mjs';
-import { handlePhotoEvent, handlePhotoButton } from '../lib/slackphoto.mjs';
+import { handlePhotoEvent, handlePhotoButton, nearNames } from '../lib/slackphoto.mjs';
 import { handleQuestion } from '../lib/ask.mjs';
 
 async function handleLogSubmission(payload, envFn, fetchImpl) {
   let result;
+  const form = readLogForm(payload.view);
   try {
     result = await callSheet(envFn, fetchImpl, {
-      action: 'slack-log', slackUserId: payload.user.id, slackName: payload.user.name || payload.user.username || payload.user.id, viewId: payload.view.id, form: readLogForm(payload.view)
+      action: 'slack-log', slackUserId: payload.user.id, slackName: payload.user.name || payload.user.username || payload.user.id, viewId: payload.view.id, form
     });
   } catch (err) {
     result = { status: 'error', error: err.message };
   }
-  const sent = await dmUser(envFn, fetchImpl, payload.user.id, logReply(result));
+  const near = result.status === 'unknown_name' && form.athlete ? await nearNames(form.athlete, envFn, fetchImpl) : [];
+  const sent = await dmUser(envFn, fetchImpl, payload.user.id, logReply(result, near));
   const fyi = fyiText(result);
   if (fyi) await dmUser(envFn, fetchImpl, result.notifySlackId, fyi);
   console.log('slack: /log', result.status, sent ? 'dm sent' : 'dm failed', fyi ? 'fyi sent' : '');

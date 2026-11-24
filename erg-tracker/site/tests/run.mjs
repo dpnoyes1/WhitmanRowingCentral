@@ -1311,6 +1311,9 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
   assert.ok(/counts as Completed for now/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
+  // A mistyped athlete name in /log gets a "did you mean" (David, 2026-11-23).
+  assert.ok(/Did you mean \*Fake Name\*\?/.test(SL.logReply({ status: 'unknown_name' }, ['Fake Name'])));
+  assert.ok(/check the spelling/.test(SL.logReply({ status: 'unknown_name' })));
   assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
   assert.ok(!/Modified/.test(SL.flagReply('Missed')));
   assert.strictEqual(SL.flagReply(false), '');
@@ -2662,7 +2665,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.ok(/Found on Logbook/.test(posted[0].text));
   const acts = posted[0].blocks.find((b) => b.type === 'actions').elements;
   assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_confirm', 'lb_change']);
-  assert.ok(/after about 20 hours/.test(JSON.stringify(posted[0].blocks)));
+  assert.ok(/after a day/.test(JSON.stringify(posted[0].blocks)));
   assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'same');
   assert.strictEqual(posted.length, 1, 'an unchanged result is not DMed twice');
   // no Slack ID on the Roster, or Slack failing: the sync still works
@@ -2677,7 +2680,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   const mk = SLB.logbookMessage({ ...card, sessionType: 'Make-up', makeupFor: '2026-10-26', possibleMakeup: true, benchmark: '2000m' });
   const mkActs = mk.blocks.find((b) => b.type === 'actions').elements;
   assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_confirm', 'lb_confirm_test', 'lb_change']);
-  assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/20 hours/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
+  assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/a day/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
 
   // buttons
   const NOW = 1_800_000_000;

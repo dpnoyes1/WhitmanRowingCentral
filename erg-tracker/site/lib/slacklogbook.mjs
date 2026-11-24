@@ -44,7 +44,7 @@ export function logbookMessage(card) {
     ? card.pieces.map((p) => `${p.n}. ${fmtTime(p.workS)}${p.workM ? ' · ' + fmtNum(p.workM) + ' m' : ''}${p.rate ? ' · ' + p.rate + ' spm' : ''}`).join('\n') : '';
   const counts = card.possibleMakeup
     ? `This looks like a make-up for *${card.makeupFor ? fmtDay(card.makeupFor) : 'a missed practice'}*. It won't count until you tap Confirm or Change.`
-    : `It will count as *${card.sessionType}*. If you do nothing, it counts that way after about 20 hours.`;
+    : `It will count as *${card.sessionType}*. If you do nothing, it counts that way after a day.`;
   const text = summaryLine(card);
   const buttons = [
     { type: 'button', action_id: 'lb_confirm', style: 'primary', text: label(card.possibleMakeup ? 'Confirm make-up' : 'Confirm'), value: card.id },

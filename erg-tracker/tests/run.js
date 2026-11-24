@@ -1406,7 +1406,7 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   const entry = (over = {}) => ({
     'Entry ID': 'E1', 'Athlete ID': 'A001', 'Athlete': 'Jane Smith', 'Entered by': 'Jane Smith', 'Date': day(2026, 10, 29),
     'Session type': 'OYO', 'Status': '', 'Activity': 'Erg (RowErg)', 'Work s': 440, 'Work m': 2000, 'Drag factor': 98,
-    'Source': 'Logbook', 'Review status': 'Pending', 'Response ID': 'logbook:5', 'Submitted at': new Date(2026, 9, 29, 8, 0), ...over
+    'Source': 'Logbook', 'Review status': 'Pending', 'Response ID': 'logbook:5', 'Submitted at': new Date(2026, 9, 28, 8, 0), ...over
   });
   const ivs = [{ 'Entry ID': 'E1', 'Interval #': 1, 'Work s': 440, 'Work m': 2000, 'Avg rate': 28 }];
   const cx = { newId: (p) => p + '9', now: new Date(2026, 9, 29, 9, 0), parseDate: (s) => { const [y, m, d] = s.split('-').map(Number); return day(y, m, d); }, formatDay: () => '2026-10-27' };
@@ -1431,7 +1431,7 @@ test('logbook: confirm plan, benchmark row, auto-accept and the pending list', (
   assert.ok(g.logbookConfirmPlan(entry(), ivs, 'A001', { benchmark: '20min' }, cx).error);
   const twenty = g.logbookConfirmPlan(entry({ 'Work s': 1200, 'Work m': 5100 }), [{ 'Entry ID': 'E1', 'Interval #': 1, 'Work s': 1200, 'Work m': 5100, 'Avg rate': 22 }], 'A001', { benchmark: '20min' }, cx);
   assert.deepStrictEqual([twenty.benchmark['Test'], twenty.benchmark['Time s'], twenty.benchmark['Meters']], ['20min', '', 5100]);
-  // auto-accept: plain Pending older than 20 h; possible make-ups and fresh ones wait
+  // auto-accept: plain Pending older than 24 h; possible make-ups and fresh ones wait
   const now = new Date(2026, 9, 30, 5, 0);
   assert.deepStrictEqual(Array.from(g.logbookDueIds([
     entry({ 'Entry ID': 'old' }),
@@ -2130,5 +2130,20 @@ test('plan check judges the whole day per workout (David, 2026-11-23)', () => {
   // A Main set the Sheet turned into a time of day reads as typed.
   assert.strictEqual(g.planMainSetText_(new Date(1899, 11, 30, 20, 0, 0)), '20:00');
   assert.strictEqual(g.planMainSetText_('4x15:00'), '4x15:00');
+});
+
+test('midnight "Not logged" alerts are batched; a Logbook test note goes to the coaches (David, 2026-11-23)', () => {
+  const day = new Date(2026, 10, 20);
+  const it = (n, flag, extra = {}) => ({ entryIds: ['E' + n], entryId: 'E' + n, missedIds: [], athlete: 'Fake ' + n, date: day, sessionType: 'Practice', flag, detail: '', ...extra });
+  const items = [1, 2, 3, 4].map((n) => it(n, 'Not logged: 6 x 0:30 Sprint')).concat([it(9, '1 of 3 pieces done'), it(8, 'Not logged: x', { missedIds: ['E8'] })]);
+  const out = Array.from(g.planBatchItems(items));
+  assert.strictEqual(out.length, 3, 'one summary, the real flag, the Missed one');
+  const sum = out.find((x) => /athletes/.test(x.athlete));
+  assert.strictEqual(sum.athlete, '4 athletes');
+  assert.deepStrictEqual(Array.from(sum.entryIds), ['E1', 'E2', 'E3', 'E4']);
+  assert.ok(/Fake 3: Not logged: 6 x 0:30 Sprint/.test(sum.detail));
+  assert.strictEqual(g.planBatchItems(items.slice(0, 2)).length, 2, 'two stay separate');
+  assert.ok(/4 athletes/.test(g.planFlagMessage(sum, 'https://x').text));
+  assert.strictEqual(g.LOGBOOK_AUTO_ACCEPT_HOURS, 24);
 });
 console.log(`${passed} tests passed`);

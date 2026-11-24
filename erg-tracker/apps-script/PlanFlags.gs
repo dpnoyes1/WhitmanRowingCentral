@@ -323,6 +323,40 @@ function planFlagDetail(entry, intervals, pieces) {
   return lines.join('\n').slice(0, 2400);
 }
 
+/** This many "Not logged" items in one sweep are posted as one summary (David, 2026-11-23: a dozen alerts at midnight). */
+var PLAN_BATCH_MIN = 3;
+
+/**
+ * Items that only say a planned workout was not logged ("Not logged: 6 x 0:30 Sprint") and were all flagged in one
+ * sweep for the same day and session become one summary item, with each athlete listed. Anything else is untouched.
+ * The summary's buttons cover every Entry ID. Pure.
+ */
+function planBatchItems(items) {
+  var groups = {}, order = [], out = [];
+  items.forEach(function (it) {
+    if (/^Not logged: /.test(it.flag) && !(it.missedIds && it.missedIds.length)) {
+      var k = dayKey_(it.date) + '|' + it.sessionType;
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(it);
+    } else {
+      out.push(it);
+    }
+  });
+  order.forEach(function (k) {
+    var list = groups[k];
+    if (list.length < PLAN_BATCH_MIN) { list.forEach(function (it) { out.push(it); }); return; }
+    var flags = list.map(function (it) { return it.flag; }).filter(function (f, i, all) { return all.indexOf(f) === i; });
+    var ids = [];
+    list.forEach(function (it) { it.entryIds.forEach(function (id) { ids.push(id); }); });
+    out.push({
+      entryIds: ids, entryId: ids[0], missedIds: [], athlete: list.length + ' athletes', date: list[0].date, sessionType: list[0].sessionType,
+      flag: flags.join('. '),
+      detail: list.map(function (it) { return '\u2022 ' + it.athlete + ': ' + it.flag; }).join('\n').slice(0, 2400)
+    });
+  });
+  return out;
+}
+
 /** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
   var allMissed = !!(item.missedIds && item.missedIds.length && item.missedIds.length === (item.entryIds || [item.entryId]).length);
@@ -460,7 +494,7 @@ function runPlanFlags_(findItems) {
   var hook = props.getProperty(SLACK_WEBHOOK_PROP);
   var posted = [];
   try { posted = JSON.parse(props.getProperty(PLAN_FLAGS_POSTED_PROP) || '[]'); } catch (err) { posted = []; }
-  var items = findItems(posted);
+  var items = planBatchItems(findItems(posted));
   if (!items.length) return [];
   var sheetUrl = ss_().getUrl() + '#gid=' + tab_(TABS.ENTRIES).getSheetId();
   var marked = [];
