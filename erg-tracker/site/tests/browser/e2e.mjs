@@ -55,6 +55,7 @@ flow('plan: add a workout to Thursday, it shows on that day', async ({ browser, 
   const page = await newPage(browser, 1280);
   await signInCoach(page, server.url, '#/plan');
   assert.equal(await page.textContent('#app h1'), 'Plan workouts');
+  await page.click('[data-day="2026-10-22"]');
   await page.click('[data-add="2026-10-22"]');
   await page.fill('input[data-k=nl]', '2 x 20:00 with 1:00 rest, aerobic');
   await page.click('[data-fill]');
@@ -77,12 +78,14 @@ flow('plan: add a workout to Thursday, it shows on that day', async ({ browser, 
 flow('plan: Save and Cancel work on the first click right after typing in a field', async ({ browser, server }) => {
   const page = await newPage(browser, 1280);
   await signInCoach(page, server.url, '#/plan');
+  await page.click('[data-day="2026-10-22"]');
   await page.click('[data-add="2026-10-22"]');
   await page.click('[data-type=open]');
   await page.fill('input[data-k=name]', "60' any activity");   // still focused when the button is pressed
   await page.click('[data-save=draft]');
   await page.waitForSelector('#pnotice .notice');
   assert.equal(server.state.saves.at(-1).publish, false, 'one click on Save draft saved the draft');
+  await page.click('[data-day="2026-10-23"]');
   await page.click('[data-add="2026-10-23"]');
   await page.click('[data-type=open]');
   await page.fill('input[data-k=name]', 'to cancel');
@@ -95,6 +98,7 @@ flow('plan: Publish week publishes every draft of the week after a confirm, Unpu
   const page = await newPage(browser, 390);
   await signInCoach(page, server.url, '#/plan');
   for (const d of ['2026-10-22', '2026-10-23']) {
+    await page.click(`[data-day="${d}"]`);
     await page.click(`[data-add="${d}"]`);
     await page.click('[data-type=open]');
     await page.fill('input[data-k=name]', "60' any activity " + d);
@@ -102,28 +106,67 @@ flow('plan: Publish week publishes every draft of the week after a confirm, Unpu
     await page.waitForSelector('#pnotice .notice');
   }
   const was = server.state.upcoming.filter((u) => u.published).length, drafts = server.state.upcoming.length - was;   // earlier flows share this fake Sheet
-  await page.click('[data-bulk=publish]');
+  await page.click('[data-bulk=publish]:not([data-scope])');
   assert.match(await page.textContent('.pbulk'), new RegExp(`Publish ${drafts} drafts`));
   assert.equal(server.state.upcoming.filter((u) => u.published).length, was, 'the confirm alone publishes nothing');
   await page.click('[data-bulkno]');
   assert.equal(await page.locator('.pbulk').count(), 0);
-  await page.click('[data-bulk=publish]');
+  await page.click('[data-bulk=publish]:not([data-scope])');
   await page.click('[data-bulkyes]');
   await page.waitForSelector('#pnotice .notice');
   assert.match(await page.textContent('#pnotice'), new RegExp(`Published ${drafts} workouts`));
   assert.equal(server.state.upcoming.filter((u) => u.published).length, was + drafts);
-  assert.equal(await page.locator('[data-bulk=publish]').count(), 0);
+  assert.equal(await page.locator('[data-bulk=publish]:not([data-scope])').count(), 0);
   assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'nothing scrolls sideways');
-  await page.click('[data-bulk=unpublish]');
+  await page.click('[data-bulk=unpublish]:not([data-scope])');
   await page.click('[data-bulkyes]');
   await page.waitForSelector('#pnotice .notice');
   assert.equal(server.state.upcoming.filter((u) => u.published).length, 0, 'Unpublish week sends the whole week back to draft');
   await page.context().close();
 });
 
+flow('plan: Publish day publishes only that day after a confirm; days stack and several can be open on desktop', async ({ browser, server }) => {
+  const page = await newPage(browser, 1280);
+  await signInCoach(page, server.url, '#/plan');
+  for (const d of ['2026-10-22', '2026-10-23']) {
+    await page.click(`[data-day="${d}"]`);
+    await page.click(`[data-add="${d}"]`);
+    await page.click('[data-type=open]');
+    await page.fill('input[data-k=name]', 'day test ' + d);
+    await page.evaluate(() => document.querySelector('[data-save=draft]').click());
+    await page.waitForSelector('#pnotice .notice');
+  }
+  assert.equal(await page.locator('.pday.open').count(), 2, 'on desktop both days stay open');
+  const rows = await page.locator('.prow').evaluateAll((els) => els.map((e) => Math.round(e.getBoundingClientRect().width)));
+  assert.ok(rows.every((w) => w === rows[0]), 'every day row is the same full width');
+  const thuTitles = await page.locator('.pday[data-g="2026-10-22"] .ptitle').allTextContents();
+  assert.ok(thuTitles.includes('day test 2026-10-22'), 'the collapsed row lists the workout titles');
+  const published = () => server.state.upcoming.filter((u) => u.published && u.day === '2026-10-22').length;
+  const fri = () => server.state.upcoming.filter((u) => u.published && u.day === '2026-10-23').length;
+  const f0 = fri(), t0 = published();
+  await page.click('.pday[data-g="2026-10-22"] [data-bulk=publish]');
+  assert.match(await page.textContent('.pday[data-g="2026-10-22"] .pbulk'), /Publish \d+ drafts? for Thursday/);
+  assert.equal(published(), t0, 'the confirm alone publishes nothing');
+  await page.click('[data-bulkyes]');
+  await page.waitForSelector('#pnotice .notice');
+  assert.ok(published() > t0, "Publish day published Thursday's drafts");
+  assert.equal(fri(), f0, "and left Friday's drafts alone");
+  await page.click('.prow[data-day="2026-10-22"]');
+  assert.equal(await page.locator('.pday.open').count(), 1, 'a row closes when tapped again');
+  await page.context().close();
+  const ph = await newPage(browser, 390);
+  await signInCoach(ph, server.url, '#/plan');
+  await ph.click('[data-day="2026-10-22"]');
+  await ph.click('[data-day="2026-10-23"]');
+  assert.equal(await ph.locator('.pday.open').count(), 1, 'on a phone opening a day closes the others');
+  assert.equal(await ph.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'nothing scrolls sideways');
+  await ph.context().close();
+});
+
 flow('plan: an open workout (any activity, 60 minutes) saves with no activity or zone', async ({ browser, server }) => {
   const page = await newPage(browser, 390);
   await signInCoach(page, server.url, '#/plan');
+  await page.click('[data-day="2026-10-22"]');
   await page.click('[data-add="2026-10-22"]');
   await page.click('[data-type=open]');
   assert.equal(await page.locator('[data-act]').count(), 0, 'no Erg / Run choice for an open workout');
