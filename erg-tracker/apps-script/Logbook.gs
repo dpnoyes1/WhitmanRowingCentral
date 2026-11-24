@@ -535,7 +535,7 @@ function logbookFlagNotice(entry, rosterRow, missed) {
   var when = d instanceof Date ? Utilities.formatDate(d, ss_().getSpreadsheetTimeZone(), 'EEE MMM d') : 'today';
   return { slackUserId: id, notice: ':warning: Your Logbook workout on ' + when + (missed
     ? ' was under half of the planned workout, so it is marked Missed (you can still make it up)'
-    : ' was not the planned workout in full, so it is marked Modified') + ' and your coaches were told. If that is wrong, tell a coach.' };
+    : ' was not the planned workout in full. It counts as Completed for now') + ' and your coaches were told. If that is wrong, tell a coach.' };
 }
 
 /** Pure: the active Roster row with this Slack member ID, or null. */

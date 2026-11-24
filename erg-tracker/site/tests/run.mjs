@@ -1227,11 +1227,11 @@ test('slack buttons: signature, coach check by the Sheet, first press wins, mess
   await handleSlackAction(press({ action_id: 'plan_confirm', value: 'E0007,E0008' }), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'confirm');
   assert.strictEqual(w.calls[0].body.entryId, 'E0007,E0008');
-  assert.ok(/Modified confirmed by coach\.one/.test(w.calls[1].body.text));
+  assert.ok(/Marked by coach\.one/.test(w.calls[1].body.text));
   w = world({ status: 'ok' });
   await handleSlackAction(press(btn('plan_full')), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'full');
-  assert.ok(/Set back to Completed by coach\.one/.test(w.calls[1].body.text));
+  assert.ok(/Kept Completed by coach\.one/.test(w.calls[1].body.text));
 
   w = world({ status: 'already', reviewStatus: 'Reviewed, Full' });
   await handleSlackAction(press(btn('plan_modified')), env, w.deps);
@@ -1310,7 +1310,7 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
-  assert.ok(/marked Modified/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
+  assert.ok(/counts as Completed for now/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
   assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
   assert.ok(!/Modified/.test(SL.flagReply('Missed')));
   assert.strictEqual(SL.flagReply(false), '');

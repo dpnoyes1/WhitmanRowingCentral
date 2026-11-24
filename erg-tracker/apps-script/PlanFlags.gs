@@ -1,8 +1,9 @@
 /**
  * Plan flags in Slack (David, 2026-10-28; changed 2026-11-17). A practice or make-up logged as Full that is not
  * exactly the planned workout (fewer pieces, a piece cut short, a different workout, or a skipped workout on
- * a day with several) is marked Modified automatically and gets one message in the coach channel
- * (#ergbot-coaches, through the alert webhook) with three buttons: Confirm Modified, Set back to Full, Open
+ * a day with several) gets one message in the coach channel (David, 2026-11-23: it stays Completed until a coach
+ * presses Mark Modified; under half of the plan is still marked Missed at once; before that it was marked Modified first)
+ * (#ergbot-coaches, through the alert webhook) with three buttons: Mark Modified, Keep Completed, Open
  * in Sheet. It runs right after a Slack or site save, and an every-15-minutes sweep catches the rest (Logbook,
  * Form). The Netlify function behind the Slack app (site/functions/slack-background.mjs) sends a press back
  * here through the feed key. Only member IDs in Settings slack.coach_ids may decide; the first press wins and
@@ -14,7 +15,7 @@ var PLAN_FLAG_LOOKBACK_DAYS = 3;
 var PLAN_FLAG_ACTION = 'plan-flag-action';
 var PLAN_FLAG_REVIEWED = 'Reviewed, Full';
 var PLAN_FLAG_MODIFIED = 'Reviewed, Modified';
-var PLAN_FLAG_AUTO = 'Auto Modified';   // marked Modified (or Missed, when under half was done) by the plan check, waiting for a coach
+var PLAN_FLAG_AUTO = 'Auto Modified';   // flagged by the plan check, waiting for a coach: Missed when under half was done, else still Full (Completed) since 2026-11-23
 var PLAN_FLAG_MISSED = 'Reviewed, Missed';
 
 // ---- Pure parts (tested in Node) ----
@@ -325,16 +326,19 @@ function planFlagDetail(entry, intervals, pieces) {
 /** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
   var allMissed = !!(item.missedIds && item.missedIds.length && item.missedIds.length === (item.entryIds || [item.entryId]).length);
-  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType +
-    '. Marked ' + (allMissed ? 'Missed (an open make-up; the minutes still count)' : 'Modified') + ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
+  // Since 2026-11-23 (David) a log counts as Completed by default; the coach decides whether it was Modified. Only
+  // under half of the plan is marked Missed at once (the make-up opens), with the usual buttons.
+  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' +
+    (allMissed ? 'Marked Missed (an open make-up; the minutes still count)' : 'Counted as Completed, but it may be Modified') +
+    ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
   var ids = (item.entryIds || [item.entryId]).join(',');
   return {
     text: text,
     blocks: [
       { type: 'section', text: { type: 'mrkdwn', text: text } },
       { type: 'actions', elements: [
-        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: allMissed ? 'Confirm Missed' : 'Confirm Modified' } },
-        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Completed' } },
+        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: allMissed ? 'Confirm Missed' : 'Mark Modified' } },
+        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: allMissed ? 'Set back to Completed' : 'Keep Completed' } },
         { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
       ] }
     ]
@@ -358,8 +362,9 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   if (['confirm', 'full', 'modified', 'reviewed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
   if (review === PLAN_FLAG_AUTO) {
     var wasMissed = String(row.Status) === 'Missed';
-    if (op === 'confirm') return { status: 'ok', mark: wasMissed ? 'Missed' : 'Modified', set: { 'Review status': wasMissed ? PLAN_FLAG_MISSED : PLAN_FLAG_MODIFIED } };
-    if (op === 'modified') return { status: 'ok', set: { 'Review status': PLAN_FLAG_MODIFIED } };
+    // A flagged entry is still Completed (Full) until the coach says otherwise; older ones were already marked Modified.
+    if (op === 'confirm') return { status: 'ok', mark: wasMissed ? 'Missed' : 'Modified', set: wasMissed ? { 'Review status': PLAN_FLAG_MISSED } : { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
+    if (op === 'modified') return { status: 'ok', set: { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
     return { status: 'ok', set: { 'Status': 'Full', 'Review status': PLAN_FLAG_REVIEWED } };
   }
   if (review !== '') return { status: 'already', reviewStatus: review };
@@ -373,7 +378,7 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
  */
 function planFlagAutoSet_(row, missed) {
   if (!row || String(row.Status) !== 'Full' || String(row['Review status'] || '').trim() !== '') return null;
-  return { 'Status': missed ? 'Missed' : 'Modified', 'Review status': PLAN_FLAG_AUTO };
+  return missed ? { 'Status': 'Missed', 'Review status': PLAN_FLAG_AUTO } : { 'Review status': PLAN_FLAG_AUTO };   // Modified stays Full until a coach presses Mark Modified
 }
 
 // ---- Sheet side ----

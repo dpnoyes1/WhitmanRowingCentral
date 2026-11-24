@@ -913,7 +913,7 @@ test('plan flags: only recent Full entries short of plan, once, until a coach de
   assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 10) }), short).length, 0, 'too old');
   assert.strictEqual(pending(Object.assign({}, full, { Date: new Date(2026, 9, 25) }), short).length, 0, 'in the future');
   const msg = g.planFlagMessage(hit[0], 'https://sheet.example/#gid=1');
-  assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Marked Modified: \d+ of \d+ pieces done\./.test(msg.text), msg.text);
+  assert.ok(/^:warning: Plan check: .*, Wed Oct 21, Practice\. Counted as Completed, but it may be Modified: \d+ of \d+ pieces done\./.test(msg.text), msg.text);
   // The coach sees the plan and what was logged, so the decision can be made from Slack.
   const lines = msg.text.split('\n');
   assert.ok(/^\*Planned:\* \S/.test(lines[1]) && !/not found/.test(lines[1]), lines[1]);
@@ -1119,7 +1119,7 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   assert.deepStrictEqual(wf([eW, e40], ivW.concat(ivs40))[0].entryIds, ['E40'], 'a skipped workout still flags the day, but not the warm-up (David, 2026-11-22)');
   const ros = { 'Slack member ID': 'UFAKE01' };
   assert.ok(/marked Missed/.test(g.logbookFlagNotice({ Date: '' }, ros, true).notice), 'Logbook DM says Missed when Missed');
-  assert.ok(/marked Modified/.test(g.logbookFlagNotice({ Date: '' }, ros, false).notice));
+  assert.ok(/counts as Completed for now/.test(g.logbookFlagNotice({ Date: '' }, ros, false).notice));
   const onlyWarm = wf([eW], ivW);
   assert.deepStrictEqual(onlyWarm[0].entryIds, ['EW'], 'only the warm-up logged: it carries the day\'s Modified mark');
   assert.ok(/Not logged: 40 min steady, 20 min steady|Not logged: .*40/.test(onlyWarm[0].flag), onlyWarm[0].flag);
@@ -1128,17 +1128,17 @@ test('incomplete workouts (David, 2026-11-17): stopped early, best of several wo
   assert.strictEqual(f.length, 1);
   assert.strictEqual(f[0].flag, 'Piece 1 stopped at 30:00 of 40:00. Not logged: 20 min steady');
   const msg = g.planFlagMessage(Object.assign({}, f[0], { date: day, entryIds: ['E40', 'E41'] }), 'https://sheet.example');
-  assert.ok(/Marked Modified: Piece 1 stopped at 30:00 of 40:00\. Not logged: 20 min steady\./.test(msg.text), msg.text);
+  assert.ok(/Counted as Completed, but it may be Modified: Piece 1 stopped at 30:00 of 40:00\. Not logged: 20 min steady\./.test(msg.text), msg.text);
   assert.strictEqual(msg.blocks[1].elements[0].value, 'E40,E41');
   // Marking and the buttons.
-  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }))), { Status: 'Modified', 'Review status': 'Auto Modified' });
+  assert.deepStrictEqual(JSON.parse(JSON.stringify(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }))), { 'Review status': 'Auto Modified' }, 'Modified stays Completed until a coach presses Mark Modified (David, 2026-11-23)');
   assert.strictEqual(g.planFlagAutoSet_({ Status: 'Modified', 'Review status': '' }), null);
   assert.strictEqual(g.planFlagAutoSet_({ Status: 'Full', 'Review status': 'Reviewed, Full' }), null);
   const auto = { 'Entry ID': 'E40', Status: 'Modified', 'Review status': 'Auto Modified' };
   const plain = (x) => JSON.parse(JSON.stringify(x));
-  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'confirm', 'U1', ['U1'])), { status: 'ok', mark: 'Modified', set: { 'Review status': 'Reviewed, Modified' } });
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'confirm', 'U1', ['U1'])), { status: 'ok', mark: 'Modified', set: { Status: 'Modified', 'Review status': 'Reviewed, Modified' } });
   assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'full', 'U1', ['U1'])), { status: 'ok', set: { Status: 'Full', 'Review status': 'Reviewed, Full' } });
-  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'modified', 'U1', ['U1'])), { status: 'ok', set: { 'Review status': 'Reviewed, Modified' } }, 'older message button');
+  assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'modified', 'U1', ['U1'])), { status: 'ok', set: { Status: 'Modified', 'Review status': 'Reviewed, Modified' } }, 'older message button');
   assert.strictEqual(g.decidePlanFlagAction(Object.assign({}, auto, { 'Review status': 'Reviewed, Full' }), 'confirm', 'U1', ['U1']).status, 'already');
   assert.strictEqual(g.decidePlanFlagAction(auto, 'full', 'U9', ['U1']).status, 'forbidden');
 });
@@ -2007,14 +2007,14 @@ test('plan check: under half of the planned work is Not done, marked Missed (Dav
   // The marks and the buttons.
   const plain = (x) => JSON.parse(JSON.stringify(x));
   assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, true)), { Status: 'Missed', 'Review status': 'Auto Modified' });
-  assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, false)), { Status: 'Modified', 'Review status': 'Auto Modified' });
+  assert.deepStrictEqual(plain(g.planFlagAutoSet_({ Status: 'Full', 'Review status': '' }, false)), { 'Review status': 'Auto Modified' });
   const auto = { 'Entry ID': 'E1', Status: 'Missed', 'Review status': 'Auto Modified' };
   assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'confirm', 'U1', ['U1'])), { status: 'ok', mark: 'Missed', set: { 'Review status': 'Reviewed, Missed' } });
   assert.deepStrictEqual(plain(g.decidePlanFlagAction(auto, 'full', 'U1', ['U1'])), { status: 'ok', set: { Status: 'Full', 'Review status': 'Reviewed, Full' } });
   const msg = g.planFlagMessage({ athlete: 'Fake Athlete', date: new Date(2026, 10, 18), sessionType: 'Practice', flag: 'x', entryIds: ['E1'], missedIds: ['E1'], detail: '' }, 'https://sheet.example');
   assert.match(msg.text, /Marked Missed/); assert.strictEqual(msg.blocks[1].elements[0].text.text, 'Confirm Missed');
   const mixed = g.planFlagMessage({ athlete: 'Fake Athlete', date: new Date(2026, 10, 18), sessionType: 'Practice', flag: 'x', entryIds: ['E1', 'E2'], missedIds: ['E1'], detail: '' }, 'https://sheet.example');
-  assert.match(mixed.text, /Marked Modified/); assert.strictEqual(mixed.blocks[1].elements[0].text.text, 'Confirm Modified');
+  assert.match(mixed.text, /Counted as Completed/); assert.deepStrictEqual(Array.from(mixed.blocks[1].elements.slice(0, 2).map((b) => b.text.text)), ['Mark Modified', 'Keep Completed']);
   // A Missed practice entry is not a practice done: it never covers a make-up window.
   const pr = [{ date: '2026-11-17', squad: 'Girls', canceled: false }];
   assert.deepStrictEqual(plain(g.openMakeups_('Varsity', '2026-11-18', pr, [{ date: '2026-11-17', type: 'Practice', status: 'Missed', makeupFor: '' }])), ['2026-11-17']);

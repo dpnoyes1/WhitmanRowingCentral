@@ -158,7 +158,7 @@ export const NOT_ON_ROSTER = ':lock: I don\'t know this Slack account yet. Ask a
 export function flagReply(flagged) {
   if (!flagged) return '';
   if (flagged === 'Missed') return ' It is under half of the planned workout, so it is marked Missed (the make-up is still open) and the coaches were told.';
-  return ' It isn\'t exactly the planned workout, so it is marked Modified and the coaches were told.';
+  return ' It isn\'t exactly the planned workout. It counts as Completed for now and the coaches were told.';
 }
 
 export function logReply(result) {
