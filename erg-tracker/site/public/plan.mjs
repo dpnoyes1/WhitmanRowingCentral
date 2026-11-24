@@ -154,7 +154,7 @@ export function fromPieces(pieces, name = '') {
 
 export function openPlan(v, ctx) {
   const { app, esc, fmtDate } = ctx;
-  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '', asking = false, scrollTo = '';
+  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '', asking = false, scrollTo = '', bulk = '';
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
@@ -295,11 +295,47 @@ export function openPlan(v, ctx) {
       ${also}${actions}${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}</section>`;
   };
 
+  // ---- Publish week / Unpublish week: every upcoming workout of the week shown, in one go ----
+  const weekSessions = (publish) => {
+    const days = Array.from({ length: 7 }, (_, i) => addDays(B.week, i));
+    return data.upcoming.filter((u) => days.includes(u.day) && u.day >= data.today && !!u.published !== publish);
+  };
+  const bulkHtml = () => {
+    const drafts = weekSessions(true).length, live = weekSessions(false).length;
+    if (!drafts && !live) return '';
+    if (bulk) {
+      const n = bulk === 'publish' ? drafts : live;
+      return `<div class="card pbulk"><p>${bulk === 'publish' ? `Publish ${n} draft${n === 1 ? '' : 's'} for ${esc(weekLabel())}? Athletes will see ${n === 1 ? 'it' : 'them'} right away.` : `Hide ${n} published workout${n === 1 ? '' : 's'} for ${esc(weekLabel())} from athletes? ${n === 1 ? 'It goes' : 'They go'} back to draft.`}</p>
+        <div class="actions"><button type="button" class="btn ghost" data-bulkno="1"${busy ? ' disabled' : ''}>Cancel</button><button type="button" class="btn${busy && busyKind === 'bulk' ? ' busy' : ''}" data-bulkyes="1"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'bulk' ? 'Working…' : bulk === 'publish' ? 'Yes, publish' : 'Yes, unpublish'}</span></button></div></div>`;
+    }
+    return `<div class="pbulkrow">${drafts ? `<button type="button" class="btn" data-bulk="publish"${busy ? ' disabled' : ''}>Publish week (${drafts} draft${drafts === 1 ? '' : 's'})</button>` : ''}${live ? `<button type="button" class="btn ghost" data-bulk="unpublish"${busy ? ' disabled' : ''}>Unpublish week (${live})</button>` : ''}</div>`;
+  };
+  const runBulk = async () => {
+    if (busy || !bulk) return;
+    const publish = bulk === 'publish', total = weekSessions(publish).length;   // sessions whose published flag differs from the wanted one
+    let done = 0;
+    err = msg = ''; busy = true; busyKind = 'bulk'; draw();
+    try {
+      for (let guard = 0; guard < 60; guard++) {
+        const u = weekSessions(publish)[0];
+        if (!u) break;
+        const res = await fetch('/api/workouts', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ update: { key: keyOf(u), to: { publish } } }) });
+        const out = await res.json().catch(() => ({}));
+        if (res.status === 401) { ctx.signedOut(); return; }
+        if (!res.ok) { err = `${out.error || 'Nothing was saved.'} ${done} of ${total} done. Check the week, then try again.`; break; }
+        data = out; if (ctx.saved) ctx.saved(out); done++;
+      }
+      if (!err) msg = `${publish ? 'Published' : 'Moved back to draft:'} ${done} workout${done === 1 ? '' : 's'}.`;
+    } catch { err = `Could not reach the site. ${done} of ${total} done. Check the week before trying again.`; }
+    busy = false; bulk = ''; scrollTo = '#pnotice'; draw();
+  };
+
   const draw = () => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>Plan workouts</h1></div>
         <div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div></div>
       <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
       <div class="pweek">${weekHtml()}</div>
+      ${bulkHtml()}
       <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
       ${editorHtml()}
       ${libraryHtml()}`;
@@ -403,6 +439,9 @@ export function openPlan(v, ctx) {
       else el.onchange = redrawField;   // redraw once a field is left, so a wrong number is marked
     });
     app.querySelectorAll('select[data-k]').forEach((el) => { el.onchange = () => { setK(el.dataset.k, el.value); if (el.dataset.k === 'cat') refreshPreview(); }; });
+    app.querySelectorAll('[data-bulk]').forEach((b) => { b.onclick = () => { bulk = b.dataset.bulk; draw(); }; });
+    const bn = app.querySelector('[data-bulkno]'); if (bn) bn.onclick = () => { bulk = ''; draw(); };
+    const by = app.querySelector('[data-bulkyes]'); if (by) by.onclick = runBulk;
     const f = app.querySelector('[data-fill]'); if (f) f.onclick = fill;
     const up = app.querySelector('[data-usepick]'); if (up) up.onclick = usePick;
     const ob = app.querySelector('[data-ownbuild]'); if (ob) ob.onclick = () => { B.useId = ''; draw(); };

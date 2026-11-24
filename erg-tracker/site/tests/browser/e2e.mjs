@@ -91,6 +91,36 @@ flow('plan: Save and Cancel work on the first click right after typing in a fiel
   await page.context().close();
 });
 
+flow('plan: Publish week publishes every draft of the week after a confirm, Unpublish week undoes it', async ({ browser, server }) => {
+  const page = await newPage(browser, 390);
+  await signInCoach(page, server.url, '#/plan');
+  for (const d of ['2026-10-22', '2026-10-23']) {
+    await page.click(`[data-add="${d}"]`);
+    await page.click('[data-type=open]');
+    await page.fill('input[data-k=name]', "60' any activity " + d);
+    await page.evaluate(() => document.querySelector('[data-save=draft]').click());
+    await page.waitForSelector('#pnotice .notice');
+  }
+  const was = server.state.upcoming.filter((u) => u.published).length, drafts = server.state.upcoming.length - was;   // earlier flows share this fake Sheet
+  await page.click('[data-bulk=publish]');
+  assert.match(await page.textContent('.pbulk'), new RegExp(`Publish ${drafts} drafts`));
+  assert.equal(server.state.upcoming.filter((u) => u.published).length, was, 'the confirm alone publishes nothing');
+  await page.click('[data-bulkno]');
+  assert.equal(await page.locator('.pbulk').count(), 0);
+  await page.click('[data-bulk=publish]');
+  await page.click('[data-bulkyes]');
+  await page.waitForSelector('#pnotice .notice');
+  assert.match(await page.textContent('#pnotice'), new RegExp(`Published ${drafts} workouts`));
+  assert.equal(server.state.upcoming.filter((u) => u.published).length, was + drafts);
+  assert.equal(await page.locator('[data-bulk=publish]').count(), 0);
+  assert.equal(await page.evaluate(() => document.documentElement.scrollWidth <= innerWidth), true, 'nothing scrolls sideways');
+  await page.click('[data-bulk=unpublish]');
+  await page.click('[data-bulkyes]');
+  await page.waitForSelector('#pnotice .notice');
+  assert.equal(server.state.upcoming.filter((u) => u.published).length, 0, 'Unpublish week sends the whole week back to draft');
+  await page.context().close();
+});
+
 flow('plan: an open workout (any activity, 60 minutes) saves with no activity or zone', async ({ browser, server }) => {
   const page = await newPage(browser, 390);
   await signInCoach(page, server.url, '#/plan');

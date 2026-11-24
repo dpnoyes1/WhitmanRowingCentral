@@ -575,6 +575,9 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .btn.sm { min-height: 40px; padding: 6px 14px; }
 .wkhead { display: flex; align-items: center; gap: 10px; }
 .wkhead .eyebrow { flex: 1; }
+.pbulkrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 8px; }
+.pbulkrow .btn { min-height: 48px; }
+.pbulk { margin: 4px 0 8px; }
 .pweek { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-bottom: 8px; }
 @media (min-width: 720px) { .pweek { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 .pdayblock { display: flex; flex-direction: column; gap: 8px; }
