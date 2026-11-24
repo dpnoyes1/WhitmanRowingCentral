@@ -36,7 +36,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   (inp.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || id); });
   var groups = {}, order = [];
   var bestOf = plannedBestAll(entries, squads, inp.schedule, inp.workouts, byEntry);   // ties go in the order done
-  entries.forEach(function (e) {
+  entries.forEach(function (e, entryIndex) {
     var type = String(e['Session type'] || '');
     if (type !== 'Practice' && type !== 'Make-up') return;
     if (!isDate_(e.Date) || e.Date < from || e.Date > today) return;
@@ -46,7 +46,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
       if (!best || !best.pieces.length) return;
       var key = e['Athlete ID'] + '|' + dayKey_(best.row.Date);
-      if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], done: {}, out: false }; order.push(key); }
+      if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], work: {}, done: {}, out: false }; order.push(key); }
       var g = groups[key];
       if (String(e.Status) === 'Out') { g.out = true; return; }
       g.done[String(best.row['Workout ID']).trim()] = true;
@@ -58,21 +58,18 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
         if (open) g.openPlan.flaggable.push(e);
         return;
       }
-      if (!open) return;
-      var bases = {};
-      Object.keys(PLAN_BASES).forEach(function (b) {
-        var bw = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, best.row.Date, inp.settings.school_year_start);
-        if (bw) bases[b] = bw.watts;
-      });
-      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
-      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17). A poor
-      // guess (plannedBest `poor`: nothing on a several-workout day fits well) is always flagged and says it is a
-      // guess, and is Modified, never Missed, since it isn't known which workout it was (David, 2026-11-21).
-      var name = names[String(best.row['Workout ID']).trim()] || String(best.row['Workout ID']).trim();
-      var warmCool = isWarmCoolWorkout_(name);
-      var flag = best.poor ? planPoorFitReason_(name, best.fraction) : warmCool ? '' : planFlag(e, c);
-      var missed = !!flag && !!c.notDone && !best.poor;
-      g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed, warmCool: warmCool && !best.poor });
+      // A planned workout is judged on everything the athlete did for it that day (David, 2026-11-23: 3 x 20:00
+      // logged as three Logbook results was flagged "1 of 3 pieces" three times). Entries are collected per
+      // workout here and judged together below; a poor guess at which workout it was is still judged alone.
+      var wid = String(best.row['Workout ID']).trim();
+      var name = names[wid] || wid;
+      var item = { e: e, open: open, best: best, ivs: rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), i: entryIndex, t: planSubmittedMs_(e['Submitted at']) };
+      if (best.poor) {
+        g.rows.push(planFlagRow_(item, name, inp));
+      } else {
+        g.work[wid] = g.work[wid] || { best: best, name: name, items: [] };
+        g.work[wid].items.push(item);
+      }
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
@@ -80,6 +77,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   var out = [];
   order.forEach(function (key) {
     var g = groups[key];
+    Object.keys(g.work).forEach(function (wid) { planJudgeWorkout_(g, g.work[wid], inp, todayKey); });
     if (g.openPlan && !g.out && g.day < todayKey && g.openPlan.flaggable.length) {
       var res = planOpenResult_(planOpenCountedS_(g.openPlan.all, inp.settings), g.openPlan.wantS);
       var openFlag = res.met ? '' : planOpenFlagText_(res);
@@ -112,6 +110,65 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     });
   });
   return out;
+}
+
+/** A day's work of at least this share of the plan counts as the full workout even when its pieces are shaped differently (David, 2026-11-23). */
+var PLAN_SHAPE_FRACTION = 0.98;
+
+/** Season-best watts per base for an athlete on a date: what checkAgainstPlan needs for targets. */
+function planBasesFor_(inp, athleteId, date) {
+  var bases = {};
+  Object.keys(PLAN_BASES).forEach(function (b) {
+    var bw = seasonBestWatts(inp.benchmarks, athleteId, b, date, inp.settings.school_year_start);
+    if (bw) bases[b] = bw.watts;
+  });
+  return bases;
+}
+
+/** A poor guess at the planned workout is judged on its own entry and is Modified, never Missed (David, 2026-11-21). Pure. */
+function planFlagRow_(item, name, inp) {
+  var e = item.e;
+  var c = checkAgainstPlan(item.ivs, item.best.pieces, planBasesFor_(inp, e['Athlete ID'], item.best.row.Date), inp.settings, e.Activity);
+  var flag = item.open ? planPoorFitReason_(name, item.best.fraction) : '';
+  return { e: e, pieces: item.best.pieces, flag: item.open ? flag : '', missed: false, warmCool: false, check: c };
+}
+
+/**
+ * Judges one planned workout on everything an athlete logged for it that day, in the order done (David,
+ * 2026-11-23). Entries are pooled into one list of pieces, so 3 x 20:00 as three Logbook results, or a piece
+ * split over a stop and restart, counts as the full workout. Only entries still open (Full, no Review status,
+ * not posted before) get flagged; reviewed ones still count toward the total. While the day is not over, a
+ * workout that is merely unfinished (fewer pieces, a piece cut short) is held and judged after the day; a
+ * different workout is flagged at once, as before. A warm-up or cool-down is never flagged. Pure.
+ */
+function planJudgeWorkout_(g, w, inp, todayKey) {
+  var items = w.items.slice().sort(function (a, b) { return (a.t - b.t) || (a.i - b.i); });
+  var openItems = items.filter(function (x) { return x.open; });
+  if (!openItems.length) return;
+  var pooled = [], n = 0;
+  items.forEach(function (x) {
+    x.ivs.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }).forEach(function (iv) {
+      var copy = Object.assign({}, iv); copy['Interval #'] = ++n; pooled.push(copy);
+    });
+  });
+  var first = items[0].e;
+  var c = checkAgainstPlan(pooled, w.best.pieces, planBasesFor_(inp, first['Athlete ID'], w.best.row.Date), inp.settings, first.Activity);
+  var warmCool = isWarmCoolWorkout_(w.name);
+  var flag = warmCool ? '' : planFlag(openItems[0].e, c);
+  // The right amount of work in a different shape counts as the workout (Nov 23: 60:00 as four 15:00 pieces, or a
+  // 4 x 15:00 plan logged as one 60:00 piece). A small slack covers a 59:59.9 photo read.
+  var planned = [];
+  w.best.pieces.forEach(function (p) { for (var k = 0; k < p.reps; k++) planned.push(p); });
+  // Only steady work: short repeats (6 x 0:30) are a different workout from the same minutes done as one piece.
+  var steady = planned.every(function (p) { return (p.workType === 'Time' ? p.workS >= 300 : p.workM >= 1000); }) &&
+    pooled.every(function (iv) { return Number(iv['Work s']) >= 300; });
+  if (!c.matches && steady && planWorkFraction_(pooled, planned) >= PLAN_SHAPE_FRACTION) flag = '';
+  var unfinished = !!c.short || (c.logged < c.planned && /intervals logged/.test(c.reason));
+  if (flag && unfinished && g.day >= todayKey) flag = '';   // still today: the rest may come
+  var missed = !!flag && !!c.notDone;
+  openItems.forEach(function (x) {
+    g.rows.push({ e: x.e, pieces: w.best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed, warmCool: warmCool });
+  });
 }
 
 /** "Open workout: 48 of 60 weighted minutes (80%)" for a day under its target. Pure. */
@@ -203,6 +260,18 @@ function planPoorFitReason_(closest, fraction) {
   return "Doesn't clearly match a planned workout (closest: " + closest + ', ' + Math.round((Number(fraction) || 0) * 100) + '% of its work)';
 }
 
+/**
+ * A Main set the Sheet turned into a time of day ("20:00" typed into a cell becomes 20:00:00 on 1899-12-30, which
+ * showed in Slack as "Sat Dec 30 1899 20:00:00 GMT-0500") reads as the original text again. Pure.
+ */
+function planMainSetText_(v) {
+  if (isDate_(v)) {
+    var h = v.getHours(), m = v.getMinutes(), sec = v.getSeconds(), two = function (n) { return (n < 10 ? '0' : '') + n; };
+    return sec ? h + ':' + two(m) + ':' + two(sec) : two(h) + ':' + two(m);
+  }
+  return String(v === undefined || v === null ? '' : v);
+}
+
 /** "Tue Oct 28" */
 function planFlagDay_(d) {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' +
@@ -234,7 +303,8 @@ function planFlagDetail(entry, intervals, pieces) {
   var source = PLAN_FLAG_SOURCES[String(entry.Source)] || String(entry.Source || 'unknown');
   var by = String(entry['Entered by'] || '').trim();
   var head = '*Logged* (' + source + (by && by !== String(entry.Athlete) ? ', entered by ' + by : '') + '): ' + (entry.Activity || 'activity not given');
-  if (entry['Main set']) head += ', "' + entry['Main set'] + '"';
+  var mainSet = planMainSetText_(entry['Main set']);
+  if (mainSet) head += ', "' + mainSet + '"';
   if (entry.Zone) head += ', ' + entry.Zone;
   lines.push(head);
   intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }).forEach(function (iv) {

@@ -1336,7 +1336,7 @@ test('logbook: every Logbook field lands in a column; the raw copy is split into
     calories: 412, strokeCount: 1900, hrAvg: 150, hrMin: 90, hrMax: 181, hrEnding: 160, hrRest: 70, hrRecovery: 120, logbookSource: 'ErgData',
     verified: 'No', ranked: 'Yes', timezone: 'US/Eastern', dateUtc: '2026-10-28 15:23:00', privacy: 'partners', comments: 'hi',
     restTimeTotalS: 120, restDistanceTotalM: 40, targets: { pace: 1020 }, splits: [{ timeS: 30 }],
-    intervals: [{ timeS: 30, distanceM: 87, rate: 22, restTimeS: 30, restDistanceM: 48, calories: 9, wattMinutes: 70, hrAvg: 140, hrMax: 160, targetPaceS: 101, targetWatts: 200, type: 'time', machine: 'rower' }]
+    intervals: [{ timeS: 150, distanceM: 387, rate: 22, restTimeS: 30, restDistanceM: 48, calories: 9, wattMinutes: 70, hrAvg: 140, hrMax: 160, targetPaceS: 101, targetWatts: 200, type: 'time', machine: 'rower' }]
   }), lbCtx());
   const e = r.entry, iv = r.intervals[0];
   assert.deepStrictEqual([e['Avg HR'], e['HR min'], e['HR max'], e['HR ending'], e['HR rest'], e['HR recovery'], e['Calories'], e['Stroke count']], [150, 90, 181, 160, 70, 120, 412, 1900]);
@@ -1345,7 +1345,7 @@ test('logbook: every Logbook field lands in a column; the raw copy is split into
   assert.strictEqual(e['Splits JSON'], '[{"timeS":30}]');
   assert.deepStrictEqual([iv['Calories'], iv['Watt-min'], iv['Avg HR'], iv['HR max'], iv['Target pace s'], iv['Target watts'], iv['Piece type'], iv['Machine']], [9, 70, 140, 160, 101, 200, 'time', 'rower']);
   // a totals-only result puts its calories and heart rate on its one piece
-  const tot = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, calories: 12, hrAvg: 130 }), lbCtx());
+  const tot = g.logbookRows(lbResult({ intervals: [], timeS: 364.8, distanceM: 1222, calories: 12, hrAvg: 130 }), lbCtx());
   assert.deepStrictEqual([tot.intervals[0]['Calories'], tot.intervals[0]['Avg HR']], [12, 130]);
   // raw copy: result JSON plus strokes, long text split at the chunk size, and nothing without a raw copy
   assert.strictEqual(g.logbookRawRows(1, 'A001', null, 'now').length, 0);
@@ -1360,10 +1360,15 @@ test('logbook: every Logbook field lands in a column; the raw copy is split into
 });
 
 test('logbook: totals only, just row, possible make-up, benchmark shape, unsupported machine', () => {
-  const totals = g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, workoutType: 'JustRow', name: '' }), lbCtx());
+  const totals = g.logbookRows(lbResult({ intervals: [], timeS: 364.8, distanceM: 1222, workoutType: 'JustRow', name: '' }), lbCtx());
   assert.strictEqual(totals.intervals.length, 1);
-  assert.strictEqual(totals.entry['Work s'], 64.8);
-  assert.strictEqual(totals.entry['Work m'], 222);
+  assert.strictEqual(totals.entry['Work s'], 364.8);
+  assert.strictEqual(totals.entry['Work m'], 1222);
+  // David, 2026-11-23: one piece under 2:00 is not a workout; a 100 m test and several short pieces still are.
+  assert.ok(g.logbookRows(lbResult({ intervals: [], timeS: 64.8, distanceM: 222, workoutType: 'JustRow', name: '' }), lbCtx()).skip, 'a 65 s Just Row is ignored');
+  assert.ok(g.logbookRows(lbResult({ intervals: [], timeS: 34.9, distanceM: 90, workoutType: 'JustRow', name: '' }), lbCtx()).skip, 'a 35 s Just Row is ignored');
+  assert.ok(!g.logbookRows(lbResult({ intervals: [], timeS: 19.3, distanceM: 100, workoutType: 'JustRow', name: '100m test' }), lbCtx()).skip, 'a 100 m test is kept');
+  assert.ok(!g.logbookRows(lbResult(), lbCtx()).skip, '3 x 0:30 pieces are kept');
   const makeup = g.logbookRows(lbResult({ localTime: '21:00' }), lbCtx([{ date: '2026-10-26', type: 'Practice', status: 'Out' }]));
   assert.deepStrictEqual([makeup.entry['Session type'], makeup.entry['Review status']], ['Make-up', 'Pending: possible make-up']);
   assert.strictEqual(makeup.entry['Make-up for date'].getDate(), 27);
@@ -2089,4 +2094,41 @@ test('open workout: any activity counts weighted minutes toward the day (David, 
   assert.deepStrictEqual(plain(g.planExtras([E('X1', 'Erg (RowErg)', 1800), E('X2', 'Erg (RowErg)', 1800)], [], { A901: 'Varsity' }, inp, dayOver)), []);
 });
 
+
+test('plan check judges the whole day per workout (David, 2026-11-23)', () => {
+  const s = planSettings();
+  const W = [
+    { 'Workout ID': 'T3', Name: '3 x 20:00 Steady', 'Piece #': 1, Reps: 3, 'Work type': 'Time', Work: '20:00', Rest: '2:00', Zone: 'Aerobic' },
+    { 'Workout ID': 'T1', Name: '60:00 Steady', 'Piece #': 1, Reps: 1, 'Work type': 'Time', Work: '60:00', Rest: '', Zone: 'Aerobic' }
+  ];
+  const day = D(2026, 11, 19);
+  const sched = (id) => [{ Date: day, Squad: 'All', Session: 'Practice', 'Workout ID': id, Published: true, Order: 1 }];
+  const entry = (id, at) => ({ 'Entry ID': id, 'Athlete ID': 'A901', Athlete: 'Fake One', Date: day, 'Session type': 'Practice', Status: 'Full', 'Review status': '', Activity: 'Erg (RowErg)', 'Submitted at': at });
+  const iv = (id, n, sec, m) => ({ 'Entry ID': id, 'Interval #': n, 'Work s': sec, 'Work m': m });
+  const over = new Date(2026, 10, 20, 9), midday = new Date(2026, 10, 19, 19);
+  const flags = (id, entries, ivs, now) => JSON.parse(JSON.stringify(g.pendingPlanFlags(entries, ivs, { A901: 'Varsity' }, { schedule: sched(id), workouts: W, benchmarks: [], settings: s }, now, [])));
+  const three = [entry('A', '2026-11-19 16:00'), entry('B', '2026-11-19 16:25'), entry('C', '2026-11-19 16:50')];
+  const threeIv = [iv('A', 1, 1200, 4500), iv('B', 1, 1200, 4500), iv('C', 1, 1200, 4500)];
+  assert.deepStrictEqual(flags('T3', three, threeIv, over), [], '3 x 20:00 as three results is the whole workout');
+  assert.deepStrictEqual(flags('T3', three, threeIv, midday), [], 'and not flagged mid-day either');
+  // Two of three: held while the day is on, one alert for the whole day once it is over.
+  assert.deepStrictEqual(flags('T3', three.slice(0, 2), threeIv.slice(0, 2), midday), [], 'unfinished today: wait for the rest');
+  const f = flags('T3', three.slice(0, 2), threeIv.slice(0, 2), over);
+  assert.strictEqual(f.length, 1);
+  assert.deepStrictEqual(f[0].entryIds, ['A', 'B']);
+  assert.strictEqual(f[0].flag, '2 of 3 pieces done');
+  // A reviewed entry still counts toward the total.
+  const reviewed = Object.assign({}, three[0], { 'Review status': 'Reviewed, Full' });
+  assert.deepStrictEqual(flags('T3', [reviewed, three[1], three[2]], threeIv, over), []);
+  // The right amount in another shape: 60:00 plan as four 15:00 pieces; 3 x 20:00 plan as one 60:00 piece.
+  const four = [entry('Q', '2026-11-19 16:00')];
+  assert.deepStrictEqual(flags('T1', four, [1, 2, 3, 4].map((n) => iv('Q', n, 900, 3300)), over), []);
+  assert.deepStrictEqual(flags('T3', four, [iv('Q', 1, 3600, 13000)], over), []);
+  // Less work than the plan in another shape is still flagged (50 of 60 minutes).
+  const short = flags('T1', four, [1, 2, 3].map((n) => iv('Q', n, 1000, 3300)), over);
+  assert.strictEqual(short.length, 1);
+  // A Main set the Sheet turned into a time of day reads as typed.
+  assert.strictEqual(g.planMainSetText_(new Date(1899, 11, 30, 20, 0, 0)), '20:00');
+  assert.strictEqual(g.planMainSetText_('4x15:00'), '4x15:00');
+});
 console.log(`${passed} tests passed`);

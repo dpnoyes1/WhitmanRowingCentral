@@ -123,6 +123,7 @@ function logbookRows(result, ctx) {
     }];
   }
   if (!(Number(pieces[0].timeS) > 0)) return { skip: 'no time on result ' + result.id };
+  if (logbookTinyResult_(result, pieces)) return { skip: 'under 2 minutes, not a workout: result ' + result.id };
   if (pieces.length > MAX_INTERVALS) {
     pieces = pieces.slice(0, MAX_INTERVALS - 1).concat([sumPieces_(pieces.slice(MAX_INTERVALS - 1))]);
   }
@@ -244,6 +245,23 @@ function sumPieces_(list) {
     timeS: add('timeS'), distanceM: add('distanceM'), rate: '',
     restTimeS: add('restTimeS'), restDistanceM: add('restDistanceM')
   };
+}
+
+/** Results shorter than this with one piece are ignored (a Just Row that was stopped at once, a monitor check). David, 2026-11-23. */
+var LOGBOOK_MIN_SINGLE_S = 120;
+
+/**
+ * True for a Logbook result that is not a workout (David, 2026-11-23): one piece under 2:00 of work. Kept:
+ * a 100 m test (one piece of about 100 m on the rower) and any result with several pieces, however short each
+ * (6 x 0:30 sprints). Pure.
+ */
+function logbookTinyResult_(result, pieces) {
+  if (pieces.length > 1) return false;
+  var t = Number(pieces[0] && pieces[0].timeS) || 0;
+  if (t >= LOGBOOK_MIN_SINGLE_S) return false;
+  var d = Number(pieces[0] && pieces[0].distanceM) || Number(result.distanceM) || 0;
+  var is100 = result.machine === 'rower' && d >= 95 && d <= 105;
+  return !is100;
 }
 
 /** A test always has "test" in its title; warm up or cool down in the title is never a test (David, 2026-11-21). Mirrors titleSaysTest in site/lib/slackphoto.mjs. */

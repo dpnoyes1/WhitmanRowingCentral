@@ -2813,6 +2813,21 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   // Same workout already saved (David, 2026-11-22): the page is told so, with the earlier time.
   res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'already', savedAt: '2:21 PM' }), now });
   assert.deepStrictEqual(await res.json(), { status: 'already', savedAt: '2:21 PM' });
+  // An impossible pair asks first (David, 2026-11-23: a 2 hour game typed as 2 minutes); Save anyway sends confirmed.
+  const before = calls.length;
+  const odd = { ...form, pieces: '2:01.0, 8047' };
+  res = await handleLogMine(post(athlete, { form: odd }), env, { fetchImpl: ok, now });
+  const asked = await res.json();
+  assert.strictEqual(asked.status, 'confirm');
+  assert.ok(/faster than anyone/.test(asked.message), asked.message);
+  assert.strictEqual(calls.length, before, 'nothing reaches the Sheet until it is confirmed');
+  res = await handleLogMine(post(athlete, { form: odd, confirmed: true }), env, { fetchImpl: ok, now });
+  assert.strictEqual((await res.json()).status, 'ok');
+  assert.strictEqual(calls.length, before + 1);
+  for (const [act, pieces, bad] of [['Run', '25:30.0, 5000', false], ['Run', '34:00.0, 0', false], ['Stair stepper', '30:00.0, 0', false], ['Swim', '30:00.0, 1500', false], ['Run', '1:00:00.0, 1000', true], ['Bike', '10:00.0, 40000', true], ['Run', '7:30:00.0, 5000', true]]) {
+    res = await handleLogMine(post(athlete, { form: { ...form, activity: act, pieces } }), env, { fetchImpl: ok, now });
+    assert.strictEqual((await res.json()).status === 'confirm', bad, act + ' ' + pieces);
+  }
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
