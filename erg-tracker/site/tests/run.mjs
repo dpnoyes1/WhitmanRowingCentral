@@ -28,6 +28,7 @@ import { handleLineupNames, cleanNames } from '../functions/lineup-names.mjs';
 import { handleHealth } from '../functions/health.mjs';
 import { handleSlackAction } from '../functions/slack-background.mjs';
 import { handleSlack } from '../functions/slack.mjs';
+import { callSheet as callSheetBusyTest } from '../lib/slack.mjs';
 import { handlePhotoEvent, handlePhotoButton, benchmarkShape, resolveName } from '../lib/slackphoto.mjs';
 import * as SL from '../lib/slacklog.mjs';
 import * as SLB from '../lib/slacklogbook.mjs';
@@ -1226,11 +1227,11 @@ test('slack buttons: signature, coach check by the Sheet, first press wins, mess
   await handleSlackAction(press({ action_id: 'plan_confirm', value: 'E0007,E0008' }), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'confirm');
   assert.strictEqual(w.calls[0].body.entryId, 'E0007,E0008');
-  assert.ok(/Modified confirmed by coach\.one/.test(w.calls[1].body.text));
+  assert.ok(/Marked by coach\.one/.test(w.calls[1].body.text));
   w = world({ status: 'ok' });
   await handleSlackAction(press(btn('plan_full')), env, w.deps);
   assert.strictEqual(w.calls[0].body.op, 'full');
-  assert.ok(/Set back to Completed by coach\.one/.test(w.calls[1].body.text));
+  assert.ok(/Kept Completed by coach\.one/.test(w.calls[1].body.text));
 
   w = world({ status: 'already', reviewStatus: 'Reviewed, Full' });
   await handleSlackAction(press(btn('plan_modified')), env, w.deps);
@@ -1309,8 +1310,11 @@ test('slack /log: modal, reading it back, validation, and the same rules as Apps
   assert.ok(/Saved \(Practice, Erg \(RowErg\), 2 pieces\)/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Erg (RowErg)', pieces: 2 })));
   assert.ok(/Saved for Fake Athlete/.test(SL.logReply({ status: 'ok', athlete: 'Fake Athlete', sessionType: 'Practice', pieces: 1 })));
   assert.ok(/plan/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', activity: 'Run', pieces: 1, flagged: true })));
-  assert.ok(/marked Modified/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
-  assert.ok(/marked Missed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'a Missed mark says Missed (David, 2026-11-22)');
+  assert.ok(/counts as Completed for now/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Modified' })));
+  // A mistyped athlete name in /log gets a "did you mean" (David, 2026-11-23).
+  assert.ok(/Did you mean \*Fake Name\*\?/.test(SL.logReply({ status: 'unknown_name' }, ['Fake Name'])));
+  assert.ok(/check the spelling/.test(SL.logReply({ status: 'unknown_name' })));
+  assert.ok(/under half of the planned workout. It counts as Completed/.test(SL.logReply({ status: 'ok', sessionType: 'Practice', pieces: 1, flagged: 'Missed' })), 'under half still counts as Completed (David, 2026-11-23)');
   assert.ok(!/Modified/.test(SL.flagReply('Missed')));
   assert.strictEqual(SL.flagReply(false), '');
   assert.ok(/you were Out/.test(SL.logReply({ status: 'ok', entryStatus: 'Out' })));
@@ -2661,7 +2665,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   assert.ok(/Found on Logbook/.test(posted[0].text));
   const acts = posted[0].blocks.find((b) => b.type === 'actions').elements;
   assert.deepStrictEqual(acts.map((a) => a.action_id), ['lb_confirm', 'lb_change']);
-  assert.ok(/after about 20 hours/.test(JSON.stringify(posted[0].blocks)));
+  assert.ok(/after a day/.test(JSON.stringify(posted[0].blocks)));
   assert.strictEqual(await LS.syncResult(slackEnv, w.store, fetchImpl, 'A901', lbApi()), 'same');
   assert.strictEqual(posted.length, 1, 'an unchanged result is not DMed twice');
   // no Slack ID on the Roster, or Slack failing: the sync still works
@@ -2676,7 +2680,7 @@ test('logbook in Slack: a new pending session is DMed with Confirm/Change, butto
   const mk = SLB.logbookMessage({ ...card, sessionType: 'Make-up', makeupFor: '2026-10-26', possibleMakeup: true, benchmark: '2000m' });
   const mkActs = mk.blocks.find((b) => b.type === 'actions').elements;
   assert.deepStrictEqual(mkActs.map((a) => a.action_id), ['lb_confirm', 'lb_confirm_test', 'lb_change']);
-  assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/20 hours/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
+  assert.ok(/won't count until you tap/.test(JSON.stringify(mk.blocks)) && !/a day/.test(JSON.stringify(mk.blocks)), 'make-ups always wait for a tap');
 
   // buttons
   const NOW = 1_800_000_000;
@@ -2812,6 +2816,21 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   // Same workout already saved (David, 2026-11-22): the page is told so, with the earlier time.
   res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'already', savedAt: '2:21 PM' }), now });
   assert.deepStrictEqual(await res.json(), { status: 'already', savedAt: '2:21 PM' });
+  // An impossible pair asks first (David, 2026-11-23: a 2 hour game typed as 2 minutes); Save anyway sends confirmed.
+  const before = calls.length;
+  const odd = { ...form, pieces: '2:01.0, 8047' };
+  res = await handleLogMine(post(athlete, { form: odd }), env, { fetchImpl: ok, now });
+  const asked = await res.json();
+  assert.strictEqual(asked.status, 'confirm');
+  assert.ok(/faster than anyone/.test(asked.message), asked.message);
+  assert.strictEqual(calls.length, before, 'nothing reaches the Sheet until it is confirmed');
+  res = await handleLogMine(post(athlete, { form: odd, confirmed: true }), env, { fetchImpl: ok, now });
+  assert.strictEqual((await res.json()).status, 'ok');
+  assert.strictEqual(calls.length, before + 1);
+  for (const [act, pieces, bad] of [['Run', '25:30.0, 5000', false], ['Run', '34:00.0, 0', false], ['Stair stepper', '30:00.0, 0', false], ['Swim', '30:00.0, 1500', false], ['Run', '1:00:00.0, 1000', true], ['Bike', '10:00.0, 40000', true], ['Run', '7:30:00.0, 5000', true]]) {
+    res = await handleLogMine(post(athlete, { form: { ...form, activity: act, pieces } }), env, { fetchImpl: ok, now });
+    assert.strictEqual((await res.json()).status === 'confirm', bad, act + ' ' + pieces);
+  }
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
@@ -2926,6 +2945,13 @@ test('plan page: a saved workout loads back into the builder, or says it cannot'
   assert.strictEqual(test2k.pace, '1:45.0');
   assert.strictEqual(previewOf({ ...base, ...plain, type: 'single', by: 'distance', single: '2000', paceOn: true, pace: '1:45.0' }).note.includes('Goal pace 1:45.0'), true);
   assert.strictEqual(parseNL('5k run threshold').act, 'Run');
+  // Open workout (David, 2026-11-23): any activity, N minutes counted at the activity weights.
+  const openB = { ...base, ...plain, type: 'open', openT: '60:00' };
+  assert.deepStrictEqual(buildPieces(openB).pieces, [{ workType: 'Open', reps: '1', work: '60:00', rest: '', startEvery: '', zone: '', base: '', lowPct: '', highPct: '', rate: '' }]);
+  assert.ok(buildPieces({ ...openB, openT: 'an hour' }).err);
+  assert.ok(previewOf(openB).text.includes('1:00:00') || previewOf(openB).text.includes('60:00'), previewOf(openB).text);
+  assert.strictEqual(fromPieces(buildPieces(openB).pieces, 'Open day').type, 'open');
+  assert.strictEqual(fromPieces(buildPieces(openB).pieces, 'Open day').openT, '60:00');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '1', work: '20:00', lowPct: '80' }]), null, 'targets the builder cannot show');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '3', work: '20:00' }]), null, 'intervals with no rest');
   assert.strictEqual(fromPieces([{ workType: 'Time', reps: '2', work: '20:00', rest: '1:00' }, { workType: 'Time', reps: '1', work: '10:00' }]), null, 'mixed reps');
@@ -3306,6 +3332,17 @@ test('run photo check (built, switched off): reading and comparing a run screen'
 
 photoTests(test);
 askTests(test);
+
+test('callSheet: an HTML page from Google is retried, not shown as a JSON error', async () => {
+  const env = (k) => ({ FEED_URL: 'https://script.example/exec', FEED_KEY: 'k' })[k];
+  let n = 0;
+  const f = async () => (++n < 3 ? new Response('<!DOCTYPE html><html>Lock timeout</html>', { status: 200 }) : Response.json({ status: 'ok' }));
+  assert.deepStrictEqual(await callSheetBusyTest(env, f, { a: 1 }, { retries: 3, delayMs: 1 }), { status: 'ok' });
+  assert.strictEqual(n, 3);
+  n = -10;
+  await assert.rejects(() => callSheetBusyTest(env, f, { a: 1 }), /busy/);
+  assert.strictEqual(n, -9, 'no retry unless asked');
+});
 
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }

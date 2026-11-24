@@ -1,8 +1,9 @@
 /**
  * Plan flags in Slack (David, 2026-10-28; changed 2026-11-17). A practice or make-up logged as Full that is not
  * exactly the planned workout (fewer pieces, a piece cut short, a different workout, or a skipped workout on
- * a day with several) is marked Modified automatically and gets one message in the coach channel
- * (#ergbot-coaches, through the alert webhook) with three buttons: Confirm Modified, Set back to Full, Open
+ * a day with several) gets one message in the coach channel (David, 2026-11-23: it stays Completed until a coach
+ * presses Mark Modified; under half of the plan is still marked Missed at once; before that it was marked Modified first)
+ * (#ergbot-coaches, through the alert webhook) with three buttons: Mark Modified, Keep Completed, Open
  * in Sheet. It runs right after a Slack or site save, and an every-15-minutes sweep catches the rest (Logbook,
  * Form). The Netlify function behind the Slack app (site/functions/slack-background.mjs) sends a press back
  * here through the feed key. Only member IDs in Settings slack.coach_ids may decide; the first press wins and
@@ -14,7 +15,7 @@ var PLAN_FLAG_LOOKBACK_DAYS = 3;
 var PLAN_FLAG_ACTION = 'plan-flag-action';
 var PLAN_FLAG_REVIEWED = 'Reviewed, Full';
 var PLAN_FLAG_MODIFIED = 'Reviewed, Modified';
-var PLAN_FLAG_AUTO = 'Auto Modified';   // marked Modified (or Missed, when under half was done) by the plan check, waiting for a coach
+var PLAN_FLAG_AUTO = 'Auto Modified';   // flagged by the plan check, waiting for a coach: Missed when under half was done, else still Full (Completed) since 2026-11-23
 var PLAN_FLAG_MISSED = 'Reviewed, Missed';
 
 // ---- Pure parts (tested in Node) ----
@@ -36,7 +37,7 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   (inp.workouts || []).forEach(function (w) { var id = String(w['Workout ID']).trim(); if (id && !(id in names)) names[id] = String(w.Name || id); });
   var groups = {}, order = [];
   var bestOf = plannedBestAll(entries, squads, inp.schedule, inp.workouts, byEntry);   // ties go in the order done
-  entries.forEach(function (e) {
+  entries.forEach(function (e, entryIndex) {
     var type = String(e['Session type'] || '');
     if (type !== 'Practice' && type !== 'Make-up') return;
     if (!isDate_(e.Date) || e.Date < from || e.Date > today) return;
@@ -46,26 +47,30 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
       var best = (e['Entry ID'] in bestOf) ? bestOf[e['Entry ID']] : plannedBest(e, squads[e['Athlete ID']], inp.schedule, inp.workouts, byEntry[e['Entry ID']] || []);
       if (!best || !best.pieces.length) return;
       var key = e['Athlete ID'] + '|' + dayKey_(best.row.Date);
-      if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], done: {}, out: false }; order.push(key); }
+      if (!groups[key]) { groups[key] = { day: dayKey_(best.row.Date), first: e, rows: [], work: {}, done: {}, out: false }; order.push(key); }
       var g = groups[key];
       if (String(e.Status) === 'Out') { g.out = true; return; }
       g.done[String(best.row['Workout ID']).trim()] = true;
       var open = String(e.Status) === 'Full' && review === '' && posted.indexOf(e['Entry ID']) < 0;
-      if (!open) return;
-      var bases = {};
-      Object.keys(PLAN_BASES).forEach(function (b) {
-        var bw = seasonBestWatts(inp.benchmarks, e['Athlete ID'], b, best.row.Date, inp.settings.school_year_start);
-        if (bw) bases[b] = bw.watts;
-      });
-      var c = checkAgainstPlan(rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), best.pieces, bases, inp.settings, e.Activity);
-      // A warm-up or cool-down is never flagged, even when shorter than planned (David, 2026-11-17). A poor
-      // guess (plannedBest `poor`: nothing on a several-workout day fits well) is always flagged and says it is a
-      // guess, and is Modified, never Missed, since it isn't known which workout it was (David, 2026-11-21).
-      var name = names[String(best.row['Workout ID']).trim()] || String(best.row['Workout ID']).trim();
-      var warmCool = isWarmCoolWorkout_(name);
-      var flag = best.poor ? planPoorFitReason_(name, best.fraction) : warmCool ? '' : planFlag(e, c);
-      var missed = !!flag && !!c.notDone && !best.poor;
-      g.rows.push({ e: e, pieces: best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed, warmCool: warmCool && !best.poor });
+      // An open workout (any activity, N weighted minutes) is judged on the whole day's total, once the day is over.
+      if (planIsOpen_(best.pieces)) {
+        g.openPlan = g.openPlan || { wantS: best.pieces[0].workS, pieces: best.pieces, all: [], flaggable: [] };
+        g.openPlan.all.push(e);
+        if (open) g.openPlan.flaggable.push(e);
+        return;
+      }
+      // A planned workout is judged on everything the athlete did for it that day (David, 2026-11-23: 3 x 20:00
+      // logged as three Logbook results was flagged "1 of 3 pieces" three times). Entries are collected per
+      // workout here and judged together below; a poor guess at which workout it was is still judged alone.
+      var wid = String(best.row['Workout ID']).trim();
+      var name = names[wid] || wid;
+      var item = { e: e, open: open, best: best, ivs: rowEquivalentIntervals(byEntry[e['Entry ID']] || [], e.Activity), i: entryIndex, t: planSubmittedMs_(e['Submitted at']) };
+      if (best.poor) {
+        g.rows.push(planFlagRow_(item, name, inp));
+      } else {
+        g.work[wid] = g.work[wid] || { best: best, name: name, items: [] };
+        g.work[wid].items.push(item);
+      }
     } catch (err) {
       // A bad Workouts row must not stop the sweep.
     }
@@ -73,6 +78,14 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
   var out = [];
   order.forEach(function (key) {
     var g = groups[key];
+    Object.keys(g.work).forEach(function (wid) { planJudgeWorkout_(g, g.work[wid], inp, todayKey); });
+    if (g.openPlan && !g.out && g.day < todayKey && g.openPlan.flaggable.length) {
+      var res = planOpenResult_(planOpenCountedS_(g.openPlan.all, inp.settings), g.openPlan.wantS);
+      var openFlag = res.met ? '' : planOpenFlagText_(res);
+      g.openPlan.flaggable.forEach(function (oe) {
+        g.rows.push({ e: oe, pieces: g.openPlan.pieces, flag: openFlag, missed: !res.met && res.missed, warmCool: false });
+      });
+    }
     if (!g.rows.length) return;
     var skipped = [];
     if (!g.out && g.day < todayKey) {
@@ -87,7 +100,8 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     var hit = g.rows.filter(function (x) { return x.flag || (skipped.length && !x.warmCool); });
     if (!hit.length && skipped.length) hit = g.rows;
     if (!hit.length) return;
-    var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; });
+    var reasons = hit.filter(function (x) { return x.flag; }).map(function (x) { return x.flag; })
+      .filter(function (r, i, all) { return all.indexOf(r) === i; });   // an open day gives every entry the same reason
     if (skipped.length) reasons.push('Not logged: ' + skipped.join(', '));
     out.push({
       entryIds: hit.map(function (x) { return x.e['Entry ID']; }), entryId: hit[0].e['Entry ID'],
@@ -97,6 +111,71 @@ function pendingPlanFlags(entries, intervals, squads, inp, today, posted) {
     });
   });
   return out;
+}
+
+/** A day's work of at least this share of the plan counts as the full workout even when its pieces are shaped differently (David, 2026-11-23). */
+var PLAN_SHAPE_FRACTION = 0.98;
+
+/** Season-best watts per base for an athlete on a date: what checkAgainstPlan needs for targets. */
+function planBasesFor_(inp, athleteId, date) {
+  var bases = {};
+  Object.keys(PLAN_BASES).forEach(function (b) {
+    var bw = seasonBestWatts(inp.benchmarks, athleteId, b, date, inp.settings.school_year_start);
+    if (bw) bases[b] = bw.watts;
+  });
+  return bases;
+}
+
+/** A poor guess at the planned workout is judged on its own entry and is Modified, never Missed (David, 2026-11-21). Pure. */
+function planFlagRow_(item, name, inp) {
+  var e = item.e;
+  var c = checkAgainstPlan(item.ivs, item.best.pieces, planBasesFor_(inp, e['Athlete ID'], item.best.row.Date), inp.settings, e.Activity);
+  var flag = item.open ? planPoorFitReason_(name, item.best.fraction) : '';
+  return { e: e, pieces: item.best.pieces, flag: item.open ? flag : '', missed: false, warmCool: false, check: c };
+}
+
+/**
+ * Judges one planned workout on everything an athlete logged for it that day, in the order done (David,
+ * 2026-11-23). Entries are pooled into one list of pieces, so 3 x 20:00 as three Logbook results, or a piece
+ * split over a stop and restart, counts as the full workout. Only entries still open (Full, no Review status,
+ * not posted before) get flagged; reviewed ones still count toward the total. While the day is not over, a
+ * workout that is merely unfinished (fewer pieces, a piece cut short) is held and judged after the day; a
+ * different workout is flagged at once, as before. A warm-up or cool-down is never flagged. Pure.
+ */
+function planJudgeWorkout_(g, w, inp, todayKey) {
+  var items = w.items.slice().sort(function (a, b) { return (a.t - b.t) || (a.i - b.i); });
+  var openItems = items.filter(function (x) { return x.open; });
+  if (!openItems.length) return;
+  var pooled = [], n = 0;
+  items.forEach(function (x) {
+    x.ivs.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }).forEach(function (iv) {
+      var copy = Object.assign({}, iv); copy['Interval #'] = ++n; pooled.push(copy);
+    });
+  });
+  var first = items[0].e;
+  var c = checkAgainstPlan(pooled, w.best.pieces, planBasesFor_(inp, first['Athlete ID'], w.best.row.Date), inp.settings, first.Activity);
+  var warmCool = isWarmCoolWorkout_(w.name);
+  var flag = warmCool ? '' : planFlag(openItems[0].e, c);
+  // The right amount of work in a different shape counts as the workout (Nov 23: 60:00 as four 15:00 pieces, or a
+  // 4 x 15:00 plan logged as one 60:00 piece). A small slack covers a 59:59.9 photo read.
+  var planned = [];
+  w.best.pieces.forEach(function (p) { for (var k = 0; k < p.reps; k++) planned.push(p); });
+  // Only steady work: short repeats (6 x 0:30) are a different workout from the same minutes done as one piece.
+  var steady = planned.every(function (p) { return (p.workType === 'Time' ? p.workS >= 300 : p.workM >= 1000); }) &&
+    pooled.every(function (iv) { return Number(iv['Work s']) >= 300; });
+  if (!c.matches && steady && planWorkFraction_(pooled, planned) >= PLAN_SHAPE_FRACTION) flag = '';
+  var unfinished = !!c.short || (c.logged < c.planned && /intervals logged/.test(c.reason));
+  if (flag && unfinished && g.day >= todayKey) flag = '';   // still today: the rest may come
+  var missed = !!flag && !!c.notDone;
+  openItems.forEach(function (x) {
+    g.rows.push({ e: x.e, pieces: w.best.pieces, flag: missed ? flag + '; under half of the planned work' : flag, missed: missed, warmCool: warmCool });
+  });
+}
+
+/** "Open workout: 48 of 60 weighted minutes (80%)" for a day under its target. Pure. */
+function planOpenFlagText_(res) {
+  var min = function (s) { return Math.round(s / 60 * 10) / 10; };
+  return 'Open workout: ' + min(res.gotS) + ' of ' + min(res.wantS) + ' weighted minutes (' + Math.round(res.fraction * 100) + '%)';
 }
 
 /** Extra practice work moves to OYO from this many seconds of work (David, 2026-11-21: 15 minutes, like the OYO minimum idea). */
@@ -131,7 +210,7 @@ function planExtras(entries, intervals, squads, inp, today) {
   var days = {}, order = [];
   practice.forEach(function (e) {
     var best = bestOf[e['Entry ID']];
-    if (!best || !best.row || !best.pieces.length) return;
+    if (!best || !best.row || !best.pieces.length || planIsOpen_(best.pieces)) return;   // open days: every entry counts toward the total
     var key = e['Athlete ID'] + '|' + dayKey_(e.Date);
     if (!days[key]) { days[key] = []; order.push(key); }
     days[key].push({ e: e, best: best, id: String(best.row['Workout ID']).trim() });
@@ -182,6 +261,18 @@ function planPoorFitReason_(closest, fraction) {
   return "Doesn't clearly match a planned workout (closest: " + closest + ', ' + Math.round((Number(fraction) || 0) * 100) + '% of its work)';
 }
 
+/**
+ * A Main set the Sheet turned into a time of day ("20:00" typed into a cell becomes 20:00:00 on 1899-12-30, which
+ * showed in Slack as "Sat Dec 30 1899 20:00:00 GMT-0500") reads as the original text again. Pure.
+ */
+function planMainSetText_(v) {
+  if (isDate_(v)) {
+    var h = v.getHours(), m = v.getMinutes(), sec = v.getSeconds(), two = function (n) { return (n < 10 ? '0' : '') + n; };
+    return sec ? h + ':' + two(m) + ':' + two(sec) : two(h) + ':' + two(m);
+  }
+  return String(v === undefined || v === null ? '' : v);
+}
+
 /** "Tue Oct 28" */
 function planFlagDay_(d) {
   return ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][d.getDay()] + ' ' +
@@ -213,7 +304,8 @@ function planFlagDetail(entry, intervals, pieces) {
   var source = PLAN_FLAG_SOURCES[String(entry.Source)] || String(entry.Source || 'unknown');
   var by = String(entry['Entered by'] || '').trim();
   var head = '*Logged* (' + source + (by && by !== String(entry.Athlete) ? ', entered by ' + by : '') + '): ' + (entry.Activity || 'activity not given');
-  if (entry['Main set']) head += ', "' + entry['Main set'] + '"';
+  var mainSet = planMainSetText_(entry['Main set']);
+  if (mainSet) head += ', "' + mainSet + '"';
   if (entry.Zone) head += ', ' + entry.Zone;
   lines.push(head);
   intervals.slice().sort(function (a, b) { return Number(a['Interval #']) - Number(b['Interval #']); }).forEach(function (iv) {
@@ -231,23 +323,54 @@ function planFlagDetail(entry, intervals, pieces) {
   return lines.join('\n').slice(0, 2400);
 }
 
+/** This many "Not logged" items in one sweep are posted as one summary (David, 2026-11-23: a dozen alerts at midnight). */
+var PLAN_BATCH_MIN = 3;
+
+/**
+ * Items that only say a planned workout was not logged ("Not logged: 6 x 0:30 Sprint") and were all flagged in one
+ * sweep for the same day and session become one summary item, with each athlete listed. Anything else is untouched.
+ * The summary's buttons cover every Entry ID. Pure.
+ */
+function planBatchItems(items) {
+  var groups = {}, order = [], out = [];
+  items.forEach(function (it) {
+    if (/^Not logged: /.test(it.flag) && !(it.missedIds && it.missedIds.length)) {
+      var k = dayKey_(it.date) + '|' + it.sessionType;
+      if (!groups[k]) { groups[k] = []; order.push(k); }
+      groups[k].push(it);
+    } else {
+      out.push(it);
+    }
+  });
+  order.forEach(function (k) {
+    var list = groups[k];
+    if (list.length < PLAN_BATCH_MIN) { list.forEach(function (it) { out.push(it); }); return; }
+    var flags = list.map(function (it) { return it.flag; }).filter(function (f, i, all) { return all.indexOf(f) === i; });
+    var ids = [];
+    list.forEach(function (it) { it.entryIds.forEach(function (id) { ids.push(id); }); });
+    out.push({
+      entryIds: ids, entryId: ids[0], missedIds: [], athlete: list.length + ' athletes', date: list[0].date, sessionType: list[0].sessionType,
+      flag: flags.join('. '),
+      detail: list.map(function (it) { return '\u2022 ' + it.athlete + ': ' + it.flag; }).join('\n').slice(0, 2400)
+    });
+  });
+  return out;
+}
+
 /** The Slack message for one flagged item: text plus Block Kit buttons. The buttons carry every Entry ID it covers. */
 function planFlagMessage(item, sheetUrl) {
-  var allMissed = !!(item.missedIds && item.missedIds.length && item.missedIds.length === (item.entryIds || [item.entryId]).length);
-  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType +
-    '. Marked ' + (allMissed ? 'Missed (an open make-up; the minutes still count)' : 'Modified') + ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
+  // Since 2026-11-23 (David) any log in the practice window is Completed by default, even under half of the plan;
+  // the coach downgrades it with a button. `missedIds` now only says the entry did under half of the plan.
+  var underHalf = !!(item.missedIds && item.missedIds.length);
+  var text = ':warning: Plan check: ' + item.athlete + ', ' + planFlagDay_(item.date) + ', ' + item.sessionType + '. ' +
+    'Counted as Completed, but it may be ' + (underHalf ? 'Modified or Missed' : 'Modified') +
+    ': ' + item.flag + '.' + (item.detail ? '\n' + item.detail : '');
   var ids = (item.entryIds || [item.entryId]).join(',');
-  return {
-    text: text,
-    blocks: [
-      { type: 'section', text: { type: 'mrkdwn', text: text } },
-      { type: 'actions', elements: [
-        { type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: allMissed ? 'Confirm Missed' : 'Confirm Modified' } },
-        { type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Set back to Completed' } },
-        { type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } }
-      ] }
-    ]
-  };
+  var buttons = [{ type: 'button', action_id: 'plan_confirm', value: ids, text: { type: 'plain_text', text: 'Mark Modified' } }];
+  if (underHalf) buttons.push({ type: 'button', action_id: 'plan_missed', value: ids, text: { type: 'plain_text', text: 'Mark Missed' } });
+  buttons.push({ type: 'button', action_id: 'plan_full', value: ids, text: { type: 'plain_text', text: 'Keep Completed' } });
+  buttons.push({ type: 'button', action_id: 'plan_open', url: sheetUrl, text: { type: 'plain_text', text: 'Open in Sheet' } });
+  return { text: text, blocks: [{ type: 'section', text: { type: 'mrkdwn', text: text } }, { type: 'actions', elements: buttons }] };
 }
 
 /** Slack member IDs allowed to press the buttons, from Settings slack.coach_ids. */
@@ -264,11 +387,13 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
   if (!slackUserId || coachIds.indexOf(String(slackUserId)) < 0) return { status: 'forbidden' };
   if (!row) return { status: 'missing' };
   var review = String(row['Review status'] || '').trim();
-  if (['confirm', 'full', 'modified', 'reviewed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
+  if (['confirm', 'full', 'modified', 'reviewed', 'missed'].indexOf(op) < 0) return { status: 'error', error: 'unknown action' };
+  if (op === 'missed' && (review === PLAN_FLAG_AUTO || review === '')) return { status: 'ok', mark: 'Missed', set: { 'Status': 'Missed', 'Review status': PLAN_FLAG_MISSED } };
   if (review === PLAN_FLAG_AUTO) {
     var wasMissed = String(row.Status) === 'Missed';
-    if (op === 'confirm') return { status: 'ok', mark: wasMissed ? 'Missed' : 'Modified', set: { 'Review status': wasMissed ? PLAN_FLAG_MISSED : PLAN_FLAG_MODIFIED } };
-    if (op === 'modified') return { status: 'ok', set: { 'Review status': PLAN_FLAG_MODIFIED } };
+    // A flagged entry is still Completed (Full) until the coach says otherwise; older ones were already marked Modified.
+    if (op === 'confirm') return { status: 'ok', mark: wasMissed ? 'Missed' : 'Modified', set: wasMissed ? { 'Review status': PLAN_FLAG_MISSED } : { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
+    if (op === 'modified') return { status: 'ok', set: { 'Status': 'Modified', 'Review status': PLAN_FLAG_MODIFIED } };
     return { status: 'ok', set: { 'Status': 'Full', 'Review status': PLAN_FLAG_REVIEWED } };
   }
   if (review !== '') return { status: 'already', reviewStatus: review };
@@ -282,7 +407,8 @@ function decidePlanFlagAction(row, op, slackUserId, coachIds) {
  */
 function planFlagAutoSet_(row, missed) {
   if (!row || String(row.Status) !== 'Full' || String(row['Review status'] || '').trim() !== '') return null;
-  return { 'Status': missed ? 'Missed' : 'Modified', 'Review status': PLAN_FLAG_AUTO };
+  // David, 2026-11-23: any log in the practice window is Completed by default, even under half; a coach downgrades it.
+  return { 'Review status': PLAN_FLAG_AUTO };
 }
 
 // ---- Sheet side ----
@@ -364,7 +490,7 @@ function runPlanFlags_(findItems) {
   var hook = props.getProperty(SLACK_WEBHOOK_PROP);
   var posted = [];
   try { posted = JSON.parse(props.getProperty(PLAN_FLAGS_POSTED_PROP) || '[]'); } catch (err) { posted = []; }
-  var items = findItems(posted);
+  var items = planBatchItems(findItems(posted));
   if (!items.length) return [];
   var sheetUrl = ss_().getUrl() + '#gid=' + tab_(TABS.ENTRIES).getSheetId();
   var marked = [];
@@ -425,7 +551,8 @@ function entryRowById_(entryId) {
  */
 function applyPlanFlagAction_(body) {
   var lock = LockService.getScriptLock();
-  lock.waitLock(30000);
+  // Many buttons pressed at once queue on the lock. A timeout used to escape as Google's HTML error page; answer 'busy' so the site retries.
+  if (!lock.tryLock(30000)) return { status: 'busy' };
   try {
     var ids = String(body.entryId || '').split(',').map(function (x) { return x.trim(); }).filter(function (x) { return x; });
     if (!ids.length) return { status: 'missing' };

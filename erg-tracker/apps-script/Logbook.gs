@@ -123,6 +123,7 @@ function logbookRows(result, ctx) {
     }];
   }
   if (!(Number(pieces[0].timeS) > 0)) return { skip: 'no time on result ' + result.id };
+  if (logbookTinyResult_(result, pieces)) return { skip: 'under 2 minutes, not a workout: result ' + result.id };
   if (pieces.length > MAX_INTERVALS) {
     pieces = pieces.slice(0, MAX_INTERVALS - 1).concat([sumPieces_(pieces.slice(MAX_INTERVALS - 1))]);
   }
@@ -246,6 +247,23 @@ function sumPieces_(list) {
   };
 }
 
+/** Results shorter than this with one piece are ignored (a Just Row that was stopped at once, a monitor check). David, 2026-11-23. */
+var LOGBOOK_MIN_SINGLE_S = 120;
+
+/**
+ * True for a Logbook result that is not a workout (David, 2026-11-23): one piece under 2:00 of work. Kept:
+ * a 100 m test (one piece of about 100 m on the rower) and any result with several pieces, however short each
+ * (6 x 0:30 sprints). Pure.
+ */
+function logbookTinyResult_(result, pieces) {
+  if (pieces.length > 1) return false;
+  var t = Number(pieces[0] && pieces[0].timeS) || 0;
+  if (t >= LOGBOOK_MIN_SINGLE_S) return false;
+  var d = Number(pieces[0] && pieces[0].distanceM) || Number(result.distanceM) || 0;
+  var is100 = result.machine === 'rower' && d >= 95 && d <= 105;
+  return !is100;
+}
+
 /** A test always has "test" in its title; warm up or cool down in the title is never a test (David, 2026-11-21). Mirrors titleSaysTest in site/lib/slackphoto.mjs. */
 function titleSaysTest_(title) {
   var t = String(title || '');
@@ -316,7 +334,13 @@ function processLogbookResult_(body) {
     var out = { status: existing ? 'updated' : 'created', entryId: rows.entry['Entry ID'] };
     var slack = null;
     if (/^pending/i.test(String(rows.entry['Review status']))) {
-      slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);
+      if (String(rows.entry['Review status']) === LOGBOOK_PENDING) {
+        // A possible 2k/20' test is a question for the coaches, not the athlete (David, 2026-11-23); if nobody answers it
+        // becomes a normal workout after a day.
+        if (!existing) postCoachNote_(logbookTestNote(rows.entry, rosterRow_name_(roster)));
+      } else {
+        slack = existing ? null : logbookSlackNotice(rows.entry, rows.intervals, roster);
+      }
     } else {   // counted at once: the plan check flags it to the coaches and the athlete if it isn't the plan in full
       var squads = {};
       readObjects_(TABS.ROSTER).forEach(function (r) { squads[r['Athlete ID']] = r.Squad; });
@@ -368,7 +392,7 @@ function deleteEntry_(found) {
 
 // ---- confirm and auto-accept -------------------------------------------------
 
-var LOGBOOK_AUTO_ACCEPT_HOURS = 20;   // David, 2026-10-25: unchanged labels auto-accept after 20 h
+var LOGBOOK_AUTO_ACCEPT_HOURS = 24;   // David, 2026-10-25: unchanged labels auto-accept after 20 h; 2026-11-23: a test prompt that nobody answers expires after a day
 
 /**
  * Pure: what a confirm tap changes. entry/interval are Entries/Intervals objects.
@@ -516,8 +540,30 @@ function logbookFlagNotice(entry, rosterRow, missed) {
   var d = entry['Date'];
   var when = d instanceof Date ? Utilities.formatDate(d, ss_().getSpreadsheetTimeZone(), 'EEE MMM d') : 'today';
   return { slackUserId: id, notice: ':warning: Your Logbook workout on ' + when + (missed
-    ? ' was under half of the planned workout, so it is marked Missed (you can still make it up)'
-    : ' was not the planned workout in full, so it is marked Modified') + ' and your coaches were told. If that is wrong, tell a coach.' };
+    ? ' was under half of the planned workout. It counts as Completed for now'
+    : ' was not the planned workout in full. It counts as Completed for now') + ' and your coaches were told. If that is wrong, tell a coach.' };
+}
+
+function rosterRow_name_(roster) { return String(roster && roster.Name || '').trim(); }
+
+/** Pure: the #ergbot-coaches line for a Logbook result that could be a 2k/20' test (David, 2026-11-23). */
+function logbookTestNote(entry, athleteName) {
+  var d = entry['Date'];
+  var when = d instanceof Date ? Utilities.formatDate(d, ss_().getSpreadsheetTimeZone(), 'EEE MMM d') : String(d || '');
+  var kind = Number(entry['Work m']) >= 1990 && Number(entry['Work m']) <= 2010 && Number(entry['Work s']) < 1195 ? '2k' : "20'";
+  return ':stopwatch: Possible ' + kind + ' test on Concept2 Logbook: ' + athleteName + ', ' + when + ', ' + (Number(entry['Work m']) || 0) + ' m in ' + formatTime(Number(entry['Work s'])) +
+    '. It counts as a normal workout after ' + LOGBOOK_AUTO_ACCEPT_HOURS + ' hours. If it was a test, log it from Log for an athlete (Test).';
+}
+
+/** Posts one line to the coach channel through the plan-flag webhook; never throws. */
+function postCoachNote_(text) {
+  try {
+    var hook = PropertiesService.getScriptProperties().getProperty(SLACK_WEBHOOK_PROP);
+    if (!hook || !text) return;
+    UrlFetchApp.fetch(hook, { method: 'post', contentType: 'application/json', payload: JSON.stringify({ text: text }), muteHttpExceptions: true });
+  } catch (err) {
+    logChange_({ Who: 'logbook', Tab: '(logbook)', Note: 'COACH NOTE ERROR: ' + err.message });
+  }
 }
 
 /** Pure: the active Roster row with this Slack member ID, or null. */

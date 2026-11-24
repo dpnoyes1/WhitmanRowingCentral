@@ -4,6 +4,7 @@
 import { liveSession, athleteStillActive } from '../lib/auth.mjs';
 import { callSheet } from '../lib/slack.mjs';
 import { prepPhoto } from '../lib/logphoto.mjs';
+import { plausibleProblem, clockSeconds } from '../lib/plausible.mjs';
 
 const env = (k) => Netlify.env.get(k);
 const json = (body, status = 200) =>
@@ -46,6 +47,12 @@ export async function handleLogMine(req, envFn, deps = {}) {
   const day = /^(\d{4})-(\d{2})-(\d{2})$/.exec(form.date || '');
   const t = day ? Date.UTC(+day[1], +day[2] - 1, +day[3]) : NaN;
   if (!(t <= now + 86400000) || !(t >= now - (MAX_DAYS_BACK + 1) * 86400000)) return json({ error: `Pick a date from the last ${MAX_DAYS_BACK} days.` }, 422);
+  // An unlikely time and distance (a 2 hour game typed as 2 minutes) gets one question first; "Save anyway" sends confirmed.
+  if (body.confirmed !== true && typeof form.pieces === 'string') {
+    const [clk, dist] = form.pieces.split(',');
+    const problem = plausibleProblem(form.activity, clockSeconds(clk), Number(dist) || 0);
+    if (problem) return json({ status: 'confirm', message: problem });
+  }
   const pp = await prepPhoto(body.photo, deps);
   if (pp.error) return json({ error: pp.error }, pp.status);
   const requestId = typeof body.requestId === 'string' ? body.requestId.slice(0, 60) : '';

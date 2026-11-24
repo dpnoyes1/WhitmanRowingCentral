@@ -15,3 +15,5 @@ Repo-wide rules:
 - Verify before every commit: `node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs` (run `npm install` once first for sharp). A change is not done until both pass. If you changed the site's pages or CSS, also run `node erg-tracker/site/tests/browser/run.mjs` (sideways-scroll sweep and click-through tests; needs Playwright, not part of the Netlify build).
 - Never commit passwords, API keys or tokens. Netlify sites read them from environment variables.
 - Athlete data (names, results, weights) never goes in the repo. It lives in the Google Sheet, which only coaches can open. Dummy data for testing is fine and must be clearly fake.
+
+Full history and old decisions (not auto-loaded): `erg-tracker/docs/history.md`.

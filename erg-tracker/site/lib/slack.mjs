@@ -15,7 +15,16 @@ export function signatureValid(secret, headers, raw, nowS = Date.now() / 1000) {
 }
 
 /** The Sheet's feed endpoint (an Apps Script web app) with the feed key. Throws on any problem. */
-export async function callSheet(env, fetchImpl, body) {
+export async function callSheet(env, fetchImpl, body, { retries = 0, delayMs = 4000 } = {}) {
+  for (let attempt = 0; ; attempt++) {
+    try { return await callSheetOnce(env, fetchImpl, body); } catch (err) {
+      if (attempt >= retries || !err.busy) throw err;
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
+async function callSheetOnce(env, fetchImpl, body) {
   const url = env('FEED_URL'), key = env('FEED_KEY');
   if (!url || !key) throw new Error('FEED_URL and FEED_KEY must be set in Netlify');
   const res = await fetchImpl(url, {
@@ -25,17 +34,24 @@ export async function callSheet(env, fetchImpl, body) {
     redirect: 'follow'
   });
   if (!res.ok) throw new Error('sheet HTTP ' + res.status);
-  const data = await res.json();
+  const text = await res.text();
+  let data;
+  try { data = JSON.parse(text); } catch {
+    // Google sent an HTML page (lock timeout, quota, hiccup) instead of JSON.
+    throw Object.assign(new Error('The Sheet was busy (got a web page, not an answer)'), { busy: true });
+  }
+  if (data.status === 'busy') throw Object.assign(new Error('The Sheet was busy'), { busy: true });
   if (data.error) throw new Error('sheet said: ' + data.error);
   return data;
 }
 
 // plan_confirm / plan_full since 2026-11-17 (entries are marked Modified first); the other two are on older messages.
-const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_reviewed: 'reviewed' };
+const OPS = { plan_confirm: 'confirm', plan_full: 'full', plan_modified: 'modified', plan_missed: 'missed', plan_reviewed: 'reviewed' };
 const DONE = {
-  confirm: (n) => `:white_check_mark: Modified confirmed by ${n}`,
-  full: (n) => `:white_check_mark: Set back to Completed by ${n}`,
+  confirm: (n) => `:white_check_mark: Marked by ${n}`,
+  full: (n) => `:white_check_mark: Kept Completed by ${n}`,
   modified: (n) => `:white_check_mark: Set to Modified by ${n}`,
+  missed: (n) => `:white_check_mark: Marked Missed by ${n}`,
   reviewed: (n) => `:white_check_mark: Looks right, marked by ${n}`
 };
 export const planOp = (actionId) => OPS[actionId] || null;

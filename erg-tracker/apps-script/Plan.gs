@@ -60,6 +60,45 @@ function seasonBestWatts(benchmarks, athleteId, base, onDate, yearStartMMDD) {
   return best.current || best.previous;
 }
 
+/**
+ * Open workouts (David, 2026-11-23: "60' of work in any format"). A Workouts row with Work type Open and Work
+ * = the target in counted time (like 60:00). Every Practice entry the athlete logs that day, any activity and
+ * any shape, counts its work time x its activity multiplier toward the target (50:00 of running at 1.2 is 60:00).
+ * 100% or more is Completed; the plan check judges it once, when the day is over (planOpenDayItems_ in PlanFlags.gs).
+ */
+var PLAN_OPEN_ACTIVITY = 'Any activity';
+/** An open day is met within this many seconds of the target (a 59:59.9 photo read counts). */
+var PLAN_OPEN_SLACK_S = 1;
+
+/** The multiplier for an activity: Settings `multiplier.<activity>` (0 counts), else the built-in default, else 1. Pure. */
+function planActivityMultiplier_(activity, settings) {
+  var v = (settings || {})['multiplier.' + activity];
+  if (v !== undefined && v !== null && String(v).trim() !== '' && isFinite(Number(v))) return Number(v);
+  for (var i = 0; i < ACTIVITIES.length; i++) if (ACTIVITIES[i][0] === activity) return Number(ACTIVITIES[i][1]);
+  return 1;
+}
+
+/** Counted seconds of work in these entries (Work s x activity multiplier); Out entries count 0. Pure. */
+function planOpenCountedS_(entries, settings) {
+  var sum = 0;
+  entries.forEach(function (e) {
+    if (String(e.Status) === 'Out') return;
+    sum += (Number(e['Work s']) || 0) * planActivityMultiplier_(String(e.Activity || ''), settings);
+  });
+  return sum;
+}
+
+/** { gotS, wantS, fraction, met, missed } for an open day. met = 100% or more (within PLAN_OPEN_SLACK_S); missed = under half. Pure. */
+function planOpenResult_(gotS, wantS) {
+  var frac = wantS > 0 ? gotS / wantS : 1;
+  return { gotS: gotS, wantS: wantS, fraction: frac, met: gotS + PLAN_OPEN_SLACK_S >= wantS, missed: frac < PLAN_NOT_DONE_BELOW };
+}
+
+/** True when a planned workout's pieces are an open workout. */
+function planIsOpen_(pieces) {
+  return !!(pieces && pieces.length && pieces[0].workType === 'Open');
+}
+
 /** Workouts tab rows for one Workout ID, parsed and in Piece # order. Throws on bad rows. */
 function workoutPieces(workoutRows, workoutId) {
   return workoutRows
@@ -94,7 +133,8 @@ function workoutPieces(workoutRows, workoutId) {
       };
       if (type === 'Time') piece.workS = parseTime(r.Work);
       else if (type === 'Distance') piece.workM = Number(String(r.Work).replace(/\s*m$/i, ''));
-      else throw new Error(where + ': Work type must be Time or Distance');
+      else if (type === 'Open') { piece.workS = parseTime(r.Work); piece.activity = PLAN_OPEN_ACTIVITY; piece.reps = 1; piece.restS = 0; piece.restUndefined = false; }
+      else throw new Error(where + ': Work type must be Time, Distance or Open');
       if (!(piece.workS > 0 || piece.workM > 0)) throw new Error(where + ': Work is missing or not a number');
       return piece;
     });
@@ -118,6 +158,7 @@ function pieceGoalText_(p) {
 
 /** "3 x 20:00 r2:00 Aerobic" style label for one piece row. */
 function pieceLabel(p) {
+  if (p.workType === 'Open') return 'Open: ' + formatTime(p.workS).replace(/\.0$/, '') + ' of any activity (counted at activity multipliers)';
   var work = p.workType === 'Time' ? formatTime(p.workS).replace(/\.0$/, '') : pieceDistanceText_(p);
   var rest = p.startEveryS ? ' start every ' + formatTime(p.startEveryS).replace(/\.0$/, '')
     : p.restUndefined ? ' r undefined'
@@ -465,6 +506,8 @@ function rowEquivalentIntervals(intervals, activity) {
  * piece had a target. Computed at display, never stored.
  */
 function checkAgainstPlan(intervals, pieces, baseWatts, settings, activity) {
+  // An open workout has no shape to match: whatever was logged fits. The day's total is judged in PlanFlags.gs.
+  if (planIsOpen_(pieces)) return { matches: true, reason: '', hit: null, logged: intervals.length, planned: intervals.length, intervals: [], short: false, notDone: false, open: true };
   // A planned run is matched loosely: reasonably close or longer counts, and its goal pace (if any) is checked (David, 2026-11-17).
   if (String(activity || '') === 'Run' && pieces.length && pieces.every(function (p) { return p.activity === 'Run'; })) {
     var loose = checkRunAgainstPlan_(intervals, pieces, settings);

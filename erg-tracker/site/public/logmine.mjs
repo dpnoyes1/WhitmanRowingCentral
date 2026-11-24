@@ -49,7 +49,7 @@ export function openLogMine(ctx) {
         <p class="logdone-what"><strong>${esc(d.what)}</strong></p>
         <p class="muted">${esc(d.already ? `This workout was already saved${d.savedAt ? ' at ' + d.savedAt : ''}. Nothing was added, so you don't need to submit again.` : 'Your coaches can see it now. You do not need to submit it again.')}${d.photo ? ' ' + esc(d.photo) : ''}</p>
         ${d.pace ? `<p class="muted small">${esc(d.pace)}</p>` : ''}
-        <div class="actions"><button class="btn" type="button" id="lm-again">Log another</button></div></div>`;
+        <div class="actions"><button class="btn" type="button" id="lm-again">Log another activity</button></div></div>`;
     app.querySelector('#lm-again').onclick = () => { S.done = null; draw(); };
     window.scrollTo && window.scrollTo(0, 0);
   };
@@ -57,9 +57,10 @@ export function openLogMine(ctx) {
     if (S.done) { drawDone(); return; }
     const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
           <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>`;
+    const oneEach = '<p class="muted small" id="lm-one">One activity at a time. A run and a cool-down? Save the first, then tap Log another activity.</p>';
     app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
-        ${PHOTO_FIRST ? photoBlock : ''}
+        ${PHOTO_FIRST ? photoBlock : ''}${oneEach}
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
 </div>
@@ -71,11 +72,11 @@ export function openLogMine(ctx) {
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Note for coaches (optional)', 'note')}
         ${PHOTO_FIRST ? '' : photoBlock}
-        ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}
+        ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}${S.ask ? `<div class="notice" role="alert"><p>${esc(S.ask)}</p><div class="actions"><button class="btn ghost" type="button" id="lm-fix">Fix it</button> <button class="btn" type="button" id="lm-anyway">It is right, save it</button></div></div>` : ''}
         <div class="actions"><button class="btn" type="submit"${S.busy ? ' disabled' : ''}>${S.busy ? 'Saving…' : 'Save'}</button></div></form>`;
     const f = app.querySelector('#logmine');
     f.querySelectorAll('[data-f]').forEach((el) => {
-      el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = ''; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
+      el.oninput = (ev) => { if (el.dataset.f === 'time') { if (ev.data === ':') S.colon = true; if (!el.value) S.colon = false; const v = S.colon ? el.value : autoClock(el.value.replace(/:/g, '')); if (v !== el.value) el.value = v; } S[el.dataset.f] = el.value; S.msg = S.err = S.ask = ''; S.confirmed = false; const p = app.querySelector('#lm-pace'); if (p && ['dist', 'time', 'unit'].includes(el.dataset.f)) p.textContent = paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.'; };
       if (el.tagName === 'SELECT') el.onchange = () => { S[el.dataset.f] = el.value; if (el.dataset.f === 'activity') draw(); };
     });
     f.querySelectorAll('#lm-type button').forEach((b) => { b.onclick = () => { S.type = b.dataset.type; S.msg = S.err = ''; draw(); }; });
@@ -96,6 +97,10 @@ export function openLogMine(ctx) {
       }
       draw();
     };
+    const fix = f.querySelector('#lm-fix');
+    if (fix) fix.onclick = () => { S.ask = ''; S.confirmed = false; draw(); const t = app.querySelector('[data-f="time"]'); if (t) t.focus(); };
+    const anyway = f.querySelector('#lm-anyway');
+    if (anyway) anyway.onclick = () => { S.confirmed = true; S.ask = ''; f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', { cancelable: true })); };
     const drop = f.querySelector('#lm-photo-x');
     if (drop) drop.onclick = () => { S.photo = ''; S.photoName = ''; draw(); };
     f.onsubmit = async (ev) => {
@@ -109,10 +114,11 @@ export function openLogMine(ctx) {
       const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim() };
       const pace = paceText(sec, m);
       try {
-        const res = await fetch('/api/log-mine', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: S.rid, form, ...(S.photo ? { photo: S.photo } : {}) }) });
+        const res = await fetch('/api/log-mine', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: S.rid, form, ...(S.confirmed ? { confirmed: true } : {}), ...(S.photo ? { photo: S.photo } : {}) }) });
         const out = await res.json().catch(() => ({}));
         if (res.status === 401) { signedOut(); return; }
         if (!res.ok) S.err = out.error || 'Nothing was saved.';
+        else if (out.status === 'confirm') { S.ask = out.message || 'Check the time and distance.'; S.confirmed = false; }
         else if (out.status === 'already' || out.status === 'duplicate') {
           // A repeat of a workout already saved (David, 2026-11-22): a warning, not a second "Saved". The form stays as typed.
           S.err = `Already saved${out.savedAt ? ' at ' + out.savedAt : ''}. Not added again. Press Save once.`;
@@ -120,7 +126,7 @@ export function openLogMine(ctx) {
           const when = S.date === days[0] ? 'today' : S.date === days[1] ? 'yesterday' : fmtDay(S.date);
           const what = `${S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
           S.done = { what, pace, already: false, savedAt: '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
-          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', rid: rid() });
+          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', ask: '', confirmed: false, rid: rid() });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
       S.busy = false; draw();
