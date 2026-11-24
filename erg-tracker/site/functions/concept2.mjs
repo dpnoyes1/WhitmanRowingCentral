@@ -52,7 +52,7 @@ export async function handleConcept2(req, envFn, deps = {}) {
     if (['Practice', 'OYO', 'Make-up'].includes(b.sessionType)) payload.sessionType = b.sessionType;
     if (/^\d{4}-\d{2}-\d{2}$/.test(String(b.makeupFor || ''))) payload.makeupFor = b.makeupFor;
     if (b.rpe !== undefined && b.rpe !== '') payload.rpe = Number(b.rpe);
-    if (['2000m', '20min'].includes(b.benchmark)) payload.benchmark = b.benchmark;
+    if (['2000m', '20min', '1min'].includes(b.benchmark)) payload.benchmark = b.benchmark;
     try {
       const out = await callSheet(envFn, deps.fetch || fetch, payload);
       return json({ ok: true, benchmark: !!out.benchmark });

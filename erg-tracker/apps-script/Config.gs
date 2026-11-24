@@ -132,6 +132,7 @@ var BENCHMARK_TESTS = {
   '500m': { score: 'time', meters: 500, zone: 'Anaerobic' },
   '2000m': { score: 'time', meters: 2000, zone: 'Anaerobic' },
   "20' (20 min)": { score: 'meters', key: '20min', seconds: 1200, zone: 'Threshold' },
+  "1' (1 min)": { score: 'meters', key: '1min', seconds: 60, zone: 'Anaerobic' },
   '30r20': { score: 'meters', seconds: 1800, zone: 'Aerobic' }
 };
 

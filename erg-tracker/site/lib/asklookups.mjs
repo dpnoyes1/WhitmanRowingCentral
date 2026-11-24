@@ -20,7 +20,7 @@ export const MIN_GROUP = 4;   // the smallest group an athlete may see an averag
 export const SCHEDULE_URL = 'https://www.iswhitmanrowingtoday.com';
 const ALL_TIME = '0000-00-00';
 
-const TEST_ENUM = ['2000m', '20min', '500m', '100m', '30r20'];
+const TEST_ENUM = ['2000m', '20min', '500m', '100m', '1min', '30r20'];
 const GROUP_ENUM = ['all', 'varsity', 'freshman'];
 const nullable = (schema) => ({ ...schema, type: [schema.type, 'null'] });
 
@@ -73,13 +73,14 @@ export const TOOL_NAMES = TOOLS.map((t) => t.name);
 
 const label = (test) => TEST_LABELS[test] || test;
 const meters = (m) => `${Math.round(m).toLocaleString('en-US')} m`;
-const isMeters = (test) => test === '20min' || test === '30r20';
-/** Split per 500 m for a result: time tests from the time, 20' and 30r20 from meters in 20 minutes. */
+const isMeters = (test) => test === '20min' || test === '1min' || test === '30r20';
+/** Split per 500 m for a result: time tests from the time, 20', 1' and 30r20 from meters in their minutes. */
 export function splitOf(test, v) {
   if (!v) return null;
   if (test === '2000m') return v / 4;
   if (test === '500m') return v;
   if (test === '100m') return v * 5;
+  if (test === '1min') return (60 * 500) / v;
   if (isMeters(test)) return (1200 * 500) / v;
   return null;
 }

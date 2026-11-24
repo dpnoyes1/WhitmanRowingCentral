@@ -3344,6 +3344,18 @@ test('callSheet: an HTML page from Google is retried, not shown as a JSON error'
   assert.strictEqual(n, -9, 'no retry unless asked');
 });
 
+test("1' test: site stats and Slack shapes", () => {
+  assert.ok(S.TESTS.includes('1min'));
+  assert.strictEqual(S.TEST_LABELS['1min'], "1'");
+  assert.strictEqual(S.resultValue({ test: '1min', meters: 330, timeS: null }), 330);
+  assert.ok(S.better('1min', { test: '1min', meters: 335 }, { test: '1min', meters: 330 }), 'more meters is better');
+  assert.strictEqual(S.benchmarkWatts({ test: '1min', meters: 330 }), S.wattsFromSplit((60 * 500) / 330));
+  assert.ok(!S.BALANCE_TESTS.includes('1min'), 'not on the Balance page');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min Test'), '1min');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min'), '', 'no "test" in the title');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 61, meters: 330 }], 'Test'), '');
+});
+
 for (const [name, fn] of tests) {
   try { await fn(); passed++; } catch (err) { console.error('FAIL', name); throw err; }
 }

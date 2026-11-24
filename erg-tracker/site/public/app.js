@@ -17,7 +17,8 @@ const OLD_ME_KEY = 'wrc.me';   // the old "pick your name" choice, cleared on si
 const SQUAD_KEY = 'wrc.squad';
 const RESULTS_SORT_KEY = 'wrc.resultsSort';
 const SESSION_KEY = 'wrc.session';   // who is signed in, so pages open without waiting on /api/session
-const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
+const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '1min': "1'", '30r20': '30r20' };
+const TEST_SECONDS = { '20min': 1200, '1min': 60, '30r20': 1800 };   // tests scored in meters; the 1' has no GMS or stars
 
 // ---- small helpers -------------------------------------------------------
 
@@ -40,10 +41,10 @@ const fmtTime = (s) => {
 const fmtDate = (d, opts = { month: 'short', day: 'numeric', year: 'numeric' }) =>
   new Date(d + 'T12:00:00').toLocaleDateString('en-US', opts);
 const fmtDay = (d) => fmtDate(d, { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
-const fmtResult = (r) => (r.test === '20min' || r.test === '30r20' ? `${fmtNum(r.meters)} m` : fmtTime(r.timeS));
+const fmtResult = (r) => (r.test in TEST_SECONDS ? `${fmtNum(r.meters)} m` : fmtTime(r.timeS));
 const split = (r) => {
-  const sec = r.test === '20min' ? 1200 : r.test === '30r20' ? 1800 : r.timeS;
-  const meters = r.test === '20min' || r.test === '30r20' ? r.meters : Number(r.test.replace('m', ''));
+  const sec = TEST_SECONDS[r.test] || r.timeS;
+  const meters = r.test in TEST_SECONDS ? r.meters : Number(r.test.replace('m', ''));
   return sec && meters ? fmtTime((sec * 500) / meters) : '';
 };
 
@@ -1176,7 +1177,7 @@ async function showBoards() {
     const rows = state.group === 'all' ? t[state.window] : t[state.group][state.window];
     const seg = (key, opts) => `<div class="seg" role="group">${opts.map(([k, label]) =>
       `<button data-k="${key}" data-v="${k}" aria-pressed="${state[key] === k}">${label}</button>`).join('')}</div>`;
-    const isMeters = state.test === '20min' || state.test === '30r20', gmsCol = isCoach() && state.test !== '30r20';
+    const isMeters = state.test in TEST_SECONDS, gmsCol = isCoach() && state.test !== '30r20' && state.test !== '1min';
     const yr = Number(String(v.yearStart).slice(0, 4));
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">School year ${yr}-${String((yr + 1) % 100).padStart(2, '0')}</div><h1>Benchmarks</h1>
       <p class="muted small">Raw erg scores.<span class="age-note"> Varsity 10-12 · Fr/Nov 7-9</span></p></div></div>
