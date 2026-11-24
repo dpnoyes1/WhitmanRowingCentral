@@ -1,4 +1,4 @@
-// Plan workouts (coach workout planner). A card per day with its workouts in order; "+ Add workout" under a day opens
+// Plan workouts (coach workout planner). A stacked row per day (date and workout titles; tap to open it) with its workouts in order; "+ Add workout" under a day opens
 // the builder for THAT day (type it in plain language or fill Single / Intervals / Variable, or start from a saved
 // workout); tap a workout to edit, delete or publish it; arrows reorder a day. Saves go to the Sheet's Workouts and
 // Schedule tabs through /api/workouts, so the Sheet checks every piece. Coaches only.
@@ -154,7 +154,7 @@ export function fromPieces(pieces, name = '') {
 
 export function openPlan(v, ctx) {
   const { app, esc, fmtDate } = ctx;
-  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '', asking = false, scrollTo = '';
+  let data = v, msg = '', err = '', nlMsg = null, busy = false, busyKind = '', asking = false, scrollTo = '', bulk = '', bulkScope = null, openG = new Set(), openWeek = '';
   // From Friday on the week to plan is next week (David, 2026-11-12: a coach plans ahead).
   const startWeek = () => { const dow = (toDate(data.today).getUTCDay() + 6) % 7; return dow >= 4 ? addDays(mondayOf(data.today), 7) : mondayOf(data.today); };
   const B = {
@@ -165,6 +165,18 @@ export function openPlan(v, ctx) {
   };
   { const f = data.library.find((w) => w.saved !== false); B.pick = f ? f.id : ''; }
   let nameTouched = false;
+  // A field's "change" fires the moment the mouse goes down on a button, and redrawing then replaces the
+  // button before the click lands (first click lost, second works). So a redraw asked for while the
+  // pointer is down waits until the click is over.
+  let ptrDown = false, redrawLater = false;
+  const redrawField = () => { if (ptrDown) redrawLater = true; else draw(); };
+  if (app.__planPtr) app.__planPtr();
+  const onDown = () => { ptrDown = true; };
+  const onUp = () => setTimeout(() => { ptrDown = false; if (redrawLater) { redrawLater = false; draw(); } }, 0);
+  document.addEventListener('pointerdown', onDown, true);
+  document.addEventListener('pointerup', onUp, true);
+  document.addEventListener('pointercancel', onUp, true);
+  app.__planPtr = () => { document.removeEventListener('pointerdown', onDown, true); document.removeEventListener('pointerup', onUp, true); document.removeEventListener('pointercancel', onUp, true); };
 
   const opt = (list, cur) => list.map((o) => `<option${o === cur ? ' selected' : ''}>${esc(o)}</option>`).join('');
   const seg = (items, cur, attr, cls = '') => `<div class="seg fill ${cls}" role="group">${items.map(([k, l]) => `<button type="button" ${attr}="${k}" aria-pressed="${cur === k}">${l}</button>`).join('')}</div>`;
@@ -208,6 +220,7 @@ export function openPlan(v, ctx) {
   const dayLong = (d) => fmtDate(d, { weekday: 'long', month: 'short', day: 'numeric' });
 
   // ---- the week: a card per day, workouts in order, + Add workout under each day ----
+  const gkey = (d) => { const i = Array.from({ length: 7 }, (_, k) => addDays(B.week, k)).indexOf(d); return i >= 5 ? addDays(B.week, 5) : d; };
   const weekHtml = () => {
     const days = Array.from({ length: 7 }, (_, i) => addDays(B.week, i));
     // Mon to Fri get a card each; Sat and Sun share one "Weekend" card (David, 2026-11-17: no weekend practice, OYO only).
@@ -223,16 +236,20 @@ export function openPlan(v, ctx) {
             <small>${esc(u.squad)} · ${esc(u.session)} <span class="pill${u.published ? ' good' : ''}">${u.published ? 'Published' : 'Draft'}</span></small>${u.notes ? `<small class="pnote">${esc(u.notes)}</small>` : ''}</button></div>`;
       }).join('') || '<p class="muted">No workouts yet</p>';
     };
+    if (openWeek !== B.week) { openWeek = B.week; openG = new Set(); }
+    if (B.open && B.day) openG.add(gkey(B.day));   // the day being added to or edited stays open
     return groups.map((g) => {
-      const multi = g.length > 1, adding = B.open && !B.edit && g.includes(B.day);
-      const count = data.upcoming.filter((u) => g.includes(u.day)).length;
-      const head = multi ? `<b>Weekend</b> <span class="num">${toDate(g[0]).getUTCDate()}–${toDate(g[1]).getUTCDate()}</span>` : `<b>${esc(fmtDate(g[0], { weekday: 'short' }))}</b> <span class="num">${toDate(g[0]).getUTCDate()}</span>`;
+      const multi = g.length > 1, adding = B.open && !B.edit && g.includes(B.day), isOpen = openG.has(g[0]);
+      const mine = data.upcoming.filter((u) => g.includes(u.day));
+      const head = multi ? `<b>Weekend</b><span class="num">${toDate(g[0]).getUTCDate()}–${toDate(g[1]).getUTCDate()}</span>` : `<b>${esc(fmtDate(g[0], { weekday: 'short' }))}</b><span class="num">${toDate(g[0]).getUTCDate()}</span>`;
+      const titles = mine.length ? mine.map((u) => `<span class="ptitle">${esc(u.name || u.workoutId)}</span>`).join('') : '<span class="muted">No workouts yet</span>';
       const block = (d) => {
         const past = d < data.today, on = adding && B.day === d;
         return `<div class="pdayblock">${multi ? `<div class="eyebrow">${esc(dayShort(d))}</div>` : ''}${cardsFor(d, past)}
           <button type="button" class="padd${on ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${on ? 'Adding below ↓' : multi ? `+ Add to ${esc(fmtDate(d, { weekday: 'short' }))}` : '+ Add workout'}</button></div>`;
       };
-      return `<section class="pday${adding ? ' pick' : ''}"><header>${head}<small>${count ? `${count} planned` : ''}</small></header>${g.map(block).join('')}</section>`;
+      return `<section class="pday${isOpen ? ' open' : ''}${adding ? ' pick' : ''}" data-g="${g[0]}"><button type="button" class="prow" data-day="${g[0]}" aria-expanded="${isOpen}"><span class="pdt">${head}</span><span class="ptitles">${titles}</span><small>${mine.length ? `${mine.length} planned` : ''}</small><span class="pchev" aria-hidden="true">⌄</span></button>
+        <div class="pbody"${isOpen ? '' : ' hidden'}>${g.map(block).join('')}${dayBulkHtml(g)}</div></section>`;
     }).join('');
   };
   const weekLabel = () => `${fmtDate(B.week, { month: 'short', day: 'numeric' })} to ${fmtDate(addDays(B.week, 6), { month: 'short', day: 'numeric' })}`;
@@ -246,7 +263,7 @@ export function openPlan(v, ctx) {
       <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
   };
   const editorHtml = () => {
-    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap “+ Add workout” under a day to build one for that day, or tap a workout to change it.</p></div>`;
+    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day to open it, then “+ Add workout” to build one for that day, or tap a workout to change it.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
     const picks = data.library.filter((w) => w.saved !== false);
     const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
@@ -283,10 +300,50 @@ export function openPlan(v, ctx) {
       ${also}${actions}${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}</section>`;
   };
 
+  // ---- Publish week / Unpublish week: every upcoming workout of the week shown, in one go ----
+  const weekSessions = (publish, scope = null) => {
+    const days = scope || Array.from({ length: 7 }, (_, i) => addDays(B.week, i));
+    return data.upcoming.filter((u) => days.includes(u.day) && u.day >= data.today && !!u.published !== publish);
+  };
+  const scopeLabel = (scope) => (!scope ? weekLabel() : scope.length > 1 ? `the weekend (${dayShort(scope[0])} and ${dayShort(scope[1])})` : dayLong(scope[0]));
+  const bulkHtml = (scope = null) => {
+    const drafts = weekSessions(true, scope).length, live = weekSessions(false, scope).length, word = scope ? 'day' : 'week';
+    if (!drafts && !live) return '';
+    const mineOpen = !!bulk && JSON.stringify(bulkScope) === JSON.stringify(scope);
+    if (bulk && !mineOpen) return '';
+    if (mineOpen) {
+      const n = bulk === 'publish' ? drafts : live;
+      return `<div class="card pbulk"><p>${bulk === 'publish' ? `Publish ${n} draft${n === 1 ? '' : 's'} for ${esc(scopeLabel(scope))}? Athletes will see ${n === 1 ? 'it' : 'them'} right away.` : `Hide ${n} published workout${n === 1 ? '' : 's'} for ${esc(scopeLabel(scope))} from athletes? ${n === 1 ? 'It goes' : 'They go'} back to draft.`}</p>
+        <div class="actions"><button type="button" class="btn ghost" data-bulkno="1"${busy ? ' disabled' : ''}>Cancel</button><button type="button" class="btn${busy && busyKind === 'bulk' ? ' busy' : ''}" data-bulkyes="1"${busy ? ' disabled' : ''}><span class="spinner" aria-hidden="true"></span><span class="label">${busy && busyKind === 'bulk' ? 'Working…' : bulk === 'publish' ? 'Yes, publish' : 'Yes, unpublish'}</span></button></div></div>`;
+    }
+    return `<div class="pbulkrow">${drafts ? `<button type="button" class="btn" data-bulk="publish"${scope ? ` data-scope="${scope.join(',')}"` : ''}${busy ? ' disabled' : ''}>Publish ${word} (${drafts} draft${drafts === 1 ? '' : 's'})</button>` : ''}${live ? `<button type="button" class="btn ghost" data-bulk="unpublish"${scope ? ` data-scope="${scope.join(',')}"` : ''}${busy ? ' disabled' : ''}>Unpublish ${word} (${live})</button>` : ''}</div>`;
+  };
+  const dayBulkHtml = (g) => { const upcoming = g.filter((d) => d >= data.today); return upcoming.length ? bulkHtml(upcoming) : ''; };
+  const runBulk = async () => {
+    if (busy || !bulk) return;
+    const publish = bulk === 'publish', total = weekSessions(publish, bulkScope).length;   // sessions whose published flag differs from the wanted one
+    let done = 0;
+    err = msg = ''; busy = true; busyKind = 'bulk'; draw();
+    try {
+      for (let guard = 0; guard < 60; guard++) {
+        const u = weekSessions(publish, bulkScope)[0];
+        if (!u) break;
+        const res = await fetch('/api/workouts', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ update: { key: keyOf(u), to: { publish } } }) });
+        const out = await res.json().catch(() => ({}));
+        if (res.status === 401) { ctx.signedOut(); return; }
+        if (!res.ok) { err = `${out.error || 'Nothing was saved.'} ${done} of ${total} done. Check the week, then try again.`; break; }
+        data = out; if (ctx.saved) ctx.saved(out); done++;
+      }
+      if (!err) msg = `${publish ? 'Published' : 'Moved back to draft:'} ${done} workout${done === 1 ? '' : 's'}.`;
+    } catch { err = `Could not reach the site. ${done} of ${total} done. Check the week before trying again.`; }
+    busy = false; bulk = ''; bulkScope = null; scrollTo = '#pnotice'; draw();
+  };
+
   const draw = () => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>Plan workouts</h1></div>
         <div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div></div>
       <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
+      ${bulkHtml()}
       <div class="pweek">${weekHtml()}</div>
       <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
       ${editorHtml()}
@@ -377,7 +434,7 @@ export function openPlan(v, ctx) {
       if (ok) { const f = data.library.find((w) => w.saved !== false); if (!lib(B.pick) || (lib(B.pick) || {}).saved === false) B.pick = f ? f.id : ''; }
       scrollTo = '#pnotice'; draw(); }; });
     const kp = app.querySelector('[data-keep]'); if (kp) kp.onchange = () => { B.keep = kp.checked; };
-    const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; draw(); };
+    const po = app.querySelector('[data-paceon]'); if (po) po.onchange = () => { B.paceOn = po.checked; redrawField(); };
     app.querySelectorAll('[data-by]').forEach((b) => { b.onclick = () => { B.by = b.dataset.by; draw(); }; });
     app.querySelectorAll('[data-pub]').forEach((b) => { b.onclick = () => { B.published = b.dataset.pub === 'published'; draw(); }; });
     app.querySelectorAll('[data-also]').forEach((b) => { b.onclick = () => { const d = b.dataset.also, i = B.also.indexOf(d); if (i >= 0) B.also.splice(i, 1); else B.also.push(d); B.also.sort(); draw(); }; });
@@ -388,9 +445,13 @@ export function openPlan(v, ctx) {
         if (el.dataset.k !== 'nl' && el.dataset.k !== 'name' && el.dataset.k !== 'notes') refreshPreview();
       };
       if (el.dataset.k === 'nl') el.onkeydown = (e) => { if (e.key === 'Enter') { e.preventDefault(); fill(); } };
-      else el.onchange = draw;   // redraw once a field is left, so a wrong number is marked
+      else el.onchange = redrawField;   // redraw once a field is left, so a wrong number is marked
     });
     app.querySelectorAll('select[data-k]').forEach((el) => { el.onchange = () => { setK(el.dataset.k, el.value); if (el.dataset.k === 'cat') refreshPreview(); }; });
+    app.querySelectorAll('[data-bulk]').forEach((b) => { b.onclick = () => { bulk = b.dataset.bulk; bulkScope = b.dataset.scope ? b.dataset.scope.split(',') : null; draw(); }; });
+    app.querySelectorAll('[data-day]').forEach((b) => { b.onclick = () => { const k = b.dataset.day; if (openG.has(k)) openG.delete(k); else { if (!matchMedia('(min-width: 720px)').matches) openG = new Set(); openG.add(k); } draw(); }; });
+    const bn = app.querySelector('[data-bulkno]'); if (bn) bn.onclick = () => { bulk = ''; bulkScope = null; draw(); };
+    const by = app.querySelector('[data-bulkyes]'); if (by) by.onclick = runBulk;
     const f = app.querySelector('[data-fill]'); if (f) f.onclick = fill;
     const up = app.querySelector('[data-usepick]'); if (up) up.onclick = usePick;
     const ob = app.querySelector('[data-ownbuild]'); if (ob) ob.onclick = () => { B.useId = ''; draw(); };

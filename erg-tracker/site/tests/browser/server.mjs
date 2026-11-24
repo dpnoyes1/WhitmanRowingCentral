@@ -61,6 +61,13 @@ function makeSheet(feed, state) {
         state.upcoming.sort((a, b) => (a.day < b.day ? -1 : a.day > b.day ? 1 : 0));
         return Response.json(planOut({ savedId: id }));
       }
+      case 'workout-update': {
+        state.updates = state.updates || []; state.updates.push(body);
+        const u = state.upcoming.find((x) => x.day === body.day && x.workoutId === body.workoutId && x.squad === body.squad && x.session === body.session);
+        if (!u) return Response.json({ status: 'invalid', message: 'No such session.' });
+        if (typeof body.to.publish === 'boolean') u.published = body.to.publish;
+        return Response.json(planOut());
+      }
       case 'site-log': state.logs.push(body); return Response.json({ status: 'ok' });
       case 'attendance-mark': state.marks = state.marks || []; state.marks.push(body); return Response.json({ status: 'ok', changed: 0, created: true });
       case 'weights-get': return Response.json({ yearStart: '2026-07-01', rows: feed.athletes.filter((a) => a.active).slice(0, 12).map((a, i) => ({ id: a.id, name: a.name, squad: a.squad, lb: i % 3 ? 130 + i : null, by: i % 3 ? 'Pat Example' : '', day: i % 3 ? '2026-09-15' : '', status: i % 3 ? 'Current' : 'Missing' })) });
