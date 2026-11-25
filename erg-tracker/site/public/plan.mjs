@@ -259,18 +259,17 @@ export function openPlan(v, ctx) {
     const items = data.library.filter((w) => w.saved !== false);
     if (!items.length) return '';
     return `<div class="card" id="plib"><div class="eyebrow">Saved workouts</div>
-      <p class="note">Your list for "Start from a saved workout". Removing one only takes it off this list; days already planned keep it.</p>
       <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
   };
   const editorHtml = () => {
     if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day to open it, then “+ Add workout” to build one for that day, or tap a workout to change it.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
     const picks = data.library.filter((w) => w.saved !== false);
-    const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
+    const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div></div>` : '';
     const using = B.useId ? lib(B.useId) : null;
     const builder = B.useId
       ? `<div class="card"><div class="eyebrow">Using saved workout</div><div class="big num">${esc(using ? using.name : B.useId)}</div><p class="note">${esc(using ? using.summary : '')} Used exactly as saved.</p><button type="button" class="btn ghost sm" data-ownbuild="1">Build my own instead</button></div>`
-      : `<div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
+      : `<div class="f nlf"><div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
         <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
       ${B.type === 'open' ? '' : `<div class="f">Activity${seg([[ERG, 'Erg'], [RUN, 'Run']], B.act, 'data-act')}</div>`}
