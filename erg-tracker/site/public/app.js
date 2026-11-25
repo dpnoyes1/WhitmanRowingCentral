@@ -283,9 +283,9 @@ window.addEventListener('scroll', () => { tip.hidden = true; }, { passive: true 
  * load (optional, same weeks): [{ rpe, trailing, changePct, flag }]; trailing and
  * flag only reach coaches, who see the 3-week average as a tick and jumps marked.
  */
-function weeklyChart(rows, caption, load = null) {
+function weeklyChart(rows, caption, load = null, tall = false) {
   const narrow = window.innerWidth < 600;
-  const W = narrow ? 380 : 640, H = narrow ? 200 : 220, padL = 34, padB = 26, padT = 10;
+  const W = narrow ? 380 : 640, H = narrow ? 200 : tall ? 460 : 220, padL = 34, padB = 26, padT = 10;
   const max = Math.max(60, ...rows.map((r, i) => Math.max(r.practice + r.oyo, (load && load[i].trailing) || 0)));
   const step = max > 600 ? 240 : max > 240 ? 120 : 60;
   const top = Math.ceil(max / step) * step;
@@ -478,7 +478,7 @@ async function showTeam() {
       </div>
       ${(() => {
         const weekly = `<div class="card"><h2>Weekly training</h2><p class="muted small">Average per rower, weighted minutes</p>
-        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower')}</div>`;
+        ${weeklyChart(g.weekly.map((r) => ({ weekStart: r.weekStart, practice: r.practiceAvg, oyo: r.oyoAvg })), 'Weekly training minutes per rower', null, !!t.splits)}</div>`;
         const intensity = `<div class="card"><h2>Intensity, last 4 weeks</h2>${zoneBar(g.zones)}</div>`;
         const logs = `<div class="card"><h2>Latest logs</h2>${recentList(t)}</div>`;
         // Athletes have no split averages, so Weekly training and Intensity sit side by side and Latest logs spans the row (David, 2026-11-16).
@@ -1221,7 +1221,7 @@ async function showStars() {
     app.innerHTML = `${staleNote(v.meta)}<div class="head"><div><div class="eyebrow">Coaches only</div><h1>GMS Rating</h1></div>
       <div class="seg" role="group" aria-label="Which results"><button type="button" data-w="season" aria-pressed="${which === 'season'}">Season Best</button><button type="button" data-w="life" aria-pressed="${which === 'life'}">Life Time Best</button></div></div>
       <div class="card gms-std"><b>Gold Medal Standard for Stotesbury Cup</b>
-        <div class="gms-keys">${[5, 4, 3, 2, 1].map((n) => star(n, esc(v.starLabels[n] || ''))).join('')}</div></div>
+        <div class="gms-keys">${[5, 4, 3, 2, 1].map((n) => star(n, esc([v.starLabels[n], v.starPcts ? (n === 1 ? 'any 2k or 20\'' : v.starPcts[n] + '% or better') : ''].filter(Boolean).join(' · ')))).join('')}</div></div>
       <div class="tiles">${tile('Average stars', avgStars === null ? '–' : avgStars.toFixed(1), `${tested.length} rowers`)}${tile('At 5 stars', tested.filter((r) => r.stars === 5).length, '100% of GMS or better')}${tile('No test yet', untested.length, 'this school year')}</div>
       <div class="card"><div class="table-wrap"><table class="gmsrank"><tr><th class="r">#</th><th>Athlete</th><th>Stars</th><th class="r">Combined</th><th class="r">2k %</th><th class="r">20' %</th><th>To next star</th><th class="r"><button type="button" class="linkish small" id="gms-all">${tested.length && tested.every((r) => open.has(r.id)) ? 'Collapse all' : 'Expand all'}</button></th></tr>
         ${tested.map((r, i) => `<tr class="gms-row"><td class="r rk">${i + 1}</td><td><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a> <span class="muted small">${esc(r.squad)}</span></td>
@@ -1285,7 +1285,7 @@ async function showInsights() {
       <tr><th>Rower</th><th class="r">Missed, 4 wks</th><th class="r" colspan="2">This week so far</th><th class="r c-last" colspan="2">Last week</th>
         <th class="r c-split">Steady split</th><th class="r c-est">Est. 2k</th><th class="r c-month">${fmtDate(v.today, { month: 'long' })}</th><th class="r c-streak">Streak</th></tr>
       ${v.rowers.map((r) => `<tr><td><a href="#/athlete/${encodeURIComponent(r.id)}">${esc(r.name)}</a> <span class="muted small sq">${esc(r.squad)}</span></td>
-        <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td>
+        <td class="r">${r.missed.count ? `${r.missed.flag ? '<span class="pill warn">' : '<span>'}${r.missed.count}</span><div class="muted small miss-d">${r.missed.open} open · ${r.missed.overdue} overdue</div>` : '<span class="muted">0</span>'}</td>
         ${loadCell(r.thisWeek)}${loadCell(r.lastWeek, ' c-last')}
         <td class="r c-split">${trend(r.splitTrend)}</td><td class="r c-est">${r.projected2k ? fmtTime(r.projected2k) : ''}</td>
         <td class="r c-month">${r.month.pct === null ? '–' : `${r.month.pct}% <span class="muted small">${r.month.done}/${r.month.expected}</span>`}</td>
