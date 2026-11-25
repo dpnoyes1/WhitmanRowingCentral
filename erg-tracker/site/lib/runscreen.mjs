@@ -18,6 +18,8 @@ Rules:
 - The activity title and notes (for example "3.25mi Easy Run" or "W7 Mon") are a plan or a name, not a result. Never take a distance or time from the title or the description text under it. The map, temperature, calories, heart rate and elevation are not the distance or time.
 - "moving_time" is the time labeled Total Time, Moving Time, Workout Time, Time, Duration, Active Time or Timer. "elapsed_time" is the time labeled Elapsed Time or Total Time, only when the screen shows both. If only one time is shown, put it in "moving_time" and use "" for the other. Times look like 54:32, 1:02:15 or 0:25:30. Copy them as shown.
 - "avg_pace" is the average pace for the whole run, labeled Avg Pace, Pace or Avg. Pace, as shown (for example 8:30, 8'30" or 5:12). "pace_unit" is "/mi", "/km" or "" if not shown (a label such as "Pace (min/mi)" means "/mi"). Ignore current or live pace, best pace, and any single lap or split.
+- "avg_hr" is the AVERAGE heart rate of the whole activity, as a bare number without "bpm" (for example "148"). It is labeled Avg Heart Rate, Avg HR, Average HR or Avg. Heart Rate (Garmin Connect, Strava, Whoop, Apple and similar apps). Use "" when no average heart rate is printed: a card with only Time, Distance and Pace has none, and a strength or treadmill card may have none. Never use Max HR, Max Heart Rate, resting or ending HR, a heart-rate zone chart or time-in-zone bars, calories (Cal), strain, stroke rate (spm), or the kudos count. If only a max is shown, use "" and add the flag "only max HR shown". On a Garmin Stats page the average and the max sit on two rows under HEART RATE: take the Avg row.
+- Garmin Connect Indoor Rowing from a watch can show "0 m" distance (no erg link): copy it as 0 and add the flag "distance 0 m".
 - Splits, laps, graphs and heart-rate zones are not the total: never use a lap or split row as the total.
 - "activity" is the sport as shown, for example "Run", "Treadmill", "Walk", "Ride", "Swim". If it is not clearly a run, still report it so the check can say so.
 - "date" is the date printed on the screen exactly as shown, or "". "app" is the app or device name if you can tell, else "".
@@ -29,10 +31,10 @@ const str = { type: 'string' };
 export const RUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['app', 'person', 'activity', 'date', 'distance', 'distance_unit', 'moving_time', 'elapsed_time', 'avg_pace', 'pace_unit', 'flags'],
+  required: ['app', 'person', 'activity', 'date', 'distance', 'distance_unit', 'moving_time', 'elapsed_time', 'avg_pace', 'pace_unit', 'avg_hr', 'flags'],
   properties: {
     app: str, person: str, activity: str, date: str, distance: str, distance_unit: { type: 'string', enum: ['mi', 'km', 'm', ''] },
-    moving_time: str, elapsed_time: str, avg_pace: str, pace_unit: { type: 'string', enum: ['/mi', '/km', ''] },
+    moving_time: str, elapsed_time: str, avg_hr: str, avg_pace: str, pace_unit: { type: 'string', enum: ['/mi', '/km', ''] },
     flags: { type: 'array', items: str },
   },
 };
@@ -58,6 +60,13 @@ export function parseSpelledTime(text) {
 }
 const anyTime = (t) => parseClock(t) ?? parseSpelledTime(t);
 
+/** Average heart rate as shown ("148", "148 bpm") -> whole bpm from 40 to 230, or null (David, 2026-11-25). Anything else, such as a time or a max by mistake, is dropped. */
+export function parseHeartRate(text) {
+  const m = /^(\d{2,3})(?:\s*bpm)?$/i.exec(String(text || '').trim());
+  const n = m ? +m[1] : null;
+  return n >= 40 && n <= 230 ? n : null;
+}
+
 /** Pace as shown (8:30, 8'30", 5:12) -> seconds, or null. */
 export function parsePace(text) {
   const m = /^(\d{1,2})\s*(?::|'|’)\s*([0-5]\d)/.exec(String(text || '').trim());
@@ -80,6 +89,7 @@ export function normalizeRunRead(raw) {
     movingS: anyTime(raw.moving_time),
     elapsedS: anyTime(raw.elapsed_time),
     person: String(raw.person || '').trim(),
+    avgHr: parseHeartRate(raw.avg_hr),
     paceS,
     paceMeters: per,
     flags,

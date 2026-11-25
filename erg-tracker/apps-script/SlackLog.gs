@@ -124,9 +124,9 @@ function slackLogAnswers(form, athleteName, enteredBy) {
 }
 
 /**
- * A Test (2k / 20') typed into /log -> the Form's Benchmark test answers
+ * A Test (2k / 20' / 1') typed into /log -> the Form's Benchmark test answers
  * (David, 2026-11-07). One RowErg piece: exactly 2000 m is the 2k (its time is
- * the score), exactly 20:00 is the 20' (its meters are the score). Anything
+ * the score), exactly 20:00 is the 20', exactly 1:00 is the 1' (their meters are the score). Anything
  * else is refused with a sentence. Drag factor is required on /log, so no
  * drag flag. Where is "At practice" unless form.test_where is 'oyo'.
  */
@@ -135,15 +135,16 @@ function slackLogTestAnswers_(form, athleteName, enteredBy) {
   var pieces = parsePiecesText(form.pieces);
   if (pieces.length !== 1) throw new Error('A test is one piece: put the whole 2000 m or 20:00 on one line');
   var p = pieces[0];
-  var timed = Number(p.WORK_M) === 2000 && parseTime(p.WORK_TIME) !== 1200;
-  if (!timed && parseTime(p.WORK_TIME) !== 1200) throw new Error('Only a 2000 m or a 20:00 piece can be a test here (use the Form for other tests)');
+  var timed = Number(p.WORK_M) === 2000 && parseTime(p.WORK_TIME) !== 1200 && parseTime(p.WORK_TIME) !== 60;
+  var oneMin = parseTime(p.WORK_TIME) === 60;
+  if (!timed && !oneMin && parseTime(p.WORK_TIME) !== 1200) throw new Error('Only a 2000 m, a 20:00 or a 1:00 piece can be a test here (use the Form for other tests)');
   var answers = {};
   answers[Q.ATHLETE] = athleteName;
   answers[Q.ENTERED_BY] = enteredBy || athleteName;
   answers[Q.DATE] = form.date;
   answers[Q.LOG_TYPE] = LOG_TYPES.BENCHMARK;
   answers[Q.B_WHERE] = form.test_where === 'oyo' ? TEST_WHERE.OYO : TEST_WHERE.PRACTICE;
-  answers[Q.TEST] = timed ? '2000m' : "20' (20 min)";
+  answers[Q.TEST] = timed ? '2000m' : oneMin ? "1' (1 min)" : "20' (20 min)";
   answers[Q.B_WARMUP] = form.warmup;
   answers[Q.B_COOLDOWN] = form.cooldown;
   answers[Q.B_RPE] = form.rpe;

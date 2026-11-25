@@ -3,8 +3,11 @@
 // Pure functions: dates are 'YYYY-MM-DD' strings, times seconds.
 
 export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
-export const TESTS = ['2000m', '20min', '500m', '100m', '30r20'];
-export const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '30r20': '30r20' };
+export const TESTS = ['2000m', '20min', '500m', '100m', '1min', '30r20'];
+export const TEST_LABELS = { '2000m': '2k', '20min': "20'", '500m': '500m', '100m': '100m', '1min': "1'", '30r20': '30r20' };
+/** Tests scored in meters (higher is better) and how many seconds they last. The 1' has no GMS and no stars. */
+export const TEST_SECONDS = { '20min': 1200, '1min': 60, '30r20': 1800 };
+export const isMetersTest = (test) => test in TEST_SECONDS;
 
 // ---- dates ----------------------------------------------------------------
 
@@ -101,10 +104,15 @@ export function oyoMinimum(activity) {
  * practice gets no extra discount (David, 2026-10-23): doing less work
  * already shows as fewer minutes.
  */
+export const HR_RATED = ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
+
 export function weightedMinutes(e, settings) {
   const raw = rawMinutes(e);
   if (!raw) return 0;
   if (e.type === 'OYO' && raw < oyoMinimum(e.activity)) return 0;
+  // Heart-rate weighting (David, 2026-11-25): Bike, Stair stepper, Swim, Elliptical and Other count 100% when the saved
+  // average HR reached the full-effort line (the feed says so in `intense`), else the lower weight, also with no HR saved.
+  if (HR_RATED.includes(e.activity)) return raw * (e.intense === true ? 1 : (settings.hrLowMultiplier ?? 0.75));
   const m = settings.multipliers[e.activity];
   return raw * (m === undefined ? 1 : m);
 }
@@ -255,7 +263,7 @@ export function better(test, a, b) {
 }
 
 export function resultValue(b) {
-  return b.test === '20min' || b.test === '30r20' ? b.meters : b.timeS;
+  return isMetersTest(b.test) ? b.meters : b.timeS;
 }
 
 /** Best valid result per test for an athlete, this school year and all time. */
@@ -392,11 +400,12 @@ export const GMS_20_PLUS_S = 8.5;
 /** Concept2 watts from a 500 m split in seconds (same formula as wattsFromSplit in Plan.gs). */
 export const wattsFromSplit = (split500) => (split500 > 0 ? 2.80 / Math.pow(split500 / 500, 3) : null);
 
-/** Watts for a valid 100m, 2000m or 20min result; null for anything else. */
+/** Watts for a valid 100m, 2000m, 20min or 1min result; null for anything else. */
 export function benchmarkWatts(b) {
   if (b.test === '100m' && b.timeS > 0) return wattsFromSplit((b.timeS * 5));
   if (b.test === '2000m' && b.timeS > 0) return wattsFromSplit(b.timeS / 4);
   if (b.test === '20min' && b.meters > 0) return wattsFromSplit((1200 * 500) / b.meters);
+  if (b.test === '1min' && b.meters > 0) return wattsFromSplit((60 * 500) / b.meters);
   return null;
 }
 

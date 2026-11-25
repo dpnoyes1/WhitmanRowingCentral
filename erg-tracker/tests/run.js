@@ -765,6 +765,13 @@ test('site feed: never sends weight, birthdays or coach notes', () => {
   assert.ok(outNotes.length > 0);
   outNotes.forEach(n => assert.ok(!text.includes(n), 'coach note leaked: ' + n));
   feed.entries.forEach(e => assert.deepStrictEqual(Object.keys(e).filter(k => /note|hr|weight/i.test(k)), []));
+  // Average HR never leaves the Sheet; the feed says only whether it reached the full-effort line (David, 2026-11-25).
+  const withHr = dummyFeedInputs();
+  withHr.entries = withHr.entries.slice(0, 3).map((e, i) => Object.assign({}, e, { 'Avg HR': [150, 144, ''][i] }));
+  const hrFeed = JSON.parse(JSON.stringify(g.siteFeed(withHr, new Date(2026, 9, 23, 12))));
+  assert.deepStrictEqual(hrFeed.entries.map(e => e.intense), [true, false, null]);
+  assert.ok(!/"Avg HR"|avgHr|"hr"/.test(JSON.stringify(hrFeed)), 'no heart-rate number in the feed');
+  assert.deepStrictEqual([hrFeed.settings.hrLowMultiplier, hrFeed.settings.hrRated.includes('Swim')], [0.75, true]);
 });
 
 test('site feed: sign-in codes are keyed HMACs of the birthday, never the date', () => {
@@ -1563,7 +1570,7 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   assert.strictEqual(t20.benchmark.Meters, 5400);
   assert.strictEqual(t20.entry['Session type'], 'OYO');
   assert.strictEqual(t20.entry['Benchmark ID'], t20.benchmark['Benchmark ID']);
-  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:00, 750' }, 'Jane Smith'), /2000 m or a 20:00/);
+  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:00, 750' }, 'Jane Smith'), /2000 m, a 20:00 or a 1:00/);
   assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:45, 1000\n3:45, 1000' }, 'Jane Smith'), /one piece/);
   assert.throws(() => g.slackLogAnswers({ ...t2k, activity: 'BikeErg' }, 'Jane Smith'), /RowErg/);
 });
@@ -1788,6 +1795,9 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
   ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Other', type: 'oyo' }), 'Other needs a description');
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Other', type: 'oyo', note: 'Soccer' }), '');
+  assert.strictEqual(g.planActivityMultiplier_('Other', {}), 0.6, 'Other weighs the same as Bike');
   // identical workout saved again (Nov 22): same athlete, day, activity, type, time and meters, not Rejected
   const dupRow = (o) => Object.assign({ 'Athlete ID': 'A004', Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566, Source: 'Site', 'Review status': '', 'Submitted at': '2026-11-22 14:21' }, o);
   const newRun = { Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566 };
@@ -2079,10 +2089,20 @@ test('open workout: any activity counts weighted minutes toward the day (David, 
   assert.deepStrictEqual(flags(eighty, dayOver), [], '80 minutes counts (100% or more)');
   const run = [E('R1', 'Run', 3000)];
   assert.deepStrictEqual(flags(run, dayOver), [], '50:00 of running is 60:00 weighted');
-  const under = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500)], dayOver);   // 25:00 + 25:00 x 0.6 = 40:00
+  const under = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500)], dayOver);   // 25:00 + 25:00 x 0.75 (Bike, no HR saved) = 43.75
   assert.strictEqual(under.length, 1);
   assert.deepStrictEqual(under[0].entryIds, ['U1', 'U2'], 'one item for the athlete and day');
-  assert.strictEqual(under[0].flag, 'Open workout: 40 of 60 weighted minutes (67%)');
+  assert.strictEqual(under[0].flag, 'Open workout: 43.8 of 60 weighted minutes (73%)');
+  // Heart-rate weighting (David, 2026-11-25): Bike at or above the full-effort average HR counts 100%.
+  const hard = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500, { 'Avg HR': 145 })], dayOver);
+  assert.strictEqual(hard[0].flag, 'Open workout: 50 of 60 weighted minutes (83%)');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Run', 'Avg HR': 100 }, {}), 1.2, 'Run keeps its 1.2 at any HR');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 144 }, {}), 0.75);
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 150 }, {}), 1);
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Other', 'Avg HR': '' }, {}), 0.75, 'no HR saved');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 130 }, { 'hr.high_bpm': '125', 'hr.low_multiplier': '0.5' }), 1, 'Settings move the line');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Lifting', 'Avg HR': 160 }, { 'multiplier.Lifting': '0' }), 0, 'Lifting stays 0');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'BikeErg', 'Avg HR': 90 }, {}), 1, 'erg work is not HR-rated');
   assert.deepStrictEqual(under[0].missedIds, []);
   const half = flags([E('H1', 'Erg (RowErg)', 1500)], dayOver);
   assert.deepStrictEqual(half[0].missedIds, ['H1'], 'under half is Missed');
@@ -2146,5 +2166,31 @@ test('midnight "Not logged" alerts are batched; a Logbook test note goes to the 
   assert.strictEqual(g.planBatchItems(items.slice(0, 2)).length, 2, 'two stay separate');
   assert.ok(/4 athletes/.test(g.planFlagMessage(sum, 'https://x').text));
   assert.strictEqual(g.LOGBOOK_AUTO_ACCEPT_HOURS, 24);
+});
+test("1' test: Config, Form answers, Logbook shape, site and /log detection", () => {
+  const spec = g.BENCHMARK_TESTS["1' (1 min)"];
+  assert.deepStrictEqual([spec.key, spec.score, spec.seconds, spec.zone], ['1min', 'meters', 60, 'Anaerobic']);
+  assert.ok(g.feedTestKeys_().includes('1min'));
+  // Logbook: a lone 1:00 rower piece is dropped as a tiny result unless "test" is in the title
+  const piece = [{ timeS: 60, distanceM: 330 }];
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: '1 min test' }, piece), false);
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: 'Just Row' }, piece), true);
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: '1 min Warm Up test' }, piece), true, 'warm-up is never a test');
+  assert.strictEqual(g.isBenchmarkShape_({ machine: 'rower', name: '1 min test', timeS: 60, distanceM: 330, intervals: [] }), true);
+  assert.strictEqual(g.isBenchmarkShape_({ machine: 'rower', name: '1 min', timeS: 60, distanceM: 330, intervals: [] }), false);
+  const entry = { Activity: 'Erg (RowErg)' };
+  assert.strictEqual(g.logbookBenchmarkShape(entry, [{ 'Work m': 330, 'Work s': 60 }]), '1min');
+  assert.strictEqual(g.logbookBenchmarkShape(entry, [{ 'Work m': 330, 'Work s': 70 }]), '');
+  // /log and the site log: a 1:00 piece is a distance test
+  const f = { date: '2026-11-24', type: 'test', pieces: '1:00.0, 330, 38', rpe: 10, drag: 105, warmup: '10:00', cooldown: '5:00' };
+  const a = g.slackLogAnswers(f, 'Fake Athlete', 'Fake Athlete');
+  assert.strictEqual(a[g.Q.TEST], "1' (1 min)");
+  assert.strictEqual(a[g.Q.D_METERS], '330');
+  assert.strictEqual(g.siteTestKind_(g.parsePiecesText('1:00.0, 330, 38')), '1min');
+  const sa = g.siteLogAnswers_({ date: '2026-11-24', type: 'practice', test: 'yes', pieces: '1:00.0, 330, 38', rpe: 10, drag: 105 }, 'Fake Athlete', 'Fake Athlete');
+  assert.strictEqual(sa[g.Q.TEST], "1' (1 min)");
+  assert.strictEqual(sa[g.Q.D_METERS], '330');
+  // no GMS, no stars
+  assert.strictEqual(g.gmsPercent('1min', 330, 150), null);
 });
 console.log(`${passed} tests passed`);

@@ -127,7 +127,7 @@ function buildForm_(settings) {
   form.addTextItem().setTitle(Q.T_SPLITS).setHelpText('2000m only, e.g. 1:55.2, 1:56.0, 1:56.1, 1:54.8');
   form.addParagraphTextItem().setTitle(Q.T_NOTE);
 
-  var pbDist = form.addPageBreakItem().setTitle("Distance test (20', 30r20)");
+  var pbDist = form.addPageBreakItem().setTitle("Distance test (1', 20', 30r20)");
   pbDist.setGoToPage(FormApp.PageNavigationType.SUBMIT);     // end of "Timed test" submits
   addNumber(Q.D_METERS, true, 100, 20000, 'Total meters');
   addNumber(Q.D_RATE, true, 10, 60, 'Required. 30r20 counts when the average is 20 or lower.');

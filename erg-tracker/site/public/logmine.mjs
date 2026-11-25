@@ -2,12 +2,12 @@
 // Distance in miles, kilometers or meters; the site sends meters. Erg work is not logged here.
 import { shrinkPhoto } from './photo.mjs';
 
-const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
+const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
 // Photo first (David, 2026-11-17, live): On, picking a screenshot fills distance and time (via /api/run-photo,
 // which itself answers 404 until RUN_PHOTO_CHECK is true) and the athlete checks the numbers and saves. Typing stays as the fallback.
 const PHOTO_FIRST = true;
 /** Machines that show no distance: the athlete can leave Distance blank and it is saved as 0 m (minutes still count). */
-export const NO_DISTANCE = ['Stair stepper', 'Elliptical'];
+export const NO_DISTANCE = ['Stair stepper', 'Elliptical', 'Other'];
 const UNITS = { mi: ['miles', 1609.344], km: ['kilometers', 1000], m: ['meters', 1] };
 
 export function paceText(timeS, meters) {
@@ -38,7 +38,7 @@ export function openLogMine(ctx) {
   const { app, esc, fmtDay, signedOut } = ctx;
   const days = Array.from({ length: 8 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
   const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-  const S = { activity: 'Run', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid(), done: null };
+  const S = { activity: 'Run', what: '', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', hr: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid(), done: null };
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
   const drawDone = () => {
@@ -55,21 +55,22 @@ export function openLogMine(ctx) {
   };
   const draw = () => {
     if (S.done) { drawDone(); return; }
-    const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
-          <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>`;
-    const oneEach = '<p class="muted small" id="lm-one">One activity at a time. A run and a cool-down? Save the first, then tap Log another activity.</p>';
-    app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
+    const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}</div>`;
+    const oneEach = '<p class="muted small" id="lm-one">One at a time. Save, then Log another.</p>';
+    app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts only.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
         ${PHOTO_FIRST ? photoBlock : ''}${oneEach}
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>
+        ${S.activity === 'Other' ? field('What was it?', 'what', 'maxlength="80" placeholder="Soccer, yoga, hike…" required') : ''}
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
 </div>
-        <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'On my own'], ['practice', 'At practice'], ['makeup', 'Make up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
+        <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'OYO'], ['practice', 'Practice'], ['makeup', 'Make Up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
           ${S.type === 'makeup' ? '<span class="muted small">Counts as that day\'s practice, marked Modified.</span>' : ''}</div>
-        <div class="lf-row">${field(NO_DISTANCE.includes(S.activity) ? 'Distance (optional)' : 'Distance', 'dist', 'inputmode="decimal" placeholder="' + (NO_DISTANCE.includes(S.activity) ? 'leave blank' : '3.1') + '"')}
+        <div class="lf-row lf-dims">${field('Distance', 'dist', 'inputmode="decimal" placeholder="' + (NO_DISTANCE.includes(S.activity) ? 'optional' : '3.1') + '"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
-          ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
+          ${field('Time', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
+        ${field('Average heart rate (optional)', 'hr', 'inputmode="numeric" placeholder="150"')}
         ${field('Note for coaches (optional)', 'note')}
         ${PHOTO_FIRST ? '' : photoBlock}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}${S.ask ? `<div class="notice" role="alert"><p>${esc(S.ask)}</p><div class="actions"><button class="btn ghost" type="button" id="lm-fix">Fix it</button> <button class="btn" type="button" id="lm-anyway">It is right, save it</button></div></div>` : ''}
@@ -91,7 +92,7 @@ export function openLogMine(ctx) {
           const res = await fetch('/api/run-photo', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo: S.photo }) });
           const out = await res.json().catch(() => ({}));
           if (res.status === 401) { signedOut(); return; }
-          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
+          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time, hr: out.hr || S.hr }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
           else { S.msg = ''; S.err = 'Could not read the numbers. Type them in.'; }
         } catch { S.msg = ''; S.err = 'Could not read the photo. Type the numbers in.'; }
       }
@@ -108,10 +109,13 @@ export function openLogMine(ctx) {
       const sec = parseDuration(S.time), m = meters();
       const noDist = NO_DISTANCE.includes(S.activity) && !String(S.dist).trim();
       if (!m && !noDist) { S.err = 'Type your distance.'; draw(); return; }
+      if (S.activity === 'Other' && !S.what.trim()) { S.err = 'Tell your coaches what the activity was.'; draw(); return; }
       if (!sec) { S.err = 'Type your time like 25:30.'; draw(); return; }
+      const hr = String(S.hr).trim();
+      if (hr && !(/^\d{2,3}$/.test(hr) && +hr >= 40 && +hr <= 230)) { S.err = 'Heart rate should be a number from 40 to 230, or leave it blank.'; draw(); return; }
       if (S.busy) return;
       S.busy = true; S.err = S.msg = ''; draw();
-      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim() };
+      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: (S.activity === 'Other' ? [S.what.trim(), S.note.trim()].filter(Boolean).join('. ') : S.note.trim()), ...(hr ? { hr } : {}) };
       const pace = paceText(sec, m);
       try {
         const res = await fetch('/api/log-mine', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: S.rid, form, ...(S.confirmed ? { confirmed: true } : {}), ...(S.photo ? { photo: S.photo } : {}) }) });
@@ -124,9 +128,9 @@ export function openLogMine(ctx) {
           S.err = `Already saved${out.savedAt ? ' at ' + out.savedAt : ''}. Not added again. Press Save once.`;
         } else {
           const when = S.date === days[0] ? 'today' : S.date === days[1] ? 'yesterday' : fmtDay(S.date);
-          const what = `${S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
+          const what = `${S.activity === 'Other' ? 'Other: ' + S.what.trim() : S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
           S.done = { what, pace, already: false, savedAt: '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
-          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', ask: '', confirmed: false, rid: rid() });
+          Object.assign(S, { what: '', dist: '', time: '', hr: '', note: '', photo: '', photoName: '', msg: '', ask: '', confirmed: false, rid: rid() });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
       S.busy = false; draw();

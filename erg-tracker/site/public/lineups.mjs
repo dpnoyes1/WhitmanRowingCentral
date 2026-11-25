@@ -53,10 +53,10 @@ function short(a) {
 
 // Presets only fill in the priority numbers; every number can be typed over afterwards.
 const GOALS = [
-  ['Top 4 + even 8s', 'Best 4 in a 4+ (priority 1); everyone else in evenly mixed 8s (priority 2)', (k) => [boat(4, 1), ...Array.from({ length: k }, () => boat(8, 2))]],
-  ['Even 8s + lower 4', 'Even 8s (priority 1); the next 4 make a 4+ (priority 2)', (k) => [...Array.from({ length: k }, () => boat(8, 1)), boat(4, 2)]],
-  ['All boats even', 'Every boat priority 1: all share the rowers evenly', null],
-  ['Ranked', 'Priority 1, 2, 3 in order: 1st boat fastest, then 2nd, and so on', null]];
+  ['Top 4 + even 8s', 'Best 4 in a 4+, rest in even 8s.', (k) => [boat(4, 1), ...Array.from({ length: k }, () => boat(8, 2))]],
+  ['Even 8s + lower 4', 'Even 8s first, then a 4+.', (k) => [...Array.from({ length: k }, () => boat(8, 1)), boat(4, 2)]],
+  ['All boats even', 'Every boat shares the rowers evenly.', null],
+  ['Ranked', 'Ranked: 1st boat fastest, then 2nd.', null]];
 const PRI_MAX = 9;
 
 const gmsOf = (r) => (r.gmsPct === null || r.gmsPct === undefined ? null : r.gmsPct);
@@ -174,11 +174,11 @@ function draw() {
         <div><span class="muted small">Avg GMS %</span><b class="num acc">${s.g ? s.g.toFixed(1) + '%' : '–'}</b><small class="muted num">${s.gn < s.n ? `${s.gn} of ${s.n} counted` : s.n ? 'all counted' : ''}</small></div></div>
       ${p ? `<div class="lupace"><span class="muted small">Boat pace, flat water (est.)</span><b class="num">${fmtTime(p)} /500m</b>${b.n !== 8 && fast8 ? `<small class="muted">${p > fast8.p ? `${(p - fast8.p).toFixed(1)} s/500m slower than the ${esc(fast8.name)}: about ${Math.round((p - fast8.p) * 4)} s head start over 2k` : `${(fast8.p - p).toFixed(1)} s/500m faster than the ${esc(fast8.name)}`}</small>` : ''}</div>` : ''}</div>`;
   };
-  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p class="muted">Clears when you leave. Boat names are shared.</p><p id="lunote" class="error small" role="alert"${nameNote ? '' : ' hidden'}>${esc(nameNote)}</p></div></div>
+  app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach tools · athletes never see this page</div><h1>Lineups</h1><p id="lunote" class="error small" role="alert"${nameNote ? '' : ' hidden'}>${esc(nameNote)}</p></div></div>
     <div class="grid">${tile('At practice', `${atP.length} <span class="muted small">of ${R.length}</span>`)}${tile('Seats', seats, LU.boats.map((b) => b.n + '+').join(' · ') || 'no boats')}${tile('Not in a boat', spare.length, LU.built ? 'spares' : 'still to place')}${tile('Gap, same priority', gap, 'best vs worst avg GMS %')}</div>
     <div class="card"><div class="lu-head"><h2>Absent</h2><span class="muted small num">${LU.out.size}</span></div>
       <div class="lupool luabs" data-luseat="absent">${LU.out.size ? absent.map((a) => chip(a, 'absent')).join('') : `<span class="muted small">${pickA ? 'Tap here to mark ' + esc(short(pickA)) + ' absent.' : 'Drag a name here.'}</span>`}</div></div>
-    <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: type a priority number on each boat below"}</p>
+    <div class="card"><div class="lu-head"><h2>Practice goal</h2></div><p class="muted small">${LU.goal >= 0 ? GOALS[LU.goal][1] : "Custom: type a priority on each boat."}</p>
       <div class="lugoal">${GOALS.map(([t], g) => `<button type="button" class="btn ${LU.goal === g ? '' : 'ghost '}sm" data-lugoal="${g}">${t}</button>`).join('')}</div></div>
     <div class="card"><div class="lu-head"><h2>Not in a boat</h2><div class="seg" role="group" aria-label="Sort"><button type="button" data-lusort="az" aria-pressed="${LU.sort === 'az'}">A–Z</button><button type="button" data-lusort="gms" aria-pressed="${LU.sort === 'gms'}">GMS %</button></div></div><p class="muted small">${pickA ? `Tap a seat for ${esc(short(pickA))}.` : 'Drag or tap a name, then a seat.'}</p>
       <div class="lupool" data-luseat="pool">${spare.length ? spare.sort(LU.sort === 'az' ? (x, y) => x.name.localeCompare(y.name) : (x, y) => (gmsOf(y) ?? -1) - (gmsOf(x) ?? -1)).map((a) => chip(a, 'not in a boat')).join('') : '<span class="muted small">Everyone at practice has a seat.</span>'}</div></div>

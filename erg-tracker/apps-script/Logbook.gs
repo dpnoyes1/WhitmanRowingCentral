@@ -252,13 +252,14 @@ var LOGBOOK_MIN_SINGLE_S = 120;
 
 /**
  * True for a Logbook result that is not a workout (David, 2026-11-23): one piece under 2:00 of work. Kept:
- * a 100 m test (one piece of about 100 m on the rower) and any result with several pieces, however short each
+ * a 100 m test (one piece of about 100 m on the rower), a 1' test (one 1:00 piece with "test" in its title) and any result with several pieces, however short each
  * (6 x 0:30 sprints). Pure.
  */
 function logbookTinyResult_(result, pieces) {
   if (pieces.length > 1) return false;
   var t = Number(pieces[0] && pieces[0].timeS) || 0;
   if (t >= LOGBOOK_MIN_SINGLE_S) return false;
+  if (isOneMinuteTest_(result, t)) return false;   // a 1' test is one 60 s piece with "test" in its title
   var d = Number(pieces[0] && pieces[0].distanceM) || Number(result.distanceM) || 0;
   var is100 = result.machine === 'rower' && d >= 95 && d <= 105;
   return !is100;
@@ -270,13 +271,18 @@ function titleSaysTest_(title) {
   return /test/i.test(t) && !/warm|cool/i.test(t);
 }
 
-/** One 2,000 m piece or one 20:00 piece with "test" in its title: the shape of a 2k or 20' test. */
+/** A single rower piece of 1:00 (59 to 61 s) with "test" in its title: the shape of a 1' test. Pure. */
+function isOneMinuteTest_(result, workS) {
+  return result.machine === 'rower' && titleSaysTest_(result.name) && workS >= 59 && workS <= 61;
+}
+
+/** One 2,000 m piece, one 20:00 piece or one 1:00 piece with "test" in its title: the shape of a 2k, 20' or 1' test. */
 function isBenchmarkShape_(result) {
   if (!titleSaysTest_(result.name)) return false;
   var d = Number(result.distanceM);
   var t = Number(result.timeS);
   return result.machine === 'rower' && ((d >= 1990 && d <= 2010 && (result.intervals || []).length <= 1) ||
-    (t >= 1195 && t <= 1205));
+    (t >= 1195 && t <= 1205) || (t >= 59 && t <= 61 && (result.intervals || []).length <= 1));
 }
 
 function round1_(x) {
@@ -396,7 +402,7 @@ var LOGBOOK_AUTO_ACCEPT_HOURS = 24;   // David, 2026-10-25: unchanged labels aut
 
 /**
  * Pure: what a confirm tap changes. entry/interval are Entries/Intervals objects.
- * opts: {sessionType, makeupFor 'YYYY-MM-DD', rpe, benchmark '2000m' | '20min'}.
+ * opts: {sessionType, makeupFor 'YYYY-MM-DD', rpe, benchmark '2000m' | '20min' | '1min'}.
  * Returns {updates: {column: value}, benchmark: row or null} or {error}.
  */
 function logbookConfirmPlan(entry, intervals, athleteId, opts, ctx) {
@@ -446,19 +452,20 @@ function logbookConfirmPlan(entry, intervals, athleteId, opts, ctx) {
       'Drag check': entry['Drag factor'] === '' ? DRAG_FLAG : ''
     };
     updates['Benchmark ID'] = bench['Benchmark ID'];
-    updates['Zone'] = timed ? 'Anaerobic' : 'Threshold';
+    updates['Zone'] = timed || shape === '1min' ? 'Anaerobic' : 'Threshold';
     updates['Main set'] = shape + ' test';
   }
   return { updates: updates, benchmark: bench };
 }
 
-/** '2000m' or '20min' when a Logbook session is one piece of that size on the RowErg, else ''. */
+/** '2000m', '20min' or '1min' when a Logbook session is one piece of that size on the RowErg, else ''. */
 function logbookBenchmarkShape(entry, intervals) {
   if (String(entry['Activity']) !== 'Erg (RowErg)' || intervals.length !== 1) return '';
   var m = Number(intervals[0]['Work m']);
   var t = Number(intervals[0]['Work s']);
   if (m >= 1990 && m <= 2010) return '2000m';
   if (t >= 1195 && t <= 1205) return '20min';
+  if (t >= 59 && t <= 61) return '1min';
   return '';
 }
 

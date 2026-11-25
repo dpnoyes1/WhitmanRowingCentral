@@ -12,13 +12,14 @@ var SITE_TEST_METERS = { 2000: '2000m', 500: '500m', 100: '100m' };
 
 /**
  * The one test a piece could be, or null. pieces = parsePiecesText output. One piece only: exactly 2000 m,
- * 500 m or 100 m (any time) is a timed test; exactly 20:00.0 (any meters) is the 20'. Anything else, or
+ * 500 m or 100 m (any time) is a timed test; exactly 20:00.0 (any meters) is the 20'; exactly 1:00.0 (any meters) is the 1'. Anything else, or
  * more than one piece, is not a test and never asks.
  */
 function siteTestKind_(pieces) {
   if (!pieces || pieces.length !== 1) return null;
   var p = pieces[0];
   if (parseTime(p.WORK_TIME) === 1200) return '20min';
+  if (parseTime(p.WORK_TIME) === 60) return '1min';
   var m = Number(p.WORK_M);
   return SITE_TEST_METERS[m] ? SITE_TEST_METERS[m] : null;
 }
@@ -35,7 +36,7 @@ function siteLogAnswers_(form, athleteName, enteredBy) {
   f.zone = f.zone || 'Aerobic';
   var kind = f.type === 'out' || f.status === 'out' ? null : siteTestKind_(parsePiecesText(f.pieces));
   if (f.test === 'yes') {
-    if (!kind) throw new Error('That piece is not exactly 2000 m, 500 m, 100 m or 20:00, so it cannot be saved as a test');
+    if (!kind) throw new Error('That piece is not exactly 2000 m, 500 m, 100 m, 20:00 or 1:00, so it cannot be saved as a test');
     if (f.activity !== 'Erg (RowErg)') throw new Error('A test is on the RowErg');
     if (kind === '20min' || kind === '2000m') {
       f.type = 'test';
@@ -47,10 +48,17 @@ function siteLogAnswers_(form, athleteName, enteredBy) {
     a[Q.DATE] = f.date;
     a[Q.LOG_TYPE] = LOG_TYPES.BENCHMARK;
     a[Q.B_WHERE] = f.test_where === 'oyo' ? TEST_WHERE.OYO : TEST_WHERE.PRACTICE;
-    a[Q.TEST] = kind;
+    a[Q.TEST] = kind === '1min' ? "1' (1 min)" : kind;
     a[Q.B_WARMUP] = f.warmup;
     a[Q.B_COOLDOWN] = f.cooldown;
     a[Q.B_RPE] = f.rpe;
+    if (kind === '1min') {   // a distance test: the meters are the score
+      a[Q.D_METERS] = p.WORK_M;
+      a[Q.D_RATE] = p.RATE;
+      a[Q.D_DRAG] = f.drag;
+      a[Q.D_NOTE] = f.note;
+      return a;
+    }
     a[Q.T_TIME] = p.WORK_TIME;
     a[Q.T_RATE] = p.RATE;
     a[Q.T_DRAG] = f.drag;
@@ -75,6 +83,7 @@ function siteSelfLogError_(form) {
   var activity = String(f.activity || '').trim(), type = String(f.type || '').trim();
   if (!activity || activity === 'Erg (RowErg)' || activity === 'BikeErg' || activity === 'Lifting' ||
       !ACTIVITIES.some(function (x) { return x[0] === activity; })) return 'Choose a run, bike, swim or another activity that is not on an erg.';
+  if (activity === 'Other' && !String(f.note || '').trim()) return 'Tell your coaches what the activity was.';
   if (type !== 'oyo' && type !== 'practice') return 'Choose On my own or At practice.';
   if (String(f.test || '').trim() || String(f.status || '').trim() === 'out' || String(f.makeup_for || '').trim()) return 'That cannot be saved from this page.';
   return '';

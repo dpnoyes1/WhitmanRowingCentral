@@ -29,7 +29,7 @@ Entry ID, Interval #, Work s, Work m, Avg rate, Rest s, Rest m, then from Logboo
 Result ID, Athlete ID, Received at, Kind (Result / Strokes), Part, JSON. The full Logbook result as JSON and its stroke data (t, d, p, spm, hr per stroke), one row per chunk of up to 40,000 characters (a cell holds 50,000). Written with every Logbook result and replaced when it updates. Nothing reads it yet; it keeps every field, including ones with no column. Weight class is in it, so the tab stays hidden.
 
 ## Benchmarks
-Benchmark ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Test (100m / 500m / 2000m / 20min / 30r20), Time s (timed tests), Meters (distance tests), Avg rate, Drag factor, Splits s (comma separated seconds), Coach note, Source, Review status, Response ID, Entry ID (the matching session in Entries), Drag check (coach flag: "FLAG: no drag factor" when a test has no drag factor).
+Benchmark ID, Submitted at, Date, Athlete ID, Athlete, Entered by, Test (100m / 500m / 2000m / 20min / 1min / 30r20), Time s (timed tests), Meters (distance tests), Avg rate, Drag factor, Splits s (comma separated seconds), Coach note, Source, Review status, Response ID, Entry ID (the matching session in Entries), Drag check (coach flag: "FLAG: no drag factor" when a test has no drag factor).
 
 30r20 validity (avg rate <= 20) and GMS are computed at display, not stored.
 

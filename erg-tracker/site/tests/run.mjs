@@ -17,7 +17,7 @@ import { handleLog } from '../functions/log.mjs';
 import { handleAttendanceMark } from '../functions/attendance-mark.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
-import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
+import { parseHeartRate, RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { NO_DISTANCE, autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
@@ -169,8 +169,18 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   assert.strictEqual(S.rawMinutes(base), 50);
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 36);   // no warm-up or cool-down for non-erg: 30 x 1.2
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Lifting' }, st), 0);
+  // Heart-rate weighting (David, 2026-11-25): Bike, Stair stepper, Swim, Elliptical, Other: 100% at the full-effort HR, else 0.75 (also with no HR saved).
+  const hrSt = { ...st, hrLowMultiplier: 0.75 };
+  for (const activity of ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other']) {
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: true }, hrSt), 30, activity + ' at high HR');
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: false }, hrSt), 22.5, activity + ' at low HR');
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: null }, hrSt), 22.5, activity + ' with no HR');
+  }
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Swim' }, st), 22.5, 'an old feed with no HR fields: lower weight');
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run', intense: false }, hrSt), 36, 'Run follows its Settings multiplier, never HR');
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'BikeErg', intense: false, workM: 14000 }, hrSt), 50, 'erg work is not HR-rated');
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg', workM: 14000 }, st), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 18);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 22.5);   // 30 x 0.75: no HR saved
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Out' }, st), 0);
   // Lifting (David, 2026-10-23): no OYO minutes, no meters.
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
@@ -212,11 +222,11 @@ test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaf
   assert.strictEqual(S.weightedMinutes(piece('Run', 9), st), 0);
   assert.strictEqual(S.weightedMinutes(piece('Run', 10), st), 12);          // 10 x 1.2
   assert.strictEqual(S.weightedMinutes(piece('Bike', 19), st), 0);
-  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 12);         // 20 x 0.6
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 15);         // 20 x 0.75 (no HR saved)
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 14), st), 0);
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
   assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
-  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
+  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 11.25);      // 15 x 0.75 (no HR saved)
   assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
   const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
   assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);
@@ -1457,7 +1467,19 @@ test('run photo for Log activity: fills distance and time, athletes only, 404 wh
   assert.deepStrictEqual([out.status, out.time], ['read', '2:06:00']);
   out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '', elapsed_time: '' }) })).json();
   assert.strictEqual(out.status, 'unread');
-  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', flags: [], person: '', activity: '' });
+  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', hr: '', flags: [], person: '', activity: '' });
+  assert.strictEqual(fillFromRead({ meters: null, movingS: 2434, avgHr: 103, flags: [] }).hr, '103');
+});
+
+test('run photo average heart rate: Garmin and Strava examples (fake values), max/blank/odd text dropped', () => {
+  const base = { app: 'Garmin Connect', activity: 'Strength', date: '', distance: '', distance_unit: '', moving_time: '50:42', elapsed_time: '', avg_pace: '', pace_unit: '', flags: [] };
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '103' }).avgHr, 103);
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '148 bpm' }).avgHr, 148);
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '' }).avgHr, null, 'a card with no HR stays blank');
+  assert.strictEqual(normalizeRunRead(base).avgHr, null, 'an older reply with no avg_hr field');
+  for (const bad of ['1:04', '12', '999', '96-128', 'bpm', '0']) assert.strictEqual(parseHeartRate(bad), null, bad);
+  assert.strictEqual(parseHeartRate('40'), 40);
+  assert.strictEqual(parseHeartRate('230'), 230);
 });
 
 test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
@@ -1493,7 +1515,16 @@ test('slack run screenshot: athlete sends it, card saves through site-log', asyn
   const save = w.calls.find((c) => c.body && c.body.action === 'site-log').body;
   assert.deepStrictEqual([save.self, save.athleteId, save.form.type, save.form.activity, save.form.pieces, save.form.date], [true, 'A901', 'practice', 'Run', '25:30.0, 4989', '2026-11-17']);
   assert.ok(save.photo, 'a small copy of the screenshot goes with it');
+  assert.strictEqual('hr' in save.form, false, 'no HR on the screen: none sent');
+  assert.ok(!/heart rate/.test(card.text));
   assert.strictEqual((await handlePhotoButton(press('photo_run_oyo', token), env, w.deps)).status, 'gone', 'first press wins');
+  // average heart rate on the screen (David, 2026-11-25): shown on the card and saved to Avg HR
+  w = world([noErg, noErg, { ...run, avg_hr: '148' }]);
+  await handlePhotoEvent(msg, env, w.deps);
+  const hrCard = w.dms()[0];
+  assert.ok(/average heart rate 148 bpm/.test(hrCard.text), hrCard.text);
+  await handlePhotoButton(press('photo_run_oyo', hrCard.blocks[1].elements[0].value), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'site-log').body.form.hr, '148');
   // not a run either: the usual answer
   w = world([noErg, noErg, { ...run, distance: '', moving_time: '', elapsed_time: '' }]);
   out = await handlePhotoEvent(msg, env, w.deps);
@@ -2808,6 +2839,14 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   res = await handleLogMine(post(athlete, { form: { ...form, test: 'yes', status: 'out', evil: 'x' } }), env, { fetchImpl: ok, now });
   assert.strictEqual(res.status, 200);
   assert.deepStrictEqual(Object.keys(calls[n].form).sort(), ['activity', 'date', 'pieces', 'rpe', 'type'], 'only whitelisted fields reach the Sheet');
+  // Average heart rate (David, 2026-11-25): optional, whole bpm 40 to 230, passed to the Sheet as form.hr.
+  res = await handleLogMine(post(athlete, { form: { ...form, hr: '148' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(calls.at(-1).form.hr, '148');
+  for (const hr of ['39', '231', 'abc', '1:04', '15.5']) assert.strictEqual((await handleLogMine(post(athlete, { form: { ...form, hr } }), env, { fetchImpl: ok, now })).status, 422, 'hr ' + hr);
+  res = await handleLogMine(post(athlete, { form: { ...form, hr: '' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual('hr' in calls.at(-1).form, false, 'blank HR is not sent');
   res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }), now });
   assert.strictEqual(res.status, 422);
   assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
@@ -2831,6 +2870,11 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
     res = await handleLogMine(post(athlete, { form: { ...form, activity: act, pieces } }), env, { fetchImpl: ok, now });
     assert.strictEqual((await res.json()).status === 'confirm', bad, act + ' ' + pieces);
   }
+  // Other (David, 2026-11-25): a description is required, distance is optional.
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 422, 'Other without a description is refused');
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0', note: 'Soccer' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual((await res.json()).status, 'ok', 'Other with a description and no distance saves');
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
@@ -2846,7 +2890,7 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
   [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
   assert.strictEqual(parseDuration(autoClock('2530')), 1530);
-  assert.ok(NO_DISTANCE.includes('Stair stepper') && !NO_DISTANCE.includes('Run'));
+  assert.ok(NO_DISTANCE.includes('Stair stepper') && NO_DISTANCE.includes('Other') && !NO_DISTANCE.includes('Run'));
   assert.strictEqual(paceText(3600, 0), '', 'no pace without a distance');
   assert.strictEqual(SL.piecesError('1:01:52.0, 10000'), '', 'H:MM:SS pieces are accepted');
   assert.strictEqual(SL.piecesError('1:01:52, 10000'), '');
@@ -3087,7 +3131,7 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-09-06').status, 'NO');                  // Sunday
   assert.strictEqual(at('2026-11-04').note, 'Fall Break');            // override wins over Fall YES
   assert.strictEqual(at('2026-11-10').status, 'NO');                  // gap between seasons
-  assert.strictEqual(at('2026-08-22').status, 'NO');                  // stray 'zREGATTA' row: unknown status is NO (as on the live site)
+  assert.strictEqual(at('2026-08-22').label, 'ZREGATTA');            // stray unknown status is shown as written (David, 2026-11-25)
   assert.strictEqual(at('2026-11-19').note, 'Check Slack for Details'); // PARTIAL, blank reason
   assert.strictEqual(at('2026-11-20').note, 'Erg test only\nBring water');
   assert.strictEqual(at('2026-11-23').status, 'YES');                 // REGATTA never decides today
@@ -3099,7 +3143,10 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-11-27').shifts.girls, '5:00–7:00 PM');  // Fri, odd date: Girls late
   assert.strictEqual(at('2026-12-04').shifts.girls, '3:30–5:30 PM');  // Fri, even date: Girls early
   assert.strictEqual(at('2026-11-21').status, 'NO');                  // Saturday in Winter
-  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).status, 'NO');   // unknown status
+  const chg = PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'CHANGE', reason: 'All Athletes 330-530' }]);
+  assert.deepStrictEqual([chg.status, chg.label, chg.note], ['OTHER', 'CHANGE', 'All Athletes 330-530']);   // any other status shows as written, with its note
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).label, 'MAYBE');
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: '', reason: '' }]).status === 'OTHER', false);
   // header row inside the data when Google gives no column labels
   assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
 });
@@ -3342,6 +3389,18 @@ test('callSheet: an HTML page from Google is retried, not shown as a JSON error'
   n = -10;
   await assert.rejects(() => callSheetBusyTest(env, f, { a: 1 }), /busy/);
   assert.strictEqual(n, -9, 'no retry unless asked');
+});
+
+test("1' test: site stats and Slack shapes", () => {
+  assert.ok(S.TESTS.includes('1min'));
+  assert.strictEqual(S.TEST_LABELS['1min'], "1'");
+  assert.strictEqual(S.resultValue({ test: '1min', meters: 330, timeS: null }), 330);
+  assert.ok(S.better('1min', { test: '1min', meters: 335 }, { test: '1min', meters: 330 }), 'more meters is better');
+  assert.strictEqual(S.benchmarkWatts({ test: '1min', meters: 330 }), S.wattsFromSplit((60 * 500) / 330));
+  assert.ok(!S.BALANCE_TESTS.includes('1min'), 'not on the Balance page');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min Test'), '1min');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min'), '', 'no "test" in the title');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 61, meters: 330 }], 'Test'), '');
 });
 
 for (const [name, fn] of tests) {
