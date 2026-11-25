@@ -204,7 +204,7 @@ var SETTINGS_DEFAULTS = [
   return ['multiplier.' + a[0], String(a[1]), 'Coaching approximation; edit freely'];
 }));
 
-/** Activities weighed by average heart rate instead of the table (David, 2026-11-25): Run stays on its multiplier (1.0), erg and Lifting are unchanged. */
+/** Activities weighed by average heart rate instead of the table (David, 2026-11-25): Run stays on its multiplier (1.2), erg and Lifting are unchanged. */
 var HR_RATED_ACTIVITIES = ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
 
 /**
