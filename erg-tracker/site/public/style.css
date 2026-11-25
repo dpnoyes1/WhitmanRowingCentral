@@ -739,8 +739,10 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .hrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 /* Phone: chips keep their full label and wrap instead of clipping; Weights drops two columns so Status and Edit stay on screen. */
 @media (max-width: 720px) {
-  .filters.chips .seg { flex-wrap: wrap; }
-  .filters.chips .seg button { flex: 0 0 auto; padding: 6px 14px; white-space: nowrap; }
+  /* Selector rows fill the full content width on a phone (David, 2026-11-25): several buttons per row is fine, each row stretches edge to edge. */
+  .filters.chips { flex: 1 1 100%; flex-direction: column; gap: 8px; }
+  .filters.chips .seg { display: flex; flex-wrap: nowrap; width: 100%; gap: 6px; }
+  .filters.chips .seg button { flex: 1 1 0; min-width: 0; padding: 6px 8px; justify-content: center; white-space: nowrap; }
   /* Test chips (20', 2k, 500m, 100m, 30r20) share the row, so they fit a 360 px phone (review 2026-11-17). */
   .board-filters .filters.tests { flex: 1 1 100%; }
   .filters.tests .seg { display: flex; width: 100%; gap: 6px; }
