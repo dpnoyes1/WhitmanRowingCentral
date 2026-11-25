@@ -1002,3 +1002,7 @@ input[type="file"]::file-selector-button { font: inherit; border: 1px solid var(
 @media (max-width: 560px) { table.insights .miss-d { display: none; } }
 /* FIX-starkey: the star key fits on one row on desktop */
 @media (min-width: 601px) { .gms-std .gms-keys { gap: 8px 14px; } .gms-std .gms-key { gap: 6px; } .gms-std .gms-key .stars { letter-spacing: 0; font-size: .8rem; } .gms-std .gms-key { font-size: .9rem; } }
+
+/* Log activity: Distance, Unit and Time sit on one line with the boxes level (David, 2026-11-25). */
+.logfor .lf-dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.logfor .lf-dims .f { white-space: nowrap; }

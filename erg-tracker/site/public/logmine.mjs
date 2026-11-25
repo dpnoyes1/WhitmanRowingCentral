@@ -64,11 +64,11 @@ export function openLogMine(ctx) {
         ${S.activity === 'Other' ? field('What was it?', 'what', 'maxlength="80" placeholder="Soccer, yoga, hike…" required') : ''}
         <div class="lf-row"><label class="f">Date<select class="in" data-f="date">${days.map((d, i) => `<option value="${d}"${d === S.date ? ' selected' : ''}>${i === 0 ? 'Today' : i === 1 ? 'Yesterday' : esc(fmtDay(d))}</option>`).join('')}</select></label>
 </div>
-        <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'On my own'], ['practice', 'At practice'], ['makeup', 'Make up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
+        <div class="f" role="group" aria-label="Was it"><span>Was it</span><div class="seg fill" id="lm-type">${[['oyo', 'OYO'], ['practice', 'Practice'], ['makeup', 'Make Up']].map(([k, l]) => `<button type="button" data-type="${k}" aria-pressed="${S.type === k}">${l}</button>`).join('')}</div>
           ${S.type === 'makeup' ? '<span class="muted small">Counts as that day\'s practice, marked Modified.</span>' : ''}</div>
-        <div class="lf-row">${field(NO_DISTANCE.includes(S.activity) ? 'Distance (optional)' : 'Distance', 'dist', 'inputmode="decimal" placeholder="' + (NO_DISTANCE.includes(S.activity) ? 'skip' : '3.1') + '"')}
+        <div class="lf-row lf-dims">${field('Distance', 'dist', 'inputmode="decimal" placeholder="' + (NO_DISTANCE.includes(S.activity) ? 'optional' : '3.1') + '"')}
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
-          ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
+          ${field('Time', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
         ${field('Note for coaches (optional)', 'note')}
         ${PHOTO_FIRST ? '' : photoBlock}

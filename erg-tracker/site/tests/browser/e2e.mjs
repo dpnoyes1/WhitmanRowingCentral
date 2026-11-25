@@ -214,7 +214,7 @@ flow('log activity: Other needs a description, distance is optional (David, 2026
     await signInAthlete(page, server.url, server.athlete, '#/logrun');
     await page.selectOption('[data-f=activity]', 'Other');
     await page.waitForSelector('[data-f=what]');
-    assert.match(await page.textContent('#logmine'), /Distance \(optional\)/);
+    assert.equal(await page.getAttribute('[data-f=dist]', 'placeholder'), 'optional');
     if (process.env.SHOTS) await page.locator('#logmine').screenshot({ path: `${process.env.SHOTS}/other-${tag}.png` });
     await page.locator('[data-f=time]').pressSequentially('45:00');
     await page.click('#logmine button[type=submit]');
