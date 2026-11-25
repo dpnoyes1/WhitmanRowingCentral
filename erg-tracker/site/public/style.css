@@ -366,6 +366,7 @@ details.team-results:not(.by-speed) .rank { display: none; }
 /* Links to the Google Form (/logworkout) and the logging guide (/guide), see netlify.toml. */
 .today-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
 a.btn.log-btn { text-decoration: none; }
+@media (max-width: 719px) { a.btn.log-btn { flex: 1 1 100%; justify-content: center; } }   /* Log Run/Other fills the full width on a phone; the links wrap below it */
 .login-links { margin-top: 12px; text-align: center; }
 
 /* phone menu and no sideways scrolling for athletes (David, 2026-10-28) */
@@ -591,7 +592,8 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .pbulkrow .btn { min-height: 48px; }
 .pbulk { margin: 4px 0 8px; }
 .pweek { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 8px; }   /* the same 10px gap sits between the week bar and the first day as between day cards */
-.pbody .pbulkrow { margin: 2px 0 -2px; }   /* Publish day: 10px above (8px flex gap + 2) and 10px below (12px card padding - 2) */
+.pbody .pbulkrow { margin: 2px 0 -2px; }
+@media (max-width: 719px) { .pbody .pbulkrow { flex-direction: column; } .pbody .pbulkrow .btn { width: 100%; } }   /* Publish day fills the full width on a phone */   /* Publish day: 10px above (8px flex gap + 2) and 10px below (12px card padding - 2) */
 .pdayblock { display: flex; flex-direction: column; gap: 8px; }
 .pdayblock + .pdayblock { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
 .chk { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: .95rem; min-height: 44px; }
