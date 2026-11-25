@@ -187,7 +187,7 @@ function showPractice() {
     // Girls only (David, 2026-11-02): "Monday 11/2" then "Early Shift: 3:30–5:30 PM". No big Yes; No and Partial still say so.
     const d = new Date(p.iso + 'T12:00:00');
     const when = `${d.toLocaleDateString('en-US', { weekday: 'long' })} ${d.getMonth() + 1}/${d.getDate()}/${d.getFullYear()}`;
-    const head = p.status === 'YES' ? '' : `<p class="status">${p.status === 'NO' ? 'No practice' : 'Partial practice'}</p>`;
+    const head = p.status === 'YES' ? '' : `<p class="status">${p.status === 'NO' ? 'No practice' : p.status === 'PARTIAL' ? 'Partial practice' : esc(p.label)}</p>`;
     const line = p.shifts ? `${p.shifts.girlsEarly ? 'Early' : 'Late'} Shift: ${esc(p.shifts.girls)}` : esc(p.note);
     practiceBox.innerHTML = `<div class="card practice st-${p.status.toLowerCase()}">
       <h2>${esc(when)}</h2>${head}<p class="note">${line}</p>${p.cachedAt ? `<p class="muted small">Saved copy · ${esc(new Date(p.cachedAt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }))}</p>` : ''}</div>`;

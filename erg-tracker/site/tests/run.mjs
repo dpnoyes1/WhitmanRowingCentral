@@ -3087,7 +3087,7 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-09-06').status, 'NO');                  // Sunday
   assert.strictEqual(at('2026-11-04').note, 'Fall Break');            // override wins over Fall YES
   assert.strictEqual(at('2026-11-10').status, 'NO');                  // gap between seasons
-  assert.strictEqual(at('2026-08-22').status, 'NO');                  // stray 'zREGATTA' row: unknown status is NO (as on the live site)
+  assert.strictEqual(at('2026-08-22').label, 'ZREGATTA');            // stray unknown status is shown as written (David, 2026-11-25)
   assert.strictEqual(at('2026-11-19').note, 'Check Slack for Details'); // PARTIAL, blank reason
   assert.strictEqual(at('2026-11-20').note, 'Erg test only\nBring water');
   assert.strictEqual(at('2026-11-23').status, 'YES');                 // REGATTA never decides today
@@ -3099,7 +3099,10 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-11-27').shifts.girls, '5:00–7:00 PM');  // Fri, odd date: Girls late
   assert.strictEqual(at('2026-12-04').shifts.girls, '3:30–5:30 PM');  // Fri, even date: Girls early
   assert.strictEqual(at('2026-11-21').status, 'NO');                  // Saturday in Winter
-  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).status, 'NO');   // unknown status
+  const chg = PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'CHANGE', reason: 'All Athletes 330-530' }]);
+  assert.deepStrictEqual([chg.status, chg.label, chg.note], ['OTHER', 'CHANGE', 'All Athletes 330-530']);   // any other status shows as written, with its note
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).label, 'MAYBE');
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: '', reason: '' }]).status === 'OTHER', false);
   // header row inside the data when Google gives no column labels
   assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
 });

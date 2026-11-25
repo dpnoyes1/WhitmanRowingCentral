@@ -192,6 +192,7 @@ main:focus { outline: none; }
 .practice.st-yes .status { color: var(--good); }
 .practice.st-no .status { color: var(--bad); }
 .practice.st-partial .status { color: var(--warn); }
+.practice.st-other .status { color: var(--warn); }
 .practice .note { margin: 4px 0 0; font-size: 1.05rem; color: var(--text-2); white-space: pre-line; }
 main { max-width: 1040px; margin: 0 auto; padding: 8px 16px 48px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
