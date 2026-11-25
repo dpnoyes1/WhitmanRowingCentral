@@ -1726,8 +1726,8 @@ test('settings page: only listed keys change, errors block everything, unchanged
   const settings = {}; g.SETTINGS_DEFAULTS.forEach((d) => { settings[d[0]] = d[1]; });
   settings['site.coaches'] = 'Fake Coach 01/01/1980';
   const plan = (changes) => JSON.parse(JSON.stringify(g.settingsPlanSave_(settings, changes)));
-  assert.deepStrictEqual(plan({ 'multiplier.Run': '1' }), { updates: [], errors: {} }, 'same value is not a change');
-  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.1' }).updates, [{ key: 'multiplier.Run', old: '1', value: '1.1' }]);
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.2' }), { updates: [], errors: {} }, 'same value is not a change');
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.1' }).updates, [{ key: 'multiplier.Run', old: '1.2', value: '1.1' }]);
   // keys that carry sign-in dates, Slack IDs, addresses and ids are refused
   ['site.coaches', 'site.test_password', 'slack.coach_ids', 'alerts.email', 'form.id', 'backup.folder_id', 'gms.exponent', 'nope'].forEach((k) => {
     assert.deepStrictEqual(plan({ [k]: 'x' }).errors, { [k]: 'Not a setting you can change here.' }, k);
@@ -2096,7 +2096,7 @@ test('open workout: any activity counts weighted minutes toward the day (David, 
   // Heart-rate weighting (David, 2026-11-25): Bike at or above the full-effort average HR counts 100%.
   const hard = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500, { 'Avg HR': 145 })], dayOver);
   assert.strictEqual(hard[0].flag, 'Open workout: 50 of 60 weighted minutes (83%)');
-  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Run', 'Avg HR': 100 }, {}), 1, 'Run is 1.0 at any HR');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Run', 'Avg HR': 100 }, {}), 1.2, 'Run keeps its 1.2 at any HR');
   assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 144 }, {}), 0.75);
   assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 150 }, {}), 1);
   assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Other', 'Avg HR': '' }, {}), 0.75, 'no HR saved');

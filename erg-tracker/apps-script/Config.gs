@@ -118,7 +118,7 @@ var ACTIVITIES = [
   ['Erg (RowErg)', 1.0],
   ['BikeErg', 1.0],
   ['Bike', 0.6],
-  ['Run', 1.0],
+  ['Run', 1.2],
   ['Stair stepper', 0.9],
   ['Swim', 0.8],
   ['Elliptical', 0.7],
