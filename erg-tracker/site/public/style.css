@@ -574,6 +574,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn.sm { min-height: 40px; padding: 6px 14px; }
 .wkhead { display: flex; align-items: center; gap: 10px; }
+.head:has(.wkbar) { margin-bottom: 10px; }   /* Plan page: the week bar sits 10px above the first day, like the gap between day cards */
 .wkbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; min-width: 0; }
 .wkbar .pbulkrow { margin: 0; flex-wrap: nowrap; }
 .wkbar .pbulkrow .btn { min-height: 44px; white-space: nowrap; }
@@ -588,7 +589,8 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .pbulkrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
 .pbulkrow .btn { min-height: 48px; }
 .pbulk { margin: 4px 0 8px; }
-.pweek { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.pweek { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 8px; }   /* the same 10px gap sits between the week bar and the first day as between day cards */
+.pbody .pbulkrow { margin: 2px 0 -2px; }   /* Publish day: 10px above (8px flex gap + 2) and 10px below (12px card padding - 2) */
 .pdayblock { display: flex; flex-direction: column; gap: 8px; }
 .pdayblock + .pdayblock { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
 .chk { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: .95rem; min-height: 44px; }
