@@ -345,7 +345,6 @@ export function openPlan(v, ctx) {
       <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
       ${bulk ? bulkHtml() : ''}
       <div class="pweek">${weekHtml()}</div>
-      <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
       ${editorHtml()}
       ${libraryHtml()}`;
     wire();
