@@ -932,3 +932,7 @@ table.avg-results th { white-space: normal; }
   table.gmsrank th:first-child, table.gmsrank td:first-child { display: none; }
   table.gmsrank td.next-star { min-width: 6em; }
 }
+
+/* Log activity: Distance, Unit and Time sit on one line with the boxes level (David, 2026-11-25). */
+.logfor .lf-dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.logfor .lf-dims .f { white-space: nowrap; }
