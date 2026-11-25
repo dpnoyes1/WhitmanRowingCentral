@@ -961,8 +961,8 @@ a.btn.log-btn { text-decoration: none; }
 @media (max-width: 719px) {
   .seg:not(.fill) { display: flex; width: 100%; }
   .seg:not(.fill) button, .seg:not(.fill) a { flex: 1; justify-content: center; }
-  .filters.tests .seg, .filters.chips .seg { flex-wrap: wrap; }
-  .filters.tests .seg button, .filters.chips .seg button { flex: 1 1 auto; }
+  .filters.tests .seg, .filters.chips .seg { flex-wrap: nowrap; }
+  .filters.tests .seg button, .filters.chips .seg button { flex: 1 1 0; min-width: 0; }   /* equal widths in every Benchmarks filter row (David, 2026-11-25) */
 }
 /* FIX-tools: Week and Athletes controls fill the row on a phone */
 @media (max-width: 719px) {
