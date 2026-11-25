@@ -1482,6 +1482,14 @@ test('run photo average heart rate: Garmin and Strava examples (fake values), ma
   assert.strictEqual(parseHeartRate('230'), 230);
 });
 
+test('run reader prompt: a Whoop zone screen has no average HR and the reader must not invent one', async () => {
+  const { RUN_PROMPT } = await import('../lib/runscreen.mjs');
+  assert.ok(/Whoop activity screen/.test(RUN_PROMPT) && /NO average heart rate/.test(RUN_PROMPT) && /Never average the zones yourself/.test(RUN_PROMPT));
+  assert.strictEqual(normalizeRunRead({ app: 'Whoop', activity: 'Ice hockey', date: '', distance: '', distance_unit: '', moving_time: '1:23:59', elapsed_time: '', avg_hr: '', avg_pace: '', pace_unit: '', flags: ['zone screen, no average HR'] }).avgHr, null);
+  assert.strictEqual(parseHeartRate('148-160'), null, 'a zone range is not an average');
+  assert.strictEqual(parseHeartRate('187+'), null);
+});
+
 test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
   const env = (k) => ({ SLACK_BOT_TOKEN: 'xoxb-FAKE', FEED_URL: 'https://script.example/exec', FEED_KEY: 'fake-key', ANTHROPIC_API_KEY: 'fake-ai-key' })[k];
   const seg = (marker, body) => Buffer.concat([Buffer.from([0xff, marker, (body.length + 2) >> 8, (body.length + 2) & 0xff]), Buffer.from(body)]);
