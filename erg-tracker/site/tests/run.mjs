@@ -1505,7 +1505,16 @@ test('slack run screenshot: athlete sends it, card saves through site-log', asyn
   const save = w.calls.find((c) => c.body && c.body.action === 'site-log').body;
   assert.deepStrictEqual([save.self, save.athleteId, save.form.type, save.form.activity, save.form.pieces, save.form.date], [true, 'A901', 'practice', 'Run', '25:30.0, 4989', '2026-11-17']);
   assert.ok(save.photo, 'a small copy of the screenshot goes with it');
+  assert.strictEqual('hr' in save.form, false, 'no HR on the screen: none sent');
+  assert.ok(!/heart rate/.test(card.text));
   assert.strictEqual((await handlePhotoButton(press('photo_run_oyo', token), env, w.deps)).status, 'gone', 'first press wins');
+  // average heart rate on the screen (David, 2026-11-25): shown on the card and saved to Avg HR
+  w = world([noErg, noErg, { ...run, avg_hr: '148' }]);
+  await handlePhotoEvent(msg, env, w.deps);
+  const hrCard = w.dms()[0];
+  assert.ok(/average heart rate 148 bpm/.test(hrCard.text), hrCard.text);
+  await handlePhotoButton(press('photo_run_oyo', hrCard.blocks[1].elements[0].value), env, w.deps);
+  assert.strictEqual(w.calls.find((c) => c.body && c.body.action === 'site-log').body.form.hr, '148');
   // not a run either: the usual answer
   w = world([noErg, noErg, { ...run, distance: '', moving_time: '', elapsed_time: '' }]);
   out = await handlePhotoEvent(msg, env, w.deps);

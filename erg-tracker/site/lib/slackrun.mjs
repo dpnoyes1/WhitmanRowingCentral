@@ -50,9 +50,9 @@ export async function startRunCard({ client, bytes, who, user, envFn, fetchImpl,
   let copy = '';
   try { copy = (await (deps.makeCopy || makeKeepCopy)(bytes)).bytes.toString('base64'); } catch { /* the run is still logged without it */ }
   const token = randomBytes(9).toString('hex');
-  const card = { kind: 'run', user, athlete: who.athlete, athleteId, activity: 'Run', meters, timeS, date: today, image: copy, flags: read.flags || [], at: Date.now() };
+  const card = { kind: 'run', user, athlete: who.athlete, athleteId, activity: 'Run', meters, timeS, date: today, image: copy, hr: read.avgHr > 0 ? read.avgHr : 0, flags: read.flags || [], at: Date.now() };
   await store.set('card:' + token, card);
-  const text = `*For ${who.athlete}:* ${runSummary({ ...read, meters, timeS })}, today. Check the numbers, then save.${read.flags.length ? '\n_Note: ' + read.flags.join('; ') + '_' : ''}`;
+  const text = `*For ${who.athlete}:* ${runSummary({ ...read, meters, timeS })}${read.avgHr > 0 ? `, average heart rate ${read.avgHr} bpm` : ''}, today. Check the numbers, then save.${read.flags.length ? '\n_Note: ' + read.flags.join('; ') + '_' : ''}`;
   await say(text, runBlocks(text, token));
   return { status: 'card', athlete: who.athlete, kind: 'run' };
 }
@@ -67,7 +67,7 @@ export async function saveRunCard({ payload, card, token, envFn, fetchImpl, stor
   let result;
   try {
     result = await callSheet(envFn, fetchImpl, { action: 'site-log', self: true, athleteId: card.athleteId, requestId: 'slackrun:' + token,
-      form: { date: card.date, type, activity: 'Run', pieces: `${clock(card.timeS)}.0, ${card.meters}`, note: 'Logged from a run screenshot in Slack.' },
+      form: { date: card.date, type, activity: 'Run', pieces: `${clock(card.timeS)}.0, ${card.meters}`, note: 'Logged from a run screenshot in Slack.', ...(card.hr > 0 ? { hr: String(card.hr) } : {}) },
       ...(card.image ? { photo: card.image } : {}) });
   } catch (err) { result = { status: 'error', error: err.message }; }
   if (result.status === 'ok') { await line(`:white_check_mark: Saved ${type === 'practice' ? 'at practice' : 'on your own'} for ${card.date}.${result.photo === 'failed' ? ' The screenshot copy could not be kept.' : ''}`); return { status: 'ok', kind: 'run' }; }
