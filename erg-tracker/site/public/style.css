@@ -148,6 +148,7 @@ main:focus { outline: none; }
   .top .brand { margin-right: auto; }
   .backbar:not([hidden]) { display: none; }
   body.authed .log-top:not([hidden]) { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; background: rgba(255, 255, 255, .45); font-weight: 600; font-size: .95rem; }
+  body.authed .log-top:not([hidden]) { white-space: nowrap; flex: none; }   /* "Log Run/Other" stays on one line */
   .side { position: fixed; left: 10px; top: 10px; bottom: 10px; height: auto; width: min(300px, 84vw); transform: translateX(-110%); visibility: hidden; transition: transform .25s, visibility .25s; z-index: 30; }
   .collapse-toggle { display: none; }
   .side, .collapsed .side { width: min(300px, 84vw); padding: 14px; }
@@ -954,4 +955,10 @@ table.avg-results th { white-space: normal; }
   .alsodays { flex-wrap: nowrap; gap: 6px; }
   .alsodays button { flex: 1 1 0; min-width: 0; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; font-size: .85rem; }
   .alsodays button .num { font-size: 1.05rem; font-weight: 700; }
+}
+
+/* Narrow phones: the longer "Log Run/Other" button and the team name share the top bar without wrapping to three lines. */
+@media (max-width: 359px) {
+  body.authed .log-top:not([hidden]) { font-size: .8rem; padding: 0 8px; }
+  .top .brand { font-size: .8rem; gap: 6px; }
 }

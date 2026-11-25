@@ -1089,7 +1089,7 @@ function todayCard(sessions, id = null) {
   if (!sessions || !sessions.length) return '';
   const none = sessions.every((s) => s.pieces.every((p) => !p.target));
   return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
-    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="${isCoach() ? '#/log' : '#/logrun'}">Log activity</a>
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="${isCoach() ? '#/log' : '#/logrun'}">Log Run/Other</a>
     <a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a><a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
 }
 
