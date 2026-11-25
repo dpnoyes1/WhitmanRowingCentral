@@ -1788,6 +1788,9 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
   ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Other', type: 'oyo' }), 'Other needs a description');
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Other', type: 'oyo', note: 'Soccer' }), '');
+  assert.strictEqual(g.planActivityMultiplier_('Other', {}), 0.6, 'Other weighs the same as Bike');
   // identical workout saved again (Nov 22): same athlete, day, activity, type, time and meters, not Rejected
   const dupRow = (o) => Object.assign({ 'Athlete ID': 'A004', Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566, Source: 'Site', 'Review status': '', 'Submitted at': '2026-11-22 14:21' }, o);
   const newRun = { Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566 };

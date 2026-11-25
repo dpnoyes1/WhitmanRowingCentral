@@ -122,7 +122,8 @@ var ACTIVITIES = [
   ['Stair stepper', 0.9],
   ['Swim', 0.8],
   ['Elliptical', 0.7],
-  ['Lifting', 0]
+  ['Lifting', 0],
+  ['Other', 0.6]
 ];
 
 // Every test also becomes an Entries session. meters/seconds fill the fixed side

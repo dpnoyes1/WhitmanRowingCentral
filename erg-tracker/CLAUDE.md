@@ -35,7 +35,7 @@ Roster, Entries, Intervals, Benchmarks, Weights, Practices, Settings, Change log
 ## Scoring and weighting
 
 - **Training minutes** = work + warm-up/cool-down. Rest never counts. Warm/cool count only on RowErg/BikeErg with average split faster than 3:00/500m (`WARMCOOL_MAX_SPLIT_S`, `site/lib/stats.mjs`), as Aerobic. Total meters = work + warm/cool meters; rest never.
-- **Activity weights** (Settings, live): RowErg 1.0, BikeErg 1.0 (its meters count half, split shown with *, never a benchmark), Run 1.2, Stair 0.9, Swim 0.8, Elliptical 0.7, Bike 0.6, Lifting 0 (no meters, no OYO minutes). An activity with no Settings row weighs 1.0 (old SkiErg rows).
+- **Activity weights** (Settings, live): RowErg 1.0, BikeErg 1.0 (its meters count half, split shown with *, never a benchmark), Run 1.2, Stair 0.9, Swim 0.8, Elliptical 0.7, Bike 0.6, Other 0.6 (athlete Log activity only; needs a typed description, distance optional), Lifting 0 (no meters, no OYO minutes). An activity with no Settings row weighs 1.0 (old SkiErg rows).
 - Modified counts as attended and gets its activity multiplier only (no extra penalty). Sessions tagged Aerobic / Threshold / Anaerobic by main set. Drag factor prefilled 105; a benchmark with none gets "FLAG: no drag factor".
 - **OYO**: coach sets Standard (`oyo.standard.required`, 60); Elite = Standard x 2; Overreaching = 150%+ of Standard (Insights). No per-athlete groups. Break weeks (4+ Mon-Sun days in `oyo.break.dates`) are all OYO with `oyo.break.required/elite`. Weekends are OYO only (winter).
 - **Load flag** (coaches): week more than `load.jump_pct` (15) above the average of the 3 prior weeks (`loadTrend`).

@@ -11,7 +11,7 @@ const json = (body, status = 200) =>
   Response.json(body, { status, headers: { 'cache-control': 'private, no-store' } });
 
 const FIELDS = ['date', 'type', 'activity', 'pieces', 'rpe', 'note'];
-const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical'];
+const ACTIVITIES = ['Run', 'Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
 const MAX_DAYS_BACK = 14;
 
 export async function handleLogMine(req, envFn, deps = {}) {
@@ -39,6 +39,8 @@ export async function handleLogMine(req, envFn, deps = {}) {
     form[k] = f[k];
   }
   if (!ACTIVITIES.includes(form.activity)) return json({ error: 'Choose a run, bike, swim or another activity that is not on an erg.' }, 422);
+  // Other (David, 2026-11-25): the athlete must say what it was; distance is optional.
+  if (form.activity === 'Other' && !String(form.note || '').trim()) return json({ error: 'Tell your coaches what the activity was.' }, 422);
   if (form.type !== 'oyo' && form.type !== 'practice' && form.type !== 'makeup') return json({ error: 'Choose On my own, At practice or Make up.' }, 422);
   // Make up (David, 2026-11-20): saved as that day's practice, marked Modified, with "Make-up" at the front of the note.
   // Done here so the Sheet needs no change; it still refuses a make-up row typed by an athlete.
