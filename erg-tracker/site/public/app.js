@@ -104,9 +104,6 @@ function setNav(active) {
   if (active === (isCoach() ? 'team' : 'me')) showPractice(); else practiceBox.hidden = true;
   document.getElementById('nav').hidden = false;
   document.getElementById('menu').hidden = false;
-  const logTop = document.getElementById('log-top');
-  logTop.hidden = false;
-  logTop.href = isCoach() ? '#/log' : '#/logrun';   // in-app logging; the Google Form is no longer used (David, 2026-11-16)
   document.body.classList.add('authed');
   document.documentElement.classList.remove('out');
   document.getElementById('tabbar').hidden = false;
@@ -382,7 +379,6 @@ function showLogin(note = '') {
   practiceBox.hidden = true;
   document.getElementById('nav').hidden = true;
   document.getElementById('menu').hidden = true;
-  document.getElementById('log-top').hidden = true;
   document.body.classList.remove('authed');
   document.documentElement.classList.add('out');
   document.getElementById('tabbar').hidden = true;
@@ -1088,8 +1084,9 @@ function fmtTarget(t) {
 function todayCard(sessions, id = null) {
   if (!sessions || !sessions.length) return '';
   const none = sessions.every((s) => s.pieces.every((p) => !p.target));
+  const runDay = sessions.some((s) => s.pieces.some((p) => /^Run /.test(p.label)));   // the Log Run/Other button shows only when a run is scheduled today (David, 2026-11-25)
   return `<div class="card today"><h2>Today</h2>${sessions.map((s) => sessionBlock(s, true)).join('')}
-    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links"><a class="btn log-btn" href="${isCoach() ? '#/log' : '#/logrun'}">Log Run/Other</a>
+    ${none ? `<p class="muted small">${NO_TARGET}</p>` : ''}<p class="small today-links">${runDay ? `<a class="btn log-btn" href="${isCoach() ? '#/log' : '#/logrun'}">Log Run/Other</a>` : ''}
     <a href="#/week${id ? '/' + encodeURIComponent(id) : ''}">The rest of the week</a><a href="/guide" target="_blank" rel="noopener">How logging works</a></p></div>`;
 }
 
