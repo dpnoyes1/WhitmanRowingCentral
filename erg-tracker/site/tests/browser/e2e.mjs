@@ -194,6 +194,10 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   await page.locator('[data-f=time]').pressSequentially('25:30');   // a typed colon (desktop) is left alone
   assert.equal(await page.inputValue('[data-f=time]'), '25:30');
   assert.match(await page.textContent('#lm-pace'), /\d:\d\d/);
+  await page.fill('[data-f=hr]', '300');   // average heart rate is optional but must be 40 to 230
+  await page.click('#logmine button[type=submit]');
+  assert.match(await page.textContent('#logmine .error'), /Heart rate/);
+  await page.fill('[data-f=hr]', '148');
   await page.click('#logmine button[type=submit]');
   await page.waitForSelector('.logdone');
   assert.match(await page.textContent('.logdone h2'), /^Saved/);
@@ -204,6 +208,7 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   assert.equal(log.athleteId, server.athlete.id);
   assert.equal(log.self, true);
   assert.equal(log.form.activity, 'Run');
+  assert.equal(log.form.hr, '148');
   assert.match(log.form.pieces, /^25:30(\.0)?, 49\d\d$/, 'got ' + log.form.pieces);   // 3.1 mi is about 4989 m
   await page.context().close();
 });

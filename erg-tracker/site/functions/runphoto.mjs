@@ -11,7 +11,7 @@ const fmtClock = (s) => `${Math.floor(s / 3600) ? Math.floor(s / 3600) + ':' : '
 
 /** A read -> what the form fills in. Distance keeps the unit the screen used when it is mi, km or m. */
 export function fillFromRead(read) {
-  const out = { dist: '', unit: '', time: '', flags: read.flags || [], person: read.person || '', activity: read.activity || '' };
+  const out = { dist: '', unit: '', time: '', hr: '', flags: read.flags || [], person: read.person || '', activity: read.activity || '' };
   if (read.meters) {
     const unit = read.unit || 'mi';
     out.unit = unit;
@@ -19,6 +19,7 @@ export function fillFromRead(read) {
   }
   const t = read.movingS || read.elapsedS;
   if (t > 0) out.time = fmtClock(t);
+  if (read.avgHr > 0) out.hr = String(read.avgHr);
   return out;
 }
 
@@ -44,7 +45,7 @@ export async function handleRunPhoto(req, envFn, deps = {}) {
   const out = await readRunScreen({ client, bytes: Buffer.from(raw, 'base64') });
   if (!out.ok) { console.error('run photo read failed:', out.reason); return json({ status: 'unread' }); }
   const fill = fillFromRead(out.read);
-  if (!fill.dist && !fill.time) return json({ status: 'unread', flags: fill.flags });
+  if (!fill.dist && !fill.time && !fill.hr) return json({ status: 'unread', flags: fill.flags });
   return json({ status: 'read', ...fill });
 }
 

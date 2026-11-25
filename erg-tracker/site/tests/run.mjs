@@ -17,7 +17,7 @@ import { handleLog } from '../functions/log.mjs';
 import { handleAttendanceMark } from '../functions/attendance-mark.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
-import { RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
+import { parseHeartRate, RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { NO_DISTANCE, autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
@@ -1457,7 +1457,19 @@ test('run photo for Log activity: fills distance and time, athletes only, 404 wh
   assert.deepStrictEqual([out.status, out.time], ['read', '2:06:00']);
   out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '', elapsed_time: '' }) })).json();
   assert.strictEqual(out.status, 'unread');
-  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', flags: [], person: '', activity: '' });
+  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', hr: '', flags: [], person: '', activity: '' });
+  assert.strictEqual(fillFromRead({ meters: null, movingS: 2434, avgHr: 103, flags: [] }).hr, '103');
+});
+
+test('run photo average heart rate: Garmin and Strava examples (fake values), max/blank/odd text dropped', () => {
+  const base = { app: 'Garmin Connect', activity: 'Strength', date: '', distance: '', distance_unit: '', moving_time: '50:42', elapsed_time: '', avg_pace: '', pace_unit: '', flags: [] };
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '103' }).avgHr, 103);
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '148 bpm' }).avgHr, 148);
+  assert.strictEqual(normalizeRunRead({ ...base, avg_hr: '' }).avgHr, null, 'a card with no HR stays blank');
+  assert.strictEqual(normalizeRunRead(base).avgHr, null, 'an older reply with no avg_hr field');
+  for (const bad of ['1:04', '12', '999', '96-128', 'bpm', '0']) assert.strictEqual(parseHeartRate(bad), null, bad);
+  assert.strictEqual(parseHeartRate('40'), 40);
+  assert.strictEqual(parseHeartRate('230'), 230);
 });
 
 test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
@@ -2808,6 +2820,14 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
   res = await handleLogMine(post(athlete, { form: { ...form, test: 'yes', status: 'out', evil: 'x' } }), env, { fetchImpl: ok, now });
   assert.strictEqual(res.status, 200);
   assert.deepStrictEqual(Object.keys(calls[n].form).sort(), ['activity', 'date', 'pieces', 'rpe', 'type'], 'only whitelisted fields reach the Sheet');
+  // Average heart rate (David, 2026-11-25): optional, whole bpm 40 to 230, passed to the Sheet as form.hr.
+  res = await handleLogMine(post(athlete, { form: { ...form, hr: '148' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual(calls.at(-1).form.hr, '148');
+  for (const hr of ['39', '231', 'abc', '1:04', '15.5']) assert.strictEqual((await handleLogMine(post(athlete, { form: { ...form, hr } }), env, { fetchImpl: ok, now })).status, 422, 'hr ' + hr);
+  res = await handleLogMine(post(athlete, { form: { ...form, hr: '' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 200);
+  assert.strictEqual('hr' in calls.at(-1).form, false, 'blank HR is not sent');
   res = await handleLogMine(post(athlete, { form }), env, { fetchImpl: sheet({ status: 'invalid', message: 'Piece 1: work time is missing' }), now });
   assert.strictEqual(res.status, 422);
   assert.strictEqual((await handleLogMine(post(athlete, { form }, { origin: 'https://evil.example' }), env, { fetchImpl: ok, now })).status, 400);
