@@ -81,17 +81,22 @@ export function winterShift(iso) {
   return { girlsEarly, girls: girlsEarly ? WINTER_SHIFTS.early : WINTER_SHIFTS.late, boys: girlsEarly ? WINTER_SHIFTS.late : WINTER_SHIFTS.early };
 }
 
-/** { status: 'YES'|'NO'|'PARTIAL', note, shifts: {girls, boys}|null, label } for one local date. */
+/** { status: 'YES'|'NO'|'PARTIAL'|'OTHER' (label = the Sheet's own word), note, shifts: {girls, boys}|null, label } for one local date. */
 export function practiceFor(iso, seasons, overrides) {
   const wd = DAYS[new Date(iso + 'T12:00:00').getDay()];
   const override = overrides.find((o) => o.date === iso);
   const season = seasons.find((s) => iso >= s.start && iso <= s.end);
   let status = override ? override.status : (season ? season.days[wd] : 'NO');
-  if (!['YES', 'NO', 'PARTIAL'].includes(status)) status = 'NO';
+  // Any other status the Sheet holds (e.g. CHANGE) is shown as written, with its note (David, 2026-11-25).
+  let other = '';
+  if (!['YES', 'NO', 'PARTIAL'].includes(status)) {
+    if (override && status) { other = status; status = 'OTHER'; } else status = 'NO';
+  }
   const winter = !!season && /winter/i.test(season.name) && !!winterShift(iso);
   const shifts = winter ? winterShift(iso) : null;
-  const label = { YES: 'Yes', NO: 'No', PARTIAL: 'Partial' }[status];
+  const label = status === 'OTHER' ? other : { YES: 'Yes', NO: 'No', PARTIAL: 'Partial' }[status];
   if (override && override.reason) return { status, label, note: override.reason, shifts: null };
+  if (status === 'OTHER') return { status, label, note: '', shifts: null };
   if (status === 'PARTIAL') return { status, label, note: 'Check Slack for Details', shifts: null };
   if (status === 'YES' && shifts) return { status, label, note: '', shifts };
   return { status, label, note: 'Standard Schedule', shifts: null };
