@@ -285,5 +285,5 @@ Matching several workouts, round 2 (David, 2026-11-21, after Nov 20's warm-up / 
 
 ## 2026-11-25 Average HR from screenshots and heart-rate weighting (David)
 - Log activity photo reader and the ErgBot run card also read average HR (Garmin Connect, Strava, similar). Average only, never max, zones, calories. No HR on the card leaves the box blank. The athlete sees it and can edit before saving (Slack card shows it; fix by cancelling and using the site). Saved to the coach-only Avg HR column; no Apps Script change was needed for saving.
-- Weighting: Run always 1.0. Bike, Stair stepper, Swim, Elliptical, Other: average HR 145+ = 1.0, under 145 = 0.75, no HR saved = 0.75 (David chose 0.75 on a decision card). First asked as 100%/60%, then changed the same day. Settings `hr.high_bpm`, `hr.low_multiplier`. Feed sends `intense` per entry, never the HR number (rule 6 kept).
+- Weighting: Run stays 1.2 (David briefly asked for 1.0, then kept 1.2). Bike, Stair stepper, Swim, Elliptical, Other: average HR 145+ = 1.0, under 145 = 0.75, no HR saved = 0.75 (David chose 0.75 on a decision card). First asked as 100%/60%, then changed the same day. Settings `hr.high_bpm`, `hr.low_multiplier`. Feed sends `intense` per entry, never the HR number (rule 6 kept).
 - Dummy data is generated with a fixed old multiplier table so fake results do not move when live Settings change.

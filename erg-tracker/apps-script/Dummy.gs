@@ -148,7 +148,7 @@ function buildDummyData(opts) {
   var rng = dummyRng_(DUMMY.SEED);
   var coaches = String(settings.coaches || 'Coach David').split(',').map(function (s) { return s.trim(); }).filter(String);
   var mult = {};
-  // Dummy data is generated with the old activity table so the fake results stay the same when the live Settings change (Run went 1.2 -> 1.0, 2026-11-25).
+  // Dummy data is generated with the old activity table so the fake results stay the same when the live Settings change (2026-11-25).
   var DUMMY_MULT = { 'Erg (RowErg)': 1.0, 'BikeErg': 1.0, 'Bike': 0.6, 'Run': 1.2, 'Stair stepper': 0.9, 'Swim': 0.8, 'Elliptical': 0.7, 'Lifting': 0 };
   ACTIVITIES.forEach(function (a) { mult[a[0]] = (DUMMY_MULT[a[0]] !== undefined ? DUMMY_MULT[a[0]] : a[1]); });
   var seq = { E: 0, B: 0 };
