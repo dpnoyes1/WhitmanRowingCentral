@@ -7,10 +7,11 @@ David's standing rules. Every thread checks these before it opens a PR, and a re
 1. `node erg-tracker/tests/run.js && node erg-tracker/site/tests/run.mjs` both pass.
 2. If you changed anything under `erg-tracker/site/public/` (pages, CSS, markup): also run `node erg-tracker/site/tests/browser/run.mjs`. It needs Playwright (cloud sessions have it). It opens every page at 320, 360, 390, 768, 820 and 1280 px as an athlete and a coach on fake data, and clicks through sign-in, planning a workout and logging an activity. See "Browser checks" below.
 3. Preview it locally on fake data: `node tools/preview.mjs` (Mac and phone; see `plans/local-preview-how-to.md`). No Netlify build is used.
-4. Look at your change on a phone-width and a desktop-width screenshot of fake data when the page's look changed.
+4. Look at your change on a phone-width and a desktop-width screenshot of fake data when the page's look changed. **Check vertical and horizontal spacing on every visual change** (gaps between buttons, cards and rows; side padding; nothing touching or cramped) on phone and desktop before launch, and post the screenshots for David (rule from David, 2026-11-25).
 
 ## David's rules
 
+- **Check spacing before launch.** Any visual change to the site gets its vertical and horizontal spacing checked on a phone and a desktop screenshot (fake data) before it is merged. Use the same gaps the page already uses between cards and buttons. Post the screenshots in the thread.
 - **No sideways scrolling.** Anything that scrolls sideways on a phone or desktop (a wide table, a chart, a row of chips) must be reviewed by David before it is merged or pushed. Flag it in the project chat and wait for his go. A new entry in `erg-tracker/site/tests/browser/known-scroll.json` counts as sideways scrolling: do not add one without David's go.
 - **Neutral wording.** No gendered words in site, ErgBot or Slack text (no her / she / girls for people in general). Use the person's name, "they", or rewrite. Athlete names and the team name David uses are not changed.
 - **A club, not a school.** The team is a legally unaffiliated club, not Whitman HS or MCPS. Never say "high school" or imply a school affiliation. "School year" as a date range is fine.
