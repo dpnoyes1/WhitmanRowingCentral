@@ -208,6 +208,29 @@ flow('log activity: an athlete logs a run and it reaches the Sheet', async ({ br
   await page.context().close();
 });
 
+flow('log activity: Other needs a description, distance is optional (David, 2026-11-25)', async ({ browser, server }) => {
+  for (const [w, tag] of [[390, 'phone'], [1280, 'desktop']]) {
+    const page = await newPage(browser, w);
+    await signInAthlete(page, server.url, server.athlete, '#/logrun');
+    await page.selectOption('[data-f=activity]', 'Other');
+    await page.waitForSelector('[data-f=what]');
+    assert.match(await page.textContent('#logmine'), /Distance \(optional\)/);
+    if (process.env.SHOTS) await page.locator('#logmine').screenshot({ path: `${process.env.SHOTS}/other-${tag}.png` });
+    await page.locator('[data-f=time]').pressSequentially('45:00');
+    await page.click('#logmine button[type=submit]');
+    assert.match(await page.textContent('.error'), /what the activity was/, 'no description, no save');
+    await page.fill('[data-f=what]', 'Soccer');
+    await page.click('#logmine button[type=submit]');
+    await page.waitForSelector('.logdone');
+    assert.match(await page.textContent('.logdone-what'), /Other: Soccer, 45:00, today/);
+    const log = server.state.logs.at(-1);
+    assert.equal(log.form.activity, 'Other');
+    assert.equal(log.form.note, 'Soccer');
+    assert.match(log.form.pieces, /^45:00(\.0)?, 0$/);
+    await page.context().close();
+  }
+});
+
 flow('OYO page: an athlete sees their own row first, a coach sees plain ranking', async ({ browser, server }) => {
   let page = await newPage(browser, 390);
   await signInAthlete(page, server.url, server.athlete, '#/oyo');

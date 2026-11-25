@@ -1,7 +1,7 @@
 // /log in Slack: the modal, reading it back, checking it, and the reply texts.
 // Mirrors apps-script/SlackLog.gs and the Form (Config.gs). The cross-check test
 // compares ACTIVITIES, ZONES and the pieces rules with the Apps Script copies.
-export const ACTIVITIES = ['Erg (RowErg)', 'BikeErg', 'Bike', 'Run', 'Stair stepper', 'Swim', 'Elliptical', 'Lifting'];
+export const ACTIVITIES = ['Erg (RowErg)', 'BikeErg', 'Bike', 'Run', 'Stair stepper', 'Swim', 'Elliptical', 'Lifting', 'Other'];
 export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 export const MAX_INTERVALS = 10;
 export const TIME_RE = /^\s*(\d{1,2}:[0-5]\d:[0-5]\d(\.\d)?|\d{1,3}:[0-5]\d(\.\d)?)\s*$/;   // m:ss.0 or h:mm:ss.0

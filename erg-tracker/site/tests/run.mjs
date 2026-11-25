@@ -2831,6 +2831,11 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
     res = await handleLogMine(post(athlete, { form: { ...form, activity: act, pieces } }), env, { fetchImpl: ok, now });
     assert.strictEqual((await res.json()).status === 'confirm', bad, act + ' ' + pieces);
   }
+  // Other (David, 2026-11-25): a description is required, distance is optional.
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 422, 'Other without a description is refused');
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0', note: 'Soccer' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual((await res.json()).status, 'ok', 'Other with a description and no distance saves');
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
@@ -2846,7 +2851,7 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
   [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
   assert.strictEqual(parseDuration(autoClock('2530')), 1530);
-  assert.ok(NO_DISTANCE.includes('Stair stepper') && !NO_DISTANCE.includes('Run'));
+  assert.ok(NO_DISTANCE.includes('Stair stepper') && NO_DISTANCE.includes('Other') && !NO_DISTANCE.includes('Run'));
   assert.strictEqual(paceText(3600, 0), '', 'no pace without a distance');
   assert.strictEqual(SL.piecesError('1:01:52.0, 10000'), '', 'H:MM:SS pieces are accepted');
   assert.strictEqual(SL.piecesError('1:01:52, 10000'), '');

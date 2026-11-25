@@ -75,6 +75,7 @@ function siteSelfLogError_(form) {
   var activity = String(f.activity || '').trim(), type = String(f.type || '').trim();
   if (!activity || activity === 'Erg (RowErg)' || activity === 'BikeErg' || activity === 'Lifting' ||
       !ACTIVITIES.some(function (x) { return x[0] === activity; })) return 'Choose a run, bike, swim or another activity that is not on an erg.';
+  if (activity === 'Other' && !String(f.note || '').trim()) return 'Tell your coaches what the activity was.';
   if (type !== 'oyo' && type !== 'practice') return 'Choose On my own or At practice.';
   if (String(f.test || '').trim() || String(f.status || '').trim() === 'out' || String(f.makeup_for || '').trim()) return 'That cannot be saved from this page.';
   return '';
