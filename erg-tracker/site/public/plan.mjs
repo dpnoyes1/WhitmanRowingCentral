@@ -248,7 +248,7 @@ export function openPlan(v, ctx) {
         return `<div class="pdayblock">${multi ? `<div class="eyebrow">${esc(dayShort(d))}</div>` : ''}${cardsFor(d, past)}
           <button type="button" class="padd${on ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${on ? 'Adding below ↓' : multi ? `+ Add to ${esc(fmtDate(d, { weekday: 'short' }))}` : '+ Add workout'}</button></div>`;
       };
-      return `<section class="pday${isOpen ? ' open' : ''}${adding ? ' pick' : ''}" data-g="${g[0]}"><button type="button" class="prow" data-day="${g[0]}" aria-expanded="${isOpen}"><span class="prowin"><span class="pdt">${head}</span><span class="ptitles">${titles}</span><small>${mine.length ? `${mine.length} planned` : ''}</small><span class="pchev" aria-hidden="true">⌄</span></span></button>
+      return `<section class="pday${isOpen ? ' open' : ''}${adding ? ' adding' : ''}" data-g="${g[0]}"><button type="button" class="prow" data-day="${g[0]}" aria-expanded="${isOpen}"><span class="prowin"><span class="pdt">${head}</span><span class="ptitles">${titles}</span><small>${mine.length ? `${mine.length} planned` : ''}</small><span class="pchev" aria-hidden="true">⌄</span></span></button>
         <div class="pbody"${isOpen ? '' : ' hidden'}>${g.map(block).join('')}${dayBulkHtml(g)}</div></section>`;
     }).join('');
   };

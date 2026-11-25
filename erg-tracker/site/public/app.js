@@ -1714,7 +1714,7 @@ async function showOyo() {
         // Bars show percent of Required (the ranking measure), so they run largest to smallest down the list.
         const pct = r.required ? r.minutes / r.required : 0, eliteAt = r.required ? r.elite / r.required : 1;
         return `<div class="oyo-row${mine && mine.id === r.id ? ' me' : ''}"><div class="oyo-who"><a class="nm" href="#/athlete/${esc(r.id)}">${esc(r.name)}</a>
-          <div class="sub">${fmtMin(r.minutes)} · Required ${fmtMin(r.required)} · Elite ${fmtMin(r.elite)}</div>${which === 'now' && r.streak > 1 ? `<div class="sub">${r.streak} wk streak</div>` : ''}</div>
+          <div class="sub"><span>${fmtMin(r.minutes)}</span> · <span>Required ${fmtMin(r.required)}</span> · <span>Elite ${fmtMin(r.elite)}</span></div>${which === 'now' && r.streak > 1 ? `<div class="sub">${r.streak} wk streak</div>` : ''}</div>
           <div class="meter slim"><div class="fill ${r.status}" style="width:${Math.min(100, (100 * pct) / max)}%"></div>
             <div class="mark" style="left:${100 / max}%"></div><div class="mark" style="left:${(100 * eliteAt) / max}%"></div></div>
           <span class="pill ${r.status === 'short' ? '' : 'a'}">${r.status === 'short' ? fmtMin(left) + ' to go' : 'Met'}</span></div>`;
