@@ -55,10 +55,9 @@ export function openLogMine(ctx) {
   };
   const draw = () => {
     if (S.done) { drawDone(); return; }
-    const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}
-          <span class="muted small">Only you and your coaches can see it. Kept as a small copy, with location data removed.</span></div>`;
-    const oneEach = '<p class="muted small" id="lm-one">One activity at a time. A run and a cool-down? Save the first, then tap Log another activity.</p>';
-    app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts. Erg comes via ErgBot or Concept2.</p></div></div>
+    const photoBlock = `        <div class="f"><span>Photo of your watch or phone screen (optional)</span>${S.photo ? `<div class="lf-row"><span class="pill">${esc(S.photoName || 'Photo added')}</span> <button class="btn ghost sm" type="button" id="lm-photo-x">Remove</button></div>` : '<input class="in" type="file" id="lm-photo" accept="image/*" aria-label="Photo of your watch or phone screen">'}</div>`;
+    const oneEach = '<p class="muted small" id="lm-one">One at a time. Save, then Log another.</p>';
+    app.innerHTML = `<div class="head"><div><h1>Log activity</h1><p class="muted">Non-erg workouts only.</p></div></div>
       <form class="card logfor" id="logmine" novalidate>
         ${PHOTO_FIRST ? photoBlock : ''}${oneEach}
         <label class="f">Activity<select class="in" data-f="activity">${ACTIVITIES.map((a) => `<option${a === S.activity ? ' selected' : ''}>${esc(a)}</option>`).join('')}</select></label>

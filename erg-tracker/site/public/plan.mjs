@@ -262,7 +262,7 @@ export function openPlan(v, ctx) {
       <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
   };
   const editorHtml = () => {
-    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day to open it, then “+ Add workout” to build one for that day, or tap a workout to change it.</p></div>`;
+    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day, then + Add workout.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
     const picks = data.library.filter((w) => w.saved !== false);
     const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div></div>` : '';
@@ -276,9 +276,9 @@ export function openPlan(v, ctx) {
       ${B.type !== 'open' && run() && B.by === 'distance' ? `<div class="f">Run distance in${seg([['mi', 'Miles'], ['km', 'Kilometers']], B.unit, 'data-unit')}</div>` : ''}
       ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable'], ['open', 'Open']], B.type, 'data-type')}
       ${fields()}
-      ${B.type === 'open' ? '' : `<div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
+      ${B.type === 'open' ? '' : `<div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Custom pace target (everyone sees it)</label>
         ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>`}
-      <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my saved workouts (to reuse later)</label><span class="sub">Leave this off for a one-off. It is still planned for the day.</span></div>
+      <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my workouts (reuse later)</label></div>
       <div class="card ppreview"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
     const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
     const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}" aria-label="${esc(dayShort(d))}"><span>${esc(fmtDate(d, { weekday: 'short' }))}</span> <span class="num">${toDate(d).getUTCDate()}</span></button>`).join('')}</div></div>`;
@@ -294,7 +294,7 @@ export function openPlan(v, ctx) {
     return `<section class="card peditor pstack" id="peditor"><div class="eyebrow">${editing ? 'Editing' : 'Adding to'} · ${esc(dayLong(day))}</div><h2>${editing ? 'Edit workout' : 'Add workout'}</h2>
       ${saved}${builder}
       <div class="fgrid"><label class="f">Squad<select class="in" data-k="squad">${opt(['All', 'Varsity', 'Novice'], B.squad)}</select></label><label class="f">Session<select class="in" data-k="session">${opt(['Practice', 'OYO'], B.session)}</select></label></div>
-      ${fld('Notes for the day (athletes and coaches see this)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
+      ${fld('Notes for the day (everyone sees)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
       ${editing ? `<div class="f">Who can see it${seg([['draft', 'Draft (hidden)'], ['published', 'Published']], B.published ? 'published' : 'draft', 'data-pub')}</div>` : ''}
       ${also}${actions}${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}</section>`;
   };
