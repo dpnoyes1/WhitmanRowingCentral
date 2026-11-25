@@ -92,7 +92,7 @@ export function openLogMine(ctx) {
           const res = await fetch('/api/run-photo', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo: S.photo }) });
           const out = await res.json().catch(() => ({}));
           if (res.status === 401) { signedOut(); return; }
-          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time, hr: out.hr || S.hr }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
+          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time, hr: out.hr || S.hr }); S.msg = out.hrEstimated ? 'Read from your photo. The heart rate is an estimate from your Whoop zones: replace it with the average from Whoop if you can, then save.' : 'Read from your photo. Check the numbers, then save.'; }
           else { S.msg = ''; S.err = 'Could not read the numbers. Type them in.'; }
         } catch { S.msg = ''; S.err = 'Could not read the photo. Type the numbers in.'; }
       }
