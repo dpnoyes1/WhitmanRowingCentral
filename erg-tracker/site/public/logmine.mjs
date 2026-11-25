@@ -38,7 +38,7 @@ export function openLogMine(ctx) {
   const { app, esc, fmtDay, signedOut } = ctx;
   const days = Array.from({ length: 8 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - i); return d.toLocaleDateString('en-CA'); });
   const rid = () => (crypto.randomUUID ? crypto.randomUUID() : String(Date.now()));
-  const S = { activity: 'Run', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid(), done: null };
+  const S = { activity: 'Run', date: days[0], type: 'oyo', dist: '', unit: 'mi', time: '', hr: '', note: '', photo: '', photoName: '', msg: '', err: '', busy: false, rid: rid(), done: null };
   const meters = () => { const n = Number(String(S.dist).replace(',', '.')); return n > 0 ? Math.round(n * UNITS[S.unit][1]) : 0; };
   const field = (label, k, extra = '') => `<label class="f">${label}<input class="in" data-f="${k}" value="${esc(S[k])}" autocomplete="off" ${extra}></label>`;
   const drawDone = () => {
@@ -70,6 +70,7 @@ export function openLogMine(ctx) {
           <label class="f">Unit<select class="in" data-f="unit">${Object.entries(UNITS).map(([k, [n]]) => `<option value="${k}"${k === S.unit ? ' selected' : ''}>${n}</option>`).join('')}</select></label>
           ${field('Time (min:sec)', 'time', 'inputmode="numeric" placeholder="25:30"')}</div>
         <p class="muted small" id="lm-pace">${esc(paceText(parseDuration(S.time), meters()) || 'Pace appears with distance and time.')}</p>
+        ${field('Average heart rate (optional)', 'hr', 'inputmode="numeric" placeholder="150"')}
         ${field('Note for coaches (optional)', 'note')}
         ${PHOTO_FIRST ? '' : photoBlock}
         ${S.err ? `<p class="error" role="alert">${esc(S.err)}</p>` : ''}${S.msg ? `<p class="notice" role="status">${esc(S.msg)}</p>` : ''}${S.ask ? `<div class="notice" role="alert"><p>${esc(S.ask)}</p><div class="actions"><button class="btn ghost" type="button" id="lm-fix">Fix it</button> <button class="btn" type="button" id="lm-anyway">It is right, save it</button></div></div>` : ''}
@@ -91,7 +92,7 @@ export function openLogMine(ctx) {
           const res = await fetch('/api/run-photo', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ photo: S.photo }) });
           const out = await res.json().catch(() => ({}));
           if (res.status === 401) { signedOut(); return; }
-          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
+          if (out.status === 'read') { Object.assign(S, { dist: out.dist || S.dist, unit: out.unit || S.unit, time: out.time || S.time, hr: out.hr || S.hr }); S.msg = 'Read from your photo. Check the numbers, then save.'; }
           else { S.msg = ''; S.err = 'Could not read the numbers. Type them in.'; }
         } catch { S.msg = ''; S.err = 'Could not read the photo. Type the numbers in.'; }
       }
@@ -109,9 +110,11 @@ export function openLogMine(ctx) {
       const noDist = NO_DISTANCE.includes(S.activity) && !String(S.dist).trim();
       if (!m && !noDist) { S.err = 'Type your distance.'; draw(); return; }
       if (!sec) { S.err = 'Type your time like 25:30.'; draw(); return; }
+      const hr = String(S.hr).trim();
+      if (hr && !(/^\d{2,3}$/.test(hr) && +hr >= 40 && +hr <= 230)) { S.err = 'Heart rate should be a number from 40 to 230, or leave it blank.'; draw(); return; }
       if (S.busy) return;
       S.busy = true; S.err = S.msg = ''; draw();
-      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim() };
+      const form = { date: S.date, type: S.type, activity: S.activity, pieces: `${clock(sec)}, ${m || 0}`, note: S.note.trim(), ...(hr ? { hr } : {}) };
       const pace = paceText(sec, m);
       try {
         const res = await fetch('/api/log-mine', { method: 'POST', credentials: 'same-origin', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ requestId: S.rid, form, ...(S.confirmed ? { confirmed: true } : {}), ...(S.photo ? { photo: S.photo } : {}) }) });
@@ -126,7 +129,7 @@ export function openLogMine(ctx) {
           const when = S.date === days[0] ? 'today' : S.date === days[1] ? 'yesterday' : fmtDay(S.date);
           const what = `${S.activity}${m ? ', ' + S.dist.trim() + ' ' + UNITS[S.unit][0] : ''}, ${S.time.trim()}, ${when}`;
           S.done = { what, pace, already: false, savedAt: '', photo: out.photo === 'failed' ? 'The photo could not be saved.' : out.photo ? 'Your photo was saved too.' : '' };
-          Object.assign(S, { dist: '', time: '', note: '', photo: '', photoName: '', msg: '', ask: '', confirmed: false, rid: rid() });
+          Object.assign(S, { dist: '', time: '', hr: '', note: '', photo: '', photoName: '', msg: '', ask: '', confirmed: false, rid: rid() });
         }
       } catch { S.err = 'Could not reach the site. Nothing was saved.'; }
       S.busy = false; draw();
