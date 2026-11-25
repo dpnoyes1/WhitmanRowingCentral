@@ -68,7 +68,7 @@ export function systemPrompt(feed, asker, today) {
     `Today is ${WEEKDAYS[new Date(today + 'T12:00:00Z').getUTCDay()]} ${today}. This school year is ${schoolYearLabel(today, st)} (school_year ${y}); last year was ${y - 1}-${String(y).slice(2)} (school_year ${y - 1}). School years start on ${st.replace('-', '/')}.`,
     `The person asking is ${who}.`,
     'The team\'s words:',
-    '- Tests: 2k = 2000m. 20\', 20 min, 20 minute = 20min. 500 = 500m. 100 = 100m. 30r20 = 30r20.',
+    '- Tests: 2k = 2000m. 20\', 20 min, 20 minute = 20min. 500 = 500m. 100 = 100m. 1\', 1 min, one minute = 1min. 30r20 = 30r20.',
     '- "latest" or "most recent" test = latest_test (the team\'s most recent test day). "my latest 2k" = athlete with name null.',
     '- "season PR", "year PR", "this season", "this year" = period season. "career PR", "all-time", "ever" = all_time. "last year" = school_year with last year\'s number.',
     '- Each grade or class, seniors, juniors, sophomores, 12th/11th/10th/9th/8th/7th grade, "top athlete in each class", "fastest senior" = by_grade (grades null for all of them, or the grades named). "Freshmen" listed next to other classes means 9th grade. "Their average" for one result means its split, which by_grade shows.',

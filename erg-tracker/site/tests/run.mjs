@@ -2870,6 +2870,11 @@ test('log my run: athletes only, always for herself, no erg or tests, recent dat
     res = await handleLogMine(post(athlete, { form: { ...form, activity: act, pieces } }), env, { fetchImpl: ok, now });
     assert.strictEqual((await res.json()).status === 'confirm', bad, act + ' ' + pieces);
   }
+  // Other (David, 2026-11-25): a description is required, distance is optional.
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual(res.status, 422, 'Other without a description is refused');
+  res = await handleLogMine(post(athlete, { form: { ...form, activity: 'Other', pieces: '45:00.0, 0', note: 'Soccer' } }), env, { fetchImpl: ok, now });
+  assert.strictEqual((await res.json()).status, 'ok', 'Other with a description and no distance saves');
   const { default: sharp } = await import('sharp');
   const jpeg = await sharp({ create: { width: 2000, height: 1500, channels: 3, background: '#224466' } }).jpeg().toBuffer();
   const m = calls.length;
@@ -2885,7 +2890,7 @@ test('log my run page helpers: pace and times typed on a phone', () => {
   assert.strictEqual(parseDuration('25'), 1500, 'a bare number is minutes');
   [['2530', '25:30'], ['530', '5:30'], ['10230', '1:02:30'], ['25', '25'], ['25:3', '25:3'], ['', '']].forEach(([a, b]) => assert.strictEqual(autoClock(a), b, a));
   assert.strictEqual(parseDuration(autoClock('2530')), 1530);
-  assert.ok(NO_DISTANCE.includes('Stair stepper') && !NO_DISTANCE.includes('Run'));
+  assert.ok(NO_DISTANCE.includes('Stair stepper') && NO_DISTANCE.includes('Other') && !NO_DISTANCE.includes('Run'));
   assert.strictEqual(paceText(3600, 0), '', 'no pace without a distance');
   assert.strictEqual(SL.piecesError('1:01:52.0, 10000'), '', 'H:MM:SS pieces are accepted');
   assert.strictEqual(SL.piecesError('1:01:52, 10000'), '');
@@ -3126,7 +3131,7 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-09-06').status, 'NO');                  // Sunday
   assert.strictEqual(at('2026-11-04').note, 'Fall Break');            // override wins over Fall YES
   assert.strictEqual(at('2026-11-10').status, 'NO');                  // gap between seasons
-  assert.strictEqual(at('2026-08-22').status, 'NO');                  // stray 'zREGATTA' row: unknown status is NO (as on the live site)
+  assert.strictEqual(at('2026-08-22').label, 'ZREGATTA');            // stray unknown status is shown as written (David, 2026-11-25)
   assert.strictEqual(at('2026-11-19').note, 'Check Slack for Details'); // PARTIAL, blank reason
   assert.strictEqual(at('2026-11-20').note, 'Erg test only\nBring water');
   assert.strictEqual(at('2026-11-23').status, 'YES');                 // REGATTA never decides today
@@ -3138,7 +3143,10 @@ test('practice box: Sheet rules for today (same logic as iswhitmanrowingtoday.co
   assert.strictEqual(at('2026-11-27').shifts.girls, '5:00–7:00 PM');  // Fri, odd date: Girls late
   assert.strictEqual(at('2026-12-04').shifts.girls, '3:30–5:30 PM');  // Fri, even date: Girls early
   assert.strictEqual(at('2026-11-21').status, 'NO');                  // Saturday in Winter
-  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).status, 'NO');   // unknown status
+  const chg = PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'CHANGE', reason: 'All Athletes 330-530' }]);
+  assert.deepStrictEqual([chg.status, chg.label, chg.note], ['OTHER', 'CHANGE', 'All Athletes 330-530']);   // any other status shows as written, with its note
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: 'MAYBE', reason: '' }]).label, 'MAYBE');
+  assert.strictEqual(PR.practiceFor('2026-11-24', seasons, [{ date: '2026-11-24', status: '', reason: '' }]).status === 'OTHER', false);
   // header row inside the data when Google gives no column labels
   assert.strictEqual(PR.parseOverrides(PR.tableRows({ cols: cols(['', '', '', '']), rows: [{ c: ['Timestamp', 'Date', 'Status', 'Reason'].map((v) => ({ v })) }, { c: ['t', '1/2/2027', 'NO', 'Snow'].map((v) => ({ v })) }] }))[0].reason, 'Snow');
 });
@@ -3381,6 +3389,18 @@ test('callSheet: an HTML page from Google is retried, not shown as a JSON error'
   n = -10;
   await assert.rejects(() => callSheetBusyTest(env, f, { a: 1 }), /busy/);
   assert.strictEqual(n, -9, 'no retry unless asked');
+});
+
+test("1' test: site stats and Slack shapes", () => {
+  assert.ok(S.TESTS.includes('1min'));
+  assert.strictEqual(S.TEST_LABELS['1min'], "1'");
+  assert.strictEqual(S.resultValue({ test: '1min', meters: 330, timeS: null }), 330);
+  assert.ok(S.better('1min', { test: '1min', meters: 335 }, { test: '1min', meters: 330 }), 'more meters is better');
+  assert.strictEqual(S.benchmarkWatts({ test: '1min', meters: 330 }), S.wattsFromSplit((60 * 500) / 330));
+  assert.ok(!S.BALANCE_TESTS.includes('1min'), 'not on the Balance page');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min Test'), '1min');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 60, meters: 330 }], '1 min'), '', 'no "test" in the title');
+  assert.strictEqual(benchmarkShape('RowErg', [{ timeS: 61, meters: 330 }], 'Test'), '');
 });
 
 for (const [name, fn] of tests) {

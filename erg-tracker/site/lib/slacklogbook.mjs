@@ -7,7 +7,7 @@
 import { dmBlocks } from './slack.mjs';
 
 export const TYPES = ['Practice', 'OYO', 'Make-up'];
-const BENCH = { '2000m': '2k', '20min': "20'" };
+const BENCH = { '2000m': '2k', '20min': "20'", '1min': "1'" };
 const label = (text) => ({ type: 'plain_text', text });
 const opt = (value, text) => ({ text: label(text), value });
 
@@ -80,7 +80,7 @@ export function confirmRequest(payload, action) {
   const req = { action: 'slack-logbook-confirm', slackUserId: payload.user.id, entryId };
   const rpe = rpeFromState(payload);
   if (rpe) req.rpe = rpe;
-  if (action.action_id === 'lb_confirm_test' && ['2000m', '20min'].includes(benchmark)) req.benchmark = benchmark;
+  if (action.action_id === 'lb_confirm_test' && ['2000m', '20min', '1min'].includes(benchmark)) req.benchmark = benchmark;
   return req;
 }
 

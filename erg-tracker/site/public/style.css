@@ -137,7 +137,6 @@ main:focus { outline: none; }
 .menu-toggle { display: inline-flex; align-items: center; justify-content: center; width: 40px; height: 40px; padding: 0; border: 0; border-radius: 10px; background: transparent; color: inherit; cursor: pointer; }
 .menu-toggle:hover { background: rgba(255, 255, 255, .35); }
 .menu-toggle svg { width: 24px; height: 24px; }
-.log-top { display: none; }
 /* Back (David, 2026-11-16): an arrow before the logo on phones, a "‹ Back to ..." above the page on desktop. */
 .back-btn { margin-right: -6px; }
 .backbar:not([hidden]) { display: block; max-width: 1040px; margin: 0 auto; padding: 16px 16px 0; }
@@ -147,7 +146,6 @@ main:focus { outline: none; }
   .top { display: flex; position: sticky; top: 0; z-index: 15; }
   .top .brand { margin-right: auto; }
   .backbar:not([hidden]) { display: none; }
-  body.authed .log-top:not([hidden]) { display: inline-flex; align-items: center; min-height: 36px; padding: 0 12px; border-radius: 8px; background: rgba(255, 255, 255, .45); font-weight: 600; font-size: .95rem; }
   .side { position: fixed; left: 10px; top: 10px; bottom: 10px; height: auto; width: min(300px, 84vw); transform: translateX(-110%); visibility: hidden; transition: transform .25s, visibility .25s; z-index: 30; }
   .collapse-toggle { display: none; }
   .side, .collapsed .side { width: min(300px, 84vw); padding: 14px; }
@@ -194,6 +192,7 @@ main:focus { outline: none; }
 .practice.st-yes .status { color: var(--good); }
 .practice.st-no .status { color: var(--bad); }
 .practice.st-partial .status { color: var(--warn); }
+.practice.st-other .status { color: var(--warn); }
 .practice .note { margin: 4px 0 0; font-size: 1.05rem; color: var(--text-2); white-space: pre-line; }
 main { max-width: 1040px; margin: 0 auto; padding: 8px 16px 48px; }
 .head { display: flex; align-items: flex-end; justify-content: space-between; gap: 12px; flex-wrap: wrap; margin-bottom: 16px; }
@@ -207,7 +206,8 @@ main { max-width: 1040px; margin: 0 auto; padding: 8px 16px 48px; }
 .grid:has(> :nth-child(6):last-child), .tiles:has(> :nth-child(6):last-child) { grid-template-columns: repeat(3, minmax(0, 1fr)); }
 @container (max-width: 760px) {
   .grid, .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .grid:has(> :nth-child(3):last-child), .tiles:has(> :nth-child(3):last-child) { grid-template-columns: minmax(0, 1fr); }
+  .grid:has(> :nth-child(3):last-child), .tiles:has(> :nth-child(3):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }   /* three tiles: 2 + 1 full width */
+  .grid:has(> :nth-child(3):last-child) > :nth-child(3), .tiles:has(> :nth-child(3):last-child) > :nth-child(3) { grid-column: 1 / -1; }
   .grid:has(> :nth-child(6):last-child), .tiles:has(> :nth-child(6):last-child) { grid-template-columns: repeat(2, minmax(0, 1fr)); }
 }
 .cols { display: grid; gap: 12px; grid-template-columns: repeat(auto-fit, minmax(300px, 1fr)); align-items: stretch; margin-bottom: 16px; }
@@ -364,7 +364,6 @@ details.team-results .rank { width: 2em; }
 details.team-results:not(.by-speed) .rank { display: none; }
 /* Links to the Google Form (/logworkout) and the logging guide (/guide), see netlify.toml. */
 .today-links { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; }
-a.btn.log-btn { text-decoration: none; }
 .login-links { margin-top: 12px; text-align: center; }
 
 /* phone menu and no sideways scrolling for athletes (David, 2026-10-28) */
@@ -432,7 +431,6 @@ table.grid td { padding-top: 5px; padding-bottom: 5px; }
 @media (pointer: coarse) {
   .theme-toggle, .icon-btn, .menu-toggle { width: 44px; height: 44px; }
   .seg button, .seg a { min-height: 44px; }
-  body.authed .log-top:not([hidden]) { min-height: 44px; }
   .linkish, details.team-results summary { min-height: 44px; display: inline-flex; align-items: center; }
   .foot .linkish, .foot a { padding: 12px 6px; }
   td a, .board td a { display: inline-block; padding: 12px 0; }
@@ -548,7 +546,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 @media (max-width: 340px) { .fgrid { grid-template-columns: minmax(0, 1fr); } }
 .pstack .f { display: flex; flex-direction: column; gap: 6px; color: var(--muted); font-size: .875rem; min-width: 0; }
 .pstack .in { font: inherit; font-size: 1rem; color: var(--text); background: var(--surface); border: 1px solid var(--border); border-radius: 14px; padding: 12px 14px; min-height: 48px; width: 100%; }
-.pstack .in.bigv { font-size: 1.6rem; font-weight: 700; padding: 14px 16px; }
+.pstack .in.bigv { font-size: 1.6rem; font-weight: 700; padding: 8px 16px; min-height: 56px; }   /* same height as the Distance/Time buttons beside it */
 .pstack .in.bad { border-color: var(--warn); }
 .pstack .in:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .nlrow { display: flex; gap: 10px; align-items: stretch; }
@@ -574,18 +572,32 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .chips { display: flex; gap: 8px; flex-wrap: wrap; }
 .btn.sm { min-height: 40px; padding: 6px 14px; }
 .wkhead { display: flex; align-items: center; gap: 10px; }
+.head:has(.wkbar) { margin-bottom: 10px; }   /* Plan page: the week bar sits 10px above the first day, like the gap between day cards */
+.wkbar { display: flex; align-items: center; justify-content: space-between; gap: 10px; flex-wrap: wrap; min-width: 0; }
+.wkbar .pbulkrow { margin: 0; flex-wrap: nowrap; }
+.wkbar .pbulkrow .btn { min-height: 44px; white-space: nowrap; }
+@media (max-width: 719px) {
+  .wkbar { width: 100%; flex-direction: column; align-items: stretch; gap: 10px; }
+  .wkhead { width: 100%; }
+  .wkhead .eyebrow { text-align: center; }
+  .wkbar .pbulkrow { width: 100%; flex-direction: column; }
+  .wkbar .pbulkrow .btn { width: 100%; }
+}
 .wkhead .eyebrow { flex: 1; }
 .pbulkrow { display: flex; flex-wrap: wrap; gap: 10px; margin: 4px 0 12px; }
 .pbulkrow .btn { min-height: 48px; }
 .pbulk { margin: 4px 0 8px; }
-.pweek { display: flex; flex-direction: column; gap: 10px; margin-bottom: 8px; }
+.pweek { display: flex; flex-direction: column; gap: 10px; margin: 10px 0 8px; }   /* the same 10px gap sits between the week bar and the first day as between day cards */
+.pbody .pbulkrow { margin: 2px 0 -2px; }
+@media (max-width: 719px) { .pbody .pbulkrow { flex-direction: column; } .pbody .pbulkrow .btn { width: 100%; } }   /* Publish day fills the full width on a phone */   /* Publish day: 10px above (8px flex gap + 2) and 10px below (12px card padding - 2) */
 .pdayblock { display: flex; flex-direction: column; gap: 8px; }
 .pdayblock + .pdayblock { border-top: 1px solid var(--border); padding-top: 10px; margin-top: 4px; }
 .chk { display: flex; align-items: center; gap: 10px; color: var(--text); font-size: .95rem; min-height: 44px; }
 .chk input { width: 22px; height: 22px; flex: none; }
 .pday { display: flex; flex-direction: column; gap: 8px; min-width: 0; background: var(--surface); border: 1px solid var(--border); border-radius: 16px; padding: 12px; }
-.pday.pick { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
-.prow { all: unset; box-sizing: border-box; display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 12px 4px; cursor: pointer; border-radius: 12px; }
+.pday.adding { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent); }
+.prow { -webkit-appearance: none; appearance: none; display: block; width: 100%; margin: 0; padding: 0; border: 0; background: none; font: inherit; color: var(--text); text-align: left; cursor: pointer; border-radius: 12px; box-sizing: border-box; }
+.prowin { display: flex; align-items: center; gap: 14px; width: 100%; min-height: 56px; padding: 12px 4px; box-sizing: border-box; }
 .prow:hover { background: var(--hover); }
 .prow:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
 .pdt { flex: none; width: 76px; display: flex; flex-direction: column; }
@@ -599,7 +611,7 @@ dialog#pw-dialog::backdrop { background: rgba(0, 0, 0, .45); }
 .pbody { display: flex; flex-direction: column; gap: 8px; border-top: 1px solid var(--border); padding-top: 12px; margin-top: 4px; }
 .pbody[hidden] { display: none; }
 @media (max-width: 719px) {
-  .prow { align-items: flex-start; gap: 10px; }
+  .prowin { align-items: flex-start; gap: 10px; }
   .pdt { width: 74px; }
   .ptitles { flex-direction: column; gap: 3px; }
   .ptitle { border: 0; background: none; padding: 0; white-space: normal; }
@@ -726,8 +738,10 @@ a.nm, .oyo-who a, .att-row a { color: var(--text); text-decoration: none; font-w
 .hrow { display: flex; gap: 12px; align-items: center; flex-wrap: wrap; justify-content: flex-end; }
 /* Phone: chips keep their full label and wrap instead of clipping; Weights drops two columns so Status and Edit stay on screen. */
 @media (max-width: 720px) {
-  .filters.chips .seg { flex-wrap: wrap; }
-  .filters.chips .seg button { flex: 0 0 auto; padding: 6px 14px; white-space: nowrap; }
+  /* Selector rows fill the full content width on a phone (David, 2026-11-25): several buttons per row is fine, each row stretches edge to edge. */
+  .filters.chips { flex: 1 1 100%; flex-direction: column; gap: 8px; }
+  .filters.chips .seg { display: flex; flex-wrap: nowrap; width: 100%; gap: 6px; }
+  .filters.chips .seg button { flex: 1 1 0; min-width: 0; padding: 6px 8px; justify-content: center; white-space: nowrap; }
   /* Test chips (20', 2k, 500m, 100m, 30r20) share the row, so they fit a 360 px phone (review 2026-11-17). */
   .board-filters .filters.tests { flex: 1 1 100%; }
   .filters.tests .seg { display: flex; width: 100%; gap: 6px; }
@@ -932,3 +946,63 @@ table.avg-results th { white-space: normal; }
   table.gmsrank th:first-child, table.gmsrank td:first-child { display: none; }
   table.gmsrank td.next-star { min-width: 6em; }
 }
+
+/* Phone: no Preview box in the builder; "Also add to" is one row of compact day chips (David, 2026-11-24). */
+@media (max-width: 719px) {
+  .ppreview { display: none; }
+  .alsodays { flex-wrap: nowrap; gap: 6px; }
+  .alsodays button { flex: 1 1 0; min-width: 0; padding: 6px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; line-height: 1.2; font-size: .85rem; }
+  .alsodays button .num { font-size: 1.05rem; font-weight: 700; }
+}
+a.btn.log-btn { text-decoration: none; }
+@media (max-width: 719px) { a.btn.log-btn { flex: 1 1 100%; justify-content: center; } }   /* Log Run/Other fills the full width on a phone; the links wrap below it */
+
+/* ---- Layout audit fixes (2026-11-25). Each block is one review item and can be removed on its own. ---- */
+/* FIX-seg: segmented controls fill the row on a phone */
+@media (max-width: 719px) {
+  .seg:not(.fill) { display: flex; width: 100%; }
+  .seg:not(.fill) button, .seg:not(.fill) a { flex: 1; justify-content: center; }
+  .filters.tests .seg, .filters.chips .seg { flex-wrap: nowrap; }
+  .filters.tests .seg button, .filters.chips .seg button { flex: 1 1 0; min-width: 0; }   /* equal widths in every Benchmarks filter row (David, 2026-11-25) */
+}
+/* FIX-tools: Week and Athletes controls fill the row on a phone */
+@media (max-width: 719px) {
+  .week-tools { width: 100%; }
+  .week-tools select { width: 100%; min-width: 0; }
+  .hrow { width: 100%; justify-content: stretch; }
+  .hrow > * { flex: 1 1 100%; min-width: 0 !important; }
+}
+/* FIX-buttons: single action buttons fill the width on a phone */
+@media (max-width: 719px) {
+  .markact .btn { flex: 1 1 100%; }
+  .card > p > a.btn { display: flex; width: 100%; }
+  .head > .btn { flex: 1 1 100%; }
+}
+/* FIX-lineups: goal chips and action buttons together fill their rows */
+.lugoal .btn, .lu-actions .btn { flex: 1 1 auto; }
+/* FIX-oyo: row detail wraps between items, never inside them; pills line up */
+.oyo-who .sub { display: flex; flex-wrap: wrap; column-gap: 4px; }
+.oyo-who .sub > span { white-space: nowrap; }
+.oyo-row .pill { align-self: center; }
+/* FIX-athletes: cards without stars line up with the others */
+@media (max-width: 560px) { .athletes a { justify-content: flex-start; } }
+/* FIX-targets: a target range stays on one line */
+td.r.splits .muted.small { white-space: nowrap; }
+/* FIX-weights: Enter and Edit are the same width */
+table .btn.sm { min-width: 64px; padding-inline: 10px; }
+/* FIX-tiles: tile numbers stay on one line */
+.tile .value { white-space: nowrap; }
+@media (max-width: 560px) { .tile .value { font-size: 1.4rem; } }
+/* FIX-zones: the three intensity columns share the full width */
+.zones-key { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+/* FIX-file: file chooser matches the buttons */
+input[type="file"] { font: inherit; width: 100%; color: var(--text-2); }
+input[type="file"]::file-selector-button { font: inherit; border: 1px solid var(--border); background: none; color: var(--link); border-radius: 10px; padding: 8px 14px; margin-right: 10px; cursor: pointer; min-height: 40px; }
+/* FIX-missed-phone: Insights missed table keeps the count only on a phone (open/overdue text hidden) */
+@media (max-width: 560px) { table.insights .miss-d { display: none; } }
+/* FIX-starkey: the star key fits on one row on desktop */
+@media (min-width: 601px) { .gms-std .gms-keys { gap: 8px 14px; } .gms-std .gms-key { gap: 6px; } .gms-std .gms-key .stars { letter-spacing: 0; font-size: .8rem; } .gms-std .gms-key { font-size: .9rem; } }
+
+/* Log activity: Distance, Unit and Time sit on one line with the boxes level (David, 2026-11-25). */
+.logfor .lf-dims { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px; align-items: end; }
+.logfor .lf-dims .f { white-space: nowrap; }

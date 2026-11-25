@@ -248,7 +248,7 @@ export function openPlan(v, ctx) {
         return `<div class="pdayblock">${multi ? `<div class="eyebrow">${esc(dayShort(d))}</div>` : ''}${cardsFor(d, past)}
           <button type="button" class="padd${on ? ' on' : ''}" data-add="${d}"${past || busy ? ' disabled' : ''}>${on ? 'Adding below ↓' : multi ? `+ Add to ${esc(fmtDate(d, { weekday: 'short' }))}` : '+ Add workout'}</button></div>`;
       };
-      return `<section class="pday${isOpen ? ' open' : ''}${adding ? ' pick' : ''}" data-g="${g[0]}"><button type="button" class="prow" data-day="${g[0]}" aria-expanded="${isOpen}"><span class="pdt">${head}</span><span class="ptitles">${titles}</span><small>${mine.length ? `${mine.length} planned` : ''}</small><span class="pchev" aria-hidden="true">⌄</span></button>
+      return `<section class="pday${isOpen ? ' open' : ''}${adding ? ' adding' : ''}" data-g="${g[0]}"><button type="button" class="prow" data-day="${g[0]}" aria-expanded="${isOpen}"><span class="prowin"><span class="pdt">${head}</span><span class="ptitles">${titles}</span><small>${mine.length ? `${mine.length} planned` : ''}</small><span class="pchev" aria-hidden="true">⌄</span></span></button>
         <div class="pbody"${isOpen ? '' : ' hidden'}>${g.map(block).join('')}${dayBulkHtml(g)}</div></section>`;
     }).join('');
   };
@@ -259,30 +259,29 @@ export function openPlan(v, ctx) {
     const items = data.library.filter((w) => w.saved !== false);
     if (!items.length) return '';
     return `<div class="card" id="plib"><div class="eyebrow">Saved workouts</div>
-      <p class="note">Your list for "Start from a saved workout". Removing one only takes it off this list; days already planned keep it.</p>
       <ul class="plib">${items.map((w) => `<li><span class="pmain"><b>${esc(w.name)}</b>${w.summary ? `<span class="sub"> ${esc(w.summary)}</span>` : ''}</span><button type="button" class="btn ghost sm danger" data-unsave="${esc(w.id)}"${busy ? ' disabled' : ''} aria-label="Remove ${esc(w.name)} from saved workouts">Remove</button></li>`).join('')}</ul></div>`;
   };
   const editorHtml = () => {
-    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day to open it, then “+ Add workout” to build one for that day, or tap a workout to change it.</p></div>`;
+    if (!B.open) return `<div class="card pempty"><p><b>Your week, one workout at a time.</b></p><p class="muted">Tap a day, then + Add workout.</p></div>`;
     const [pt, pn] = pvHtml(), editing = !!B.edit, day = editing ? B.edit.key.day : B.day;
     const picks = data.library.filter((w) => w.saved !== false);
-    const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div><span class="sub">It fills in the builder. Change anything you like; the saved one is never changed.</span></div>` : '';
+    const saved = picks.length ? `<div class="f">Start from a saved workout<div class="nlrow"><select class="in" data-k="pick" aria-label="Saved workout">${picks.map((w) => `<option value="${esc(w.id)}"${w.id === B.pick ? ' selected' : ''}>${esc(w.name)}${w.summary ? ' · ' + esc(w.summary) : ''}</option>`).join('')}</select><button type="button" class="btn ghost sm" data-usepick="1">Use it</button></div></div>` : '';
     const using = B.useId ? lib(B.useId) : null;
     const builder = B.useId
       ? `<div class="card"><div class="eyebrow">Using saved workout</div><div class="big num">${esc(using ? using.name : B.useId)}</div><p class="note">${esc(using ? using.summary : '')} Used exactly as saved.</p><button type="button" class="btn ghost sm" data-ownbuild="1">Build my own instead</button></div>`
-      : `<div class="f nlf">Type it in plain language, then check the builder below<div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
+      : `<div class="f nlf"><div class="nlrow">${input('nl', B.nl, { aria: 'Describe the workout', ph: '2 × 30:00 with 1:30 rest, aerobic' })}<button type="button" class="btn sm" data-fill="1">Fill builder</button></div>
         <span id="nlmsg" class="sub${nlMsg && nlMsg.err ? ' warn-text' : ''}">${nlMsg ? esc(nlMsg.t) : 'e.g. “4 × 2000 m, 4:00 rest, threshold”'}</span></div>
       <div class="fgrid">${fld('Name', 'name', B.name, { ph: 'Monday aerobic' })}<label class="f">Category<select class="in" data-k="cat">${opt(CATS, B.cat)}</select></label></div>
       ${B.type === 'open' ? '' : `<div class="f">Activity${seg([[ERG, 'Erg'], [RUN, 'Run']], B.act, 'data-act')}</div>`}
       ${B.type !== 'open' && run() && B.by === 'distance' ? `<div class="f">Run distance in${seg([['mi', 'Miles'], ['km', 'Kilometers']], B.unit, 'data-unit')}</div>` : ''}
       ${seg([['single', 'Single'], ['intervals', 'Intervals'], ['variable', 'Variable'], ['open', 'Open']], B.type, 'data-type')}
       ${fields()}
-      ${B.type === 'open' ? '' : `<div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Set a custom pace target (athletes, coaches and coxswains see it)</label>
+      ${B.type === 'open' ? '' : `<div class="f"><label class="chk"><input type="checkbox" data-paceon="1"${B.paceOn ? ' checked' : ''}> Custom pace target (everyone sees it)</label>
         ${B.paceOn ? fld(`Pace target (min : sec ${paceUnit(B)})`, 'pace', B.pace, { big: 1, ok: paceOk(B.pace), ph: run() ? '8:00' : '1:45.0' }) : ''}</div>`}
-      <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my saved workouts (to reuse later)</label><span class="sub">Leave this off for a one-off. It is still planned for the day.</span></div>
-      <div class="card"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
+      <div class="f"><label class="chk"><input type="checkbox" data-keep="1"${B.keep ? ' checked' : ''}> Save to my workouts (reuse later)</label></div>
+      <div class="card ppreview"><div class="eyebrow">Preview</div><div class="big num" id="pv">${pt}</div><p class="note" id="pvn">${pn}</p></div>`;
     const others = editing ? '' : Array.from({ length: 7 }, (_, i) => addDays(B.week, i)).filter((d) => d !== B.day && d >= data.today);
-    const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}">${esc(dayShort(d))}</button>`).join('')}</div></div>`;
+    const also = editing || !others.length ? '' : `<div class="f">Also add to these days<div class="alsodays" role="group" aria-label="Also add to">${others.map((d) => `<button type="button" data-also="${d}" aria-pressed="${B.also.includes(d)}" aria-label="${esc(dayShort(d))}"><span>${esc(fmtDate(d, { weekday: 'short' }))}</span> <span class="num">${toDate(d).getUTCDate()}</span></button>`).join('')}</div></div>`;
     const nDays = 1 + B.also.length, on = nDays > 1 ? ` on ${nDays} days` : '';
     const dis = busy ? ' disabled' : '';
     const label = (kind, idle, doing) => (busy && busyKind === kind ? doing : idle);
@@ -295,7 +294,7 @@ export function openPlan(v, ctx) {
     return `<section class="card peditor pstack" id="peditor"><div class="eyebrow">${editing ? 'Editing' : 'Adding to'} · ${esc(dayLong(day))}</div><h2>${editing ? 'Edit workout' : 'Add workout'}</h2>
       ${saved}${builder}
       <div class="fgrid"><label class="f">Squad<select class="in" data-k="squad">${opt(['All', 'Varsity', 'Novice'], B.squad)}</select></label><label class="f">Session<select class="in" data-k="session">${opt(['Practice', 'OYO'], B.session)}</select></label></div>
-      ${fld('Notes for the day (athletes and coaches see this)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
+      ${fld('Notes for the day (everyone sees)', 'notes', B.notes, { ph: 'e.g. Meet at the boathouse at 3:00' })}
       ${editing ? `<div class="f">Who can see it${seg([['draft', 'Draft (hidden)'], ['published', 'Published']], B.published ? 'published' : 'draft', 'data-pub')}</div>` : ''}
       ${also}${actions}${busy ? '<p class="note" role="status">Saving to the Sheet. This can take a few seconds.</p>' : ''}</section>`;
   };
@@ -341,11 +340,10 @@ export function openPlan(v, ctx) {
 
   const draw = () => {
     app.innerHTML = `<div class="head"><div><div class="eyebrow">Coach · Plans</div><h1>Plan workouts</h1></div>
-        <div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div></div>
+        <div class="wkbar"><div class="wkhead"><button class="btn ghost sm" type="button" data-wk="-1" aria-label="Previous week">‹</button><div class="eyebrow">${esc(weekLabel())}</div><button class="btn ghost sm" type="button" data-wk="1" aria-label="Next week">›</button></div>${bulk ? '' : bulkHtml()}</div></div>
       <div id="pnotice">${busy && busyKind === 'move' ? '<p class="notice" role="status">Saving the new order…</p>' : ''}${msg ? `<p class="notice" role="status">${esc(msg)}</p>` : ''}${err ? `<p class="notice warn" role="alert">${esc(err)}</p>` : ''}</div>
-      ${bulkHtml()}
+      ${bulk ? bulkHtml() : ''}
       <div class="pweek">${weekHtml()}</div>
-      <p class="note">Drafts are hidden from athletes until published. The arrows set the order athletes see on that day.</p>
       ${editorHtml()}
       ${libraryHtml()}`;
     wire();

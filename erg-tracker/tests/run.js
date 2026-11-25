@@ -1570,7 +1570,7 @@ test('slack /log: coach or own-Roster access, pieces box, modal values parse lik
   assert.strictEqual(t20.benchmark.Meters, 5400);
   assert.strictEqual(t20.entry['Session type'], 'OYO');
   assert.strictEqual(t20.entry['Benchmark ID'], t20.benchmark['Benchmark ID']);
-  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:00, 750' }, 'Jane Smith'), /2000 m or a 20:00/);
+  assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:00, 750' }, 'Jane Smith'), /2000 m, a 20:00 or a 1:00/);
   assert.throws(() => g.slackLogAnswers({ ...t2k, pieces: '3:45, 1000\n3:45, 1000' }, 'Jane Smith'), /one piece/);
   assert.throws(() => g.slackLogAnswers({ ...t2k, activity: 'BikeErg' }, 'Jane Smith'), /RowErg/);
 });
@@ -1795,6 +1795,9 @@ test('site log: same rows as the Form, test question only for one exact piece', 
   assert.strictEqual(g.siteSelfLogError_({ activity: 'Swim', type: 'practice' }), '');
   ['Erg (RowErg)', 'BikeErg', 'Lifting', 'Jetski', ''].forEach(x => assert.ok(g.siteSelfLogError_({ activity: x, type: 'oyo' }), 'activity ' + x));
   assert.ok(g.siteSelfLogError_({ activity: 'Run', type: 'makeup' }));
+  assert.ok(g.siteSelfLogError_({ activity: 'Other', type: 'oyo' }), 'Other needs a description');
+  assert.strictEqual(g.siteSelfLogError_({ activity: 'Other', type: 'oyo', note: 'Soccer' }), '');
+  assert.strictEqual(g.planActivityMultiplier_('Other', {}), 0.6, 'Other weighs the same as Bike');
   // identical workout saved again (Nov 22): same athlete, day, activity, type, time and meters, not Rejected
   const dupRow = (o) => Object.assign({ 'Athlete ID': 'A004', Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566, Source: 'Site', 'Review status': '', 'Submitted at': '2026-11-22 14:21' }, o);
   const newRun = { Date: new Date(2026, 10, 22), Activity: 'Run', 'Session type': 'OYO', 'Work s': 2570, 'Work m': 6566 };
@@ -2163,5 +2166,31 @@ test('midnight "Not logged" alerts are batched; a Logbook test note goes to the 
   assert.strictEqual(g.planBatchItems(items.slice(0, 2)).length, 2, 'two stay separate');
   assert.ok(/4 athletes/.test(g.planFlagMessage(sum, 'https://x').text));
   assert.strictEqual(g.LOGBOOK_AUTO_ACCEPT_HOURS, 24);
+});
+test("1' test: Config, Form answers, Logbook shape, site and /log detection", () => {
+  const spec = g.BENCHMARK_TESTS["1' (1 min)"];
+  assert.deepStrictEqual([spec.key, spec.score, spec.seconds, spec.zone], ['1min', 'meters', 60, 'Anaerobic']);
+  assert.ok(g.feedTestKeys_().includes('1min'));
+  // Logbook: a lone 1:00 rower piece is dropped as a tiny result unless "test" is in the title
+  const piece = [{ timeS: 60, distanceM: 330 }];
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: '1 min test' }, piece), false);
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: 'Just Row' }, piece), true);
+  assert.strictEqual(g.logbookTinyResult_({ machine: 'rower', name: '1 min Warm Up test' }, piece), true, 'warm-up is never a test');
+  assert.strictEqual(g.isBenchmarkShape_({ machine: 'rower', name: '1 min test', timeS: 60, distanceM: 330, intervals: [] }), true);
+  assert.strictEqual(g.isBenchmarkShape_({ machine: 'rower', name: '1 min', timeS: 60, distanceM: 330, intervals: [] }), false);
+  const entry = { Activity: 'Erg (RowErg)' };
+  assert.strictEqual(g.logbookBenchmarkShape(entry, [{ 'Work m': 330, 'Work s': 60 }]), '1min');
+  assert.strictEqual(g.logbookBenchmarkShape(entry, [{ 'Work m': 330, 'Work s': 70 }]), '');
+  // /log and the site log: a 1:00 piece is a distance test
+  const f = { date: '2026-11-24', type: 'test', pieces: '1:00.0, 330, 38', rpe: 10, drag: 105, warmup: '10:00', cooldown: '5:00' };
+  const a = g.slackLogAnswers(f, 'Fake Athlete', 'Fake Athlete');
+  assert.strictEqual(a[g.Q.TEST], "1' (1 min)");
+  assert.strictEqual(a[g.Q.D_METERS], '330');
+  assert.strictEqual(g.siteTestKind_(g.parsePiecesText('1:00.0, 330, 38')), '1min');
+  const sa = g.siteLogAnswers_({ date: '2026-11-24', type: 'practice', test: 'yes', pieces: '1:00.0, 330, 38', rpe: 10, drag: 105 }, 'Fake Athlete', 'Fake Athlete');
+  assert.strictEqual(sa[g.Q.TEST], "1' (1 min)");
+  assert.strictEqual(sa[g.Q.D_METERS], '330');
+  // no GMS, no stars
+  assert.strictEqual(g.gmsPercent('1min', 330, 150), null);
 });
 console.log(`${passed} tests passed`);

@@ -106,8 +106,8 @@ export function titleSaysTest(title) {
 }
 
 /**
- * A single RowErg piece of exactly 2000 m or exactly 20:00 might be a benchmark
- * test (David, 2026-11-03). Returns '2000m', '20min' or '' (BikeErg never counts).
+ * A single RowErg piece of exactly 2000 m, 20:00 or 1:00 might be a benchmark
+ * test (David, 2026-11-03). Returns '2000m', '20min', '1min' or '' (BikeErg never counts).
  */
 export function benchmarkShape(machine, pieces, title) {
   if (!titleSaysTest(title)) return '';
@@ -115,9 +115,10 @@ export function benchmarkShape(machine, pieces, title) {
   const p = pieces[0];
   if (Number(p.meters) === 2000) return '2000m';
   if (Number(p.timeS) === 1200) return '20min';
+  if (Number(p.timeS) === 60) return '1min';
   return '';
 }
-const TEST_NAME = { '2000m': '2k', '20min': "20'" };
+const TEST_NAME = { '2000m': '2k', '20min': "20'", '1min': "1'" };
 
 const MONTH_NAMES = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 export const dateLabel = (iso) => { const [y, m, d] = iso.split('-').map(Number); return `${MONTH_NAMES[m - 1]} ${d}, ${y}`; };
@@ -137,7 +138,7 @@ const dateQuestion = (card) => `*For ${card.athlete}:* ${card.summary}.\nThe dat
 /** What comes next on a card whose date is settled: the test question or Save. */
 function nextBlocks(card, token) {
   if (card.ask) {
-    const text = `${cardIntro(card)}\nThis is exactly ${card.ask === '2000m' ? '2000 m' : '20:00'}. Was it a ${TEST_NAME[card.ask]} test? A test counts toward the best ${TEST_NAME[card.ask]}, stars and the boards. Tapping Yes or No saves it.`;
+    const text = `${cardIntro(card)}\nThis is exactly ${card.ask === '2000m' ? '2000 m' : card.ask === '1min' ? '1:00' : '20:00'}. Was it a ${TEST_NAME[card.ask]} test? A test counts toward the best ${TEST_NAME[card.ask]}, stars and the boards. Tapping Yes or No saves it.`;
     return { text, blocks: askBlocks(text, token) };
   }
   const text = `${cardIntro(card)}\nTap Save to log it.`;

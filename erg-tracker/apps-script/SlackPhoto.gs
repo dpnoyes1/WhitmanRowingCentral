@@ -52,7 +52,7 @@ function slackPhotoAnswers(photo, athleteName, enteredBy, session) {
 
 /**
  * The athlete said the photo is a 2k or 20' test (David, 2026-11-03). One RowErg
- * piece of exactly 2000 m ('2000m') or 20:00 ('20min'), saved like a Form test
+ * piece of exactly 2000 m ('2000m'), 20:00 ('20min') or 1:00 ('1min'), saved like a Form test
  * at practice (on my own on a day with no practice), so it writes the
  * Benchmarks row and the session. Drag factor
  * isn't on the screen, so the usual "no drag factor" flag is raised.
@@ -63,15 +63,15 @@ function slackPhotoTestAnswers_(photo, athleteName, enteredBy, type) {
   if (pieces.length !== 1) throw new Error('A test is one piece');
   if (photo.machine === 'BikeErg') throw new Error('A BikeErg result is never a benchmark test');
   var timed = photo.benchmark === '2000m';
-  if (photo.benchmark !== '2000m' && photo.benchmark !== '20min') throw new Error('Unknown test "' + photo.benchmark + '"');
-  if (timed ? Number(p.meters) !== 2000 : Number(p.timeS) !== 1200) throw new Error('This piece is not a ' + photo.benchmark + ' test');
+  if (photo.benchmark !== '2000m' && photo.benchmark !== '20min' && photo.benchmark !== '1min') throw new Error('Unknown test "' + photo.benchmark + '"');
+  if (photo.benchmark === '2000m' ? Number(p.meters) !== 2000 : Number(p.timeS) !== (photo.benchmark === '1min' ? 60 : 1200)) throw new Error('This piece is not a ' + photo.benchmark + ' test');
   var answers = {};
   answers[Q.ATHLETE] = athleteName;
   answers[Q.ENTERED_BY] = enteredBy || athleteName;
   answers[Q.DATE] = photo.date;
   answers[Q.LOG_TYPE] = LOG_TYPES.BENCHMARK;
   answers[Q.B_WHERE] = type === 'Practice' ? TEST_WHERE.PRACTICE : TEST_WHERE.OYO;
-  answers[Q.TEST] = timed ? '2000m' : "20' (20 min)";
+  answers[Q.TEST] = timed ? '2000m' : photo.benchmark === '1min' ? "1' (1 min)" : "20' (20 min)";
   answers[Q.B_RPE] = photo.rpe || '';
   if (timed) {
     answers[Q.T_TIME] = formatTime(p.timeS);

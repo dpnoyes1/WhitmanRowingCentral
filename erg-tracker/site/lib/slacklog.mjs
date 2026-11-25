@@ -1,12 +1,12 @@
 // /log in Slack: the modal, reading it back, checking it, and the reply texts.
 // Mirrors apps-script/SlackLog.gs and the Form (Config.gs). The cross-check test
 // compares ACTIVITIES, ZONES and the pieces rules with the Apps Script copies.
-export const ACTIVITIES = ['Erg (RowErg)', 'BikeErg', 'Bike', 'Run', 'Stair stepper', 'Swim', 'Elliptical', 'Lifting'];
+export const ACTIVITIES = ['Erg (RowErg)', 'BikeErg', 'Bike', 'Run', 'Stair stepper', 'Swim', 'Elliptical', 'Lifting', 'Other'];
 export const ZONES = ['Aerobic', 'Threshold', 'Anaerobic'];
 export const MAX_INTERVALS = 10;
 export const TIME_RE = /^\s*(\d{1,2}:[0-5]\d:[0-5]\d(\.\d)?|\d{1,3}:[0-5]\d(\.\d)?)\s*$/;   // m:ss.0 or h:mm:ss.0
 
-const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice'], ['test', "Test (2k / 20')"]];
+const TYPES = [['practice', 'Practice'], ['oyo', 'On your own (OYO)'], ['makeup', 'Make-up for a missed practice'], ['test', "Test (2k / 20' / 1')"]];
 const TEST_WHERE = [['practice', 'At practice'], ['oyo', 'On my own']];
 const STATUSES = [['full', 'Completed'], ['modified', 'Modified (e.g. BikeErg instead)'], ['out', 'Out']];
 
@@ -38,7 +38,7 @@ export function logModal(today = todayEastern()) {
       input('date', 'Date of session', { type: 'datepicker', initial_date: today }),
       input('type', 'What are you logging?', select(TYPES, 'practice')),
       input('test_where', 'Test only: where did you do it?', select(TEST_WHERE, 'practice'), { optional: true,
-        hint: "Test: put the whole 2000 m or 20:00 on ONE piece line. Only the RowErg counts." }),
+        hint: "Test: put the whole 2000 m, 20:00 or 1:00 on ONE piece line. Only the RowErg counts." }),
       input('status', 'Practice only: how did you do practice?', select(STATUSES, 'full'), { optional: true,
         hint: 'Choose Out and nothing below is needed except an optional note.' }),
       input('makeup_for', 'Make-up only: date of the practice you missed', { type: 'datepicker' }, { optional: true }),
@@ -95,12 +95,12 @@ export function piecesError(textValue) {
 
 const toSeconds = (t) => { const m = /^(?:(\d{1,2}):)?(\d+):([0-5]\d(?:\.\d)?)$/.exec(String(t).trim()); return m ? Number(m[1] || 0) * 3600 + Number(m[2]) * 60 + Number(m[3]) : NaN; };
 
-/** What's wrong with a Test's pieces box (one piece of exactly 2000 m or 20:00), or ''. Call after piecesError is ''. */
+/** What's wrong with a Test's pieces box (one piece of exactly 2000 m, 20:00 or 1:00), or ''. Call after piecesError is ''. */
 export function testPieceError(textValue) {
   const lines = String(textValue || '').split(/\r?\n/).map((l) => l.trim()).filter((l) => l !== '');
-  if (lines.length !== 1) return 'A test is one piece: put the whole 2000 m or 20:00 on one line';
+  if (lines.length !== 1) return 'A test is one piece: put the whole 2000 m, 20:00 or 1:00 on one line';
   const [time, meters] = lines[0].split(',').map((x) => x.trim());
-  if (Number(meters) !== 2000 && toSeconds(time) !== 1200) return "Only a 2000 m or a 20:00 piece can be a test here (use the Form for other tests)";
+  if (Number(meters) !== 2000 && toSeconds(time) !== 1200 && toSeconds(time) !== 60) return "Only a 2000 m, a 20:00 or a 1:00 piece can be a test here (use the Form for other tests)";
   return '';
 }
 
@@ -135,7 +135,7 @@ export function validateLogForm(f, today = todayEastern()) {
   number('hr', 'Heart rate', 40, 230);
   number('drag', 'Drag factor', 50, 250);
   if (!f.drag) errors.drag = 'Required (usually 105)';
-  if (isTest && f.activity && f.activity !== 'Erg (RowErg)') errors.activity = "A 2k or 20' test is on the RowErg";
+  if (isTest && f.activity && f.activity !== 'Erg (RowErg)') errors.activity = "A 2k, 20' or 1' test is on the RowErg";
   if (!isTest && !f.main_set) errors.main_set = 'Describe the workout';
   if (!isTest && !f.zone) errors.zone = 'Pick a zone';
   const pe = piecesError(f.pieces);
@@ -164,7 +164,7 @@ export function flagReply(flagged) {
 export function logReply(result, near = []) {
   if (result.status === 'ok') {
     if (result.entryStatus === 'Out') return ':white_check_mark: Saved: you were Out. Coaches can see it in the Sheet.';
-    if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
+    if (result.test) return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''}: your ${result.test === '20min' ? "20'" : result.test === '1min' ? "1'" : result.test === '2000m' ? '2k' : result.test} test is on the boards.`;
     const bits = [result.sessionType, result.activity, `${result.pieces} piece${result.pieces === 1 ? '' : 's'}`].filter(Boolean).join(', ');
     return `:white_check_mark: Saved${result.athlete ? ' for ' + result.athlete : ''} (${bits}).` + flagReply(result.flagged);
   }
