@@ -167,10 +167,20 @@ test('weighted minutes: activity multiplier, modified practice, out', () => {
   // 1800 s of work over 7000 m is a 2:08/500m split, faster than 3:00, so warm-up and cool-down count (erg only).
   const base = { warmupS: 600, workS: 1800, workM: 7000, restS: 0, cooldownS: 600, status: 'Full', type: 'OYO', activity: 'Erg (RowErg)' };
   assert.strictEqual(S.rawMinutes(base), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 36);   // no warm-up or cool-down for non-erg: 30 x 1.2
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run' }, st), 30);   // no warm-up or cool-down for non-erg: 30 x 1.0 (Run is 1.0 since 2026-11-25)
   assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Lifting' }, st), 0);
+  // Heart-rate weighting (David, 2026-11-25): Bike, Stair stepper, Swim, Elliptical, Other: 100% at the full-effort HR, else 0.75 (also with no HR saved).
+  const hrSt = { ...st, hrLowMultiplier: 0.75 };
+  for (const activity of ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other']) {
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: true }, hrSt), 30, activity + ' at high HR');
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: false }, hrSt), 22.5, activity + ' at low HR');
+    assert.strictEqual(S.weightedMinutes({ ...base, activity, intense: null }, hrSt), 22.5, activity + ' with no HR');
+  }
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Swim' }, st), 22.5, 'an old feed with no HR fields: lower weight');
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'Run', intense: false }, hrSt), 30, 'Run follows its Settings multiplier, never HR');
+  assert.strictEqual(S.weightedMinutes({ ...base, activity: 'BikeErg', intense: false, workM: 14000 }, hrSt), 50, 'erg work is not HR-rated');
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'BikeErg', workM: 14000 }, st), 50);
-  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 18);
+  assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Modified', activity: 'Bike', workM: '' }, st), 22.5);   // 30 x 0.75: no HR saved
   assert.strictEqual(S.weightedMinutes({ ...base, type: 'Practice', status: 'Out' }, st), 0);
   // Lifting (David, 2026-10-23): no OYO minutes, no meters.
   const lift = { ...base, athleteId: 'A1', date: '2026-10-19', type: 'OYO', activity: 'Lifting', workM: 40, restM: 5 };
@@ -210,13 +220,13 @@ test('OYO minimum piece length: run 10, bike 20, other cardio 15; practices unaf
   const st = feed.settings;
   const piece = (activity, rawMin) => ({ warmupS: 0, workS: rawMin * 60, restS: 0, cooldownS: 0, status: 'Full', type: 'OYO', activity });
   assert.strictEqual(S.weightedMinutes(piece('Run', 9), st), 0);
-  assert.strictEqual(S.weightedMinutes(piece('Run', 10), st), 12);          // 10 x 1.2
+  assert.strictEqual(S.weightedMinutes(piece('Run', 10), st), 10);          // 10 x 1.0
   assert.strictEqual(S.weightedMinutes(piece('Bike', 19), st), 0);
-  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 12);         // 20 x 0.6
+  assert.strictEqual(S.weightedMinutes(piece('Bike', 20), st), 15);         // 20 x 0.75 (no HR saved)
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 14), st), 0);
   assert.strictEqual(S.weightedMinutes(piece('Erg (RowErg)', 15), st), 15);
   assert.strictEqual(S.weightedMinutes(piece('BikeErg', 14), st), 0);      // BikeErg is erg-like, not a bike
-  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 12);         // 15 x 0.8
+  assert.strictEqual(S.weightedMinutes(piece('Swim', 15), st), 11.25);      // 15 x 0.75 (no HR saved)
   assert.strictEqual(S.weightedMinutes({ ...piece('Erg (RowErg)', 5), type: 'Practice' }, st), 5);
   const short = { ...piece('Erg (RowErg)', 8), athleteId: 'A1', date: '2026-10-19' };
   assert.strictEqual(S.weekMinutes([short], st, '2026-10-19').A1.oyo, 0);
@@ -2025,8 +2035,8 @@ test('slack background: a signed DM event and a photo button reach the photo flo
 
 test('load trend: trailing average of up to 3 earlier weeks, flag above the jump %', () => {
   const st = { ...feed.settings, loadJumpPct: 15 };
-  const day = (d, min, rpe = 5) => ({ date: d, status: 'Full', type: 'OYO', activity: 'Run', workS: (min / 1.2) * 60, rpe });
-  // Weighted 60, 60, 60, 80, 66 minutes over five weeks (Run counts 1.2).
+  const day = (d, min, rpe = 5) => ({ date: d, status: 'Full', type: 'OYO', activity: 'Run', workS: min * 60, rpe });
+  // Weighted 60, 60, 60, 80, 66 minutes over five weeks (Run counts 1.0 since 2026-11-25).
   const es = [day('2026-09-07', 60), day('2026-09-14', 60), day('2026-09-21', 60), day('2026-09-28', 80), day('2026-10-05', 66)];
   const mondays = ['2026-08-31', '2026-09-07', '2026-09-14', '2026-09-21', '2026-09-28', '2026-10-05'];
   const t = S.loadTrend(es, st, mondays);

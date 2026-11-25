@@ -118,7 +118,7 @@ var ACTIVITIES = [
   ['Erg (RowErg)', 1.0],
   ['BikeErg', 1.0],
   ['Bike', 0.6],
-  ['Run', 1.2],
+  ['Run', 1.0],
   ['Stair stepper', 0.9],
   ['Swim', 0.8],
   ['Elliptical', 0.7],
@@ -195,10 +195,15 @@ var SETTINGS_DEFAULTS = [
   ['target.single_tolerance_pct', '2', 'Plan check: a single target is hit within +/- this %'],
   ['form.id', '', 'Written by setup()'],
   ['form.edit_url', '', 'Written by setup()'],
-  ['form.share_url', '', 'Prefilled link to share with athletes. Written by setup()']
+  ['form.share_url', '', 'Prefilled link to share with athletes. Written by setup()'],
+  ['hr.high_bpm', '145', 'Average HR at or above this counts as full effort (David, 2026-11-25)'],
+  ['hr.low_multiplier', '0.75', 'Weight for HR-rated activities (not Run, erg or Lifting) under the line or with no HR saved']
 ].concat(ACTIVITIES.map(function (a) {
   return ['multiplier.' + a[0], String(a[1]), 'Coaching approximation; edit freely'];
 }));
+
+/** Activities weighed by average heart rate instead of the table (David, 2026-11-25): Run stays on its multiplier (1.0), erg and Lifting are unchanged. */
+var HR_RATED_ACTIVITIES = ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
 
 /**
  * Form question titles. The submit handler finds answers by these titles, so

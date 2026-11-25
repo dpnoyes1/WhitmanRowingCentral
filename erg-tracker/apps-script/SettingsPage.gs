@@ -20,10 +20,16 @@ var SETTINGS_SAVE_ACTION = 'settings-save';
 function settingsPageSections_() {
   return [
     { id: 'multipliers', title: 'Activity multipliers',
-      note: 'Weighted minutes = minutes x multiplier. Applied when the site reads, so a change recalculates all history.',
+      note: 'Weighted minutes = minutes x multiplier. Applied when the site reads, so a change recalculates all history. Bike, Stair stepper, Swim, Elliptical and Other are weighed by average heart rate instead (see Heart rate weighting), so their boxes here are not used.',
       fields: ACTIVITIES.map(function (a) {
         return { key: 'multiplier.' + a[0], label: a[0], type: 'decimal', min: 0, max: 3 };
       }) },
+    { id: 'hr', title: 'Heart rate weighting',
+      note: 'For Bike, Stair stepper, Swim, Elliptical and Other: an average heart rate at or above the line counts the minutes at 100%. Under the line, or with no heart rate saved, they count at the lower weight. Run, erg work and Lifting are not changed.',
+      fields: [
+        { key: 'hr.high_bpm', label: 'Full-effort heart rate (bpm)', type: 'int', min: 60, max: 230 },
+        { key: 'hr.low_multiplier', label: 'Lower weight', type: 'decimal', min: 0, max: 1 }
+      ] },
     { id: 'oyo', title: 'OYO goals (weekly, weighted min)',
       note: 'You type the Standard goal; it is the same for every athlete. Elite is worked out for you (Standard + 100%, so double). Over-reaching on the Insights page is 150% or more of Standard. Break weeks use their own Standard goal; leave it blank to keep the usual goal.',
       fields: [

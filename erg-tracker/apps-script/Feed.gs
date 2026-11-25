@@ -260,6 +260,7 @@ function siteFeed(inputs, asOf) {
     };
   });
 
+  var hrHigh = num('hr.high_bpm', 145);
   var entries = inputs.entries.filter(function (e) {
     return isDate_(e.Date) && known[e['Athlete ID']] && !feedRejected_(e) && !feedPending_(e);
   }).map(function (e) {
@@ -273,7 +274,9 @@ function siteFeed(inputs, asOf) {
       mainSet: String(e['Main set'] || ''), zone: String(e.Zone || ''), rpe: feedNum_(e.RPE),
       dragFactor: feedNum_(e['Drag factor']), intervals: feedNum_(e.Intervals),
       benchmarkId: String(e['Benchmark ID'] || ''), source: String(e.Source || ''),
-      hasPhoto: !!String(e['Photo link'] || '').trim()   // only that a photo exists; the file stays in Drive
+      hasPhoto: !!String(e['Photo link'] || '').trim(),   // only that a photo exists; the file stays in Drive
+      // Heart rate itself never leaves the Sheet; only whether the average reached the full-effort line (null = none saved).
+      intense: feedNum_(e['Avg HR']) === null ? null : feedNum_(e['Avg HR']) >= hrHigh
     };
   });
 
@@ -339,6 +342,8 @@ function siteFeed(inputs, asOf) {
       timezone: s.timezone || 'America/New_York',
       schoolYearStart: s.school_year_start || '07-01',
       multipliers: multipliers,
+      hrLowMultiplier: num('hr.low_multiplier', 0.75),
+      hrRated: HR_RATED_ACTIVITIES.slice(),
       oyoRequired: oyoRequired,
       oyoElite: oyoElite,
       rateCap30r20: rateCap,

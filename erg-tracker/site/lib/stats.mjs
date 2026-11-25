@@ -101,10 +101,15 @@ export function oyoMinimum(activity) {
  * practice gets no extra discount (David, 2026-10-23): doing less work
  * already shows as fewer minutes.
  */
+export const HR_RATED = ['Bike', 'Stair stepper', 'Swim', 'Elliptical', 'Other'];
+
 export function weightedMinutes(e, settings) {
   const raw = rawMinutes(e);
   if (!raw) return 0;
   if (e.type === 'OYO' && raw < oyoMinimum(e.activity)) return 0;
+  // Heart-rate weighting (David, 2026-11-25): Bike, Stair stepper, Swim, Elliptical and Other count 100% when the saved
+  // average HR reached the full-effort line (the feed says so in `intense`), else the lower weight, also with no HR saved.
+  if (HR_RATED.includes(e.activity)) return raw * (e.intense === true ? 1 : (settings.hrLowMultiplier ?? 0.75));
   const m = settings.multipliers[e.activity];
   return raw * (m === undefined ? 1 : m);
 }

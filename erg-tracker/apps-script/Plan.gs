@@ -78,12 +78,23 @@ function planActivityMultiplier_(activity, settings) {
   return 1;
 }
 
+/** The multiplier for one entry: HR-rated activities (Bike, Stair stepper, Swim, Elliptical, Other) count 1 at or above the Settings full-effort average HR, else the lower multiplier, also with no HR saved (David, 2026-11-25); everything else uses its activity multiplier. Pure. */
+function planEntryMultiplier_(entry, settings) {
+  var activity = String(entry.Activity || '');
+  if (HR_RATED_ACTIVITIES.indexOf(activity) < 0) return planActivityMultiplier_(activity, settings);
+  var st = settings || {};
+  var high = parseFloat(st['hr.high_bpm']); if (isNaN(high)) high = 145;
+  var low = parseFloat(st['hr.low_multiplier']); if (isNaN(low)) low = 0.75;
+  var hr = parseFloat(entry['Avg HR']);
+  return !isNaN(hr) && hr >= high ? 1 : low;
+}
+
 /** Counted seconds of work in these entries (Work s x activity multiplier); Out entries count 0. Pure. */
 function planOpenCountedS_(entries, settings) {
   var sum = 0;
   entries.forEach(function (e) {
     if (String(e.Status) === 'Out') return;
-    sum += (Number(e['Work s']) || 0) * planActivityMultiplier_(String(e.Activity || ''), settings);
+    sum += (Number(e['Work s']) || 0) * planEntryMultiplier_(e, settings);
   });
   return sum;
 }

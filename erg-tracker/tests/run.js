@@ -765,6 +765,13 @@ test('site feed: never sends weight, birthdays or coach notes', () => {
   assert.ok(outNotes.length > 0);
   outNotes.forEach(n => assert.ok(!text.includes(n), 'coach note leaked: ' + n));
   feed.entries.forEach(e => assert.deepStrictEqual(Object.keys(e).filter(k => /note|hr|weight/i.test(k)), []));
+  // Average HR never leaves the Sheet; the feed says only whether it reached the full-effort line (David, 2026-11-25).
+  const withHr = dummyFeedInputs();
+  withHr.entries = withHr.entries.slice(0, 3).map((e, i) => Object.assign({}, e, { 'Avg HR': [150, 144, ''][i] }));
+  const hrFeed = JSON.parse(JSON.stringify(g.siteFeed(withHr, new Date(2026, 9, 23, 12))));
+  assert.deepStrictEqual(hrFeed.entries.map(e => e.intense), [true, false, null]);
+  assert.ok(!/"Avg HR"|avgHr|"hr"/.test(JSON.stringify(hrFeed)), 'no heart-rate number in the feed');
+  assert.deepStrictEqual([hrFeed.settings.hrLowMultiplier, hrFeed.settings.hrRated.includes('Swim')], [0.75, true]);
 });
 
 test('site feed: sign-in codes are keyed HMACs of the birthday, never the date', () => {
@@ -1719,8 +1726,8 @@ test('settings page: only listed keys change, errors block everything, unchanged
   const settings = {}; g.SETTINGS_DEFAULTS.forEach((d) => { settings[d[0]] = d[1]; });
   settings['site.coaches'] = 'Fake Coach 01/01/1980';
   const plan = (changes) => JSON.parse(JSON.stringify(g.settingsPlanSave_(settings, changes)));
-  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.2' }), { updates: [], errors: {} }, 'same value is not a change');
-  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.1' }).updates, [{ key: 'multiplier.Run', old: '1.2', value: '1.1' }]);
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1' }), { updates: [], errors: {} }, 'same value is not a change');
+  assert.deepStrictEqual(plan({ 'multiplier.Run': '1.1' }).updates, [{ key: 'multiplier.Run', old: '1', value: '1.1' }]);
   // keys that carry sign-in dates, Slack IDs, addresses and ids are refused
   ['site.coaches', 'site.test_password', 'slack.coach_ids', 'alerts.email', 'form.id', 'backup.folder_id', 'gms.exponent', 'nope'].forEach((k) => {
     assert.deepStrictEqual(plan({ [k]: 'x' }).errors, { [k]: 'Not a setting you can change here.' }, k);
@@ -2079,10 +2086,20 @@ test('open workout: any activity counts weighted minutes toward the day (David, 
   assert.deepStrictEqual(flags(eighty, dayOver), [], '80 minutes counts (100% or more)');
   const run = [E('R1', 'Run', 3000)];
   assert.deepStrictEqual(flags(run, dayOver), [], '50:00 of running is 60:00 weighted');
-  const under = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500)], dayOver);   // 25:00 + 25:00 x 0.6 = 40:00
+  const under = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500)], dayOver);   // 25:00 + 25:00 x 0.75 (Bike, no HR saved) = 43.75
   assert.strictEqual(under.length, 1);
   assert.deepStrictEqual(under[0].entryIds, ['U1', 'U2'], 'one item for the athlete and day');
-  assert.strictEqual(under[0].flag, 'Open workout: 40 of 60 weighted minutes (67%)');
+  assert.strictEqual(under[0].flag, 'Open workout: 43.8 of 60 weighted minutes (73%)');
+  // Heart-rate weighting (David, 2026-11-25): Bike at or above the full-effort average HR counts 100%.
+  const hard = flags([E('U1', 'Erg (RowErg)', 1500), E('U2', 'Bike', 1500, { 'Avg HR': 145 })], dayOver);
+  assert.strictEqual(hard[0].flag, 'Open workout: 50 of 60 weighted minutes (83%)');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Run', 'Avg HR': 100 }, {}), 1, 'Run is 1.0 at any HR');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 144 }, {}), 0.75);
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 150 }, {}), 1);
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Other', 'Avg HR': '' }, {}), 0.75, 'no HR saved');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Swim', 'Avg HR': 130 }, { 'hr.high_bpm': '125', 'hr.low_multiplier': '0.5' }), 1, 'Settings move the line');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'Lifting', 'Avg HR': 160 }, { 'multiplier.Lifting': '0' }), 0, 'Lifting stays 0');
+  assert.strictEqual(g.planEntryMultiplier_({ Activity: 'BikeErg', 'Avg HR': 90 }, {}), 1, 'erg work is not HR-rated');
   assert.deepStrictEqual(under[0].missedIds, []);
   const half = flags([E('H1', 'Erg (RowErg)', 1500)], dayOver);
   assert.deepStrictEqual(half[0].missedIds, ['H1'], 'under half is Missed');
