@@ -19,6 +19,7 @@ Rules:
 - "moving_time" is the time labeled Total Time, Moving Time, Workout Time, Time, Duration, Active Time or Timer. "elapsed_time" is the time labeled Elapsed Time or Total Time, only when the screen shows both. If only one time is shown, put it in "moving_time" and use "" for the other. Times look like 54:32, 1:02:15 or 0:25:30. Copy them as shown.
 - "avg_pace" is the average pace for the whole run, labeled Avg Pace, Pace or Avg. Pace, as shown (for example 8:30, 8'30" or 5:12). "pace_unit" is "/mi", "/km" or "" if not shown (a label such as "Pace (min/mi)" means "/mi"). Ignore current or live pace, best pace, and any single lap or split.
 - "avg_hr" is the AVERAGE heart rate of the whole activity, as a bare number without "bpm" (for example "148"). It is labeled Avg Heart Rate, Avg HR, Average HR or Avg. Heart Rate (Garmin Connect, Strava, Whoop, Apple and similar apps). Use "" when no average heart rate is printed: a card with only Time, Distance and Pace has none, and a strength or treadmill card may have none. Never use Max HR, Max Heart Rate, resting or ending HR, a heart-rate zone chart or time-in-zone bars, calories (Cal), strain, stroke rate (spm), or the kudos count. If only a max is shown, use "" and add the flag "only max HR shown". On a Garmin Stats page the average and the max sit on two rows under HEART RATE: take the Avg row.
+- Whoop activity screen (a dark HR graph with a start and end time, DURATION, then rows ZONE 0 to ZONE 5 each with a bpm range like "148-160 BPM", a percent and a time): this screen shows NO average heart rate. The bpm numbers are the edges of each zone, the percents are shares of the time, and "TYPICAL RANGE" is a comparison band: none of them is the average. Use "" for "avg_hr", put the DURATION in "moving_time", add the flag "zone screen, no average HR", and copy every zone row into "zones" as { "zone": "3", "bpm": "161-173", "time": "0:12:32" }: the zone number, the bpm text as shown without the word BPM ("<120", "148-160", "188+"), and the time as H:MM:SS as shown (the big and small digits together). Never work out an average yourself. On every other screen "zones" is [].
 - Garmin Connect Indoor Rowing from a watch can show "0 m" distance (no erg link): copy it as 0 and add the flag "distance 0 m".
 - Splits, laps, graphs and heart-rate zones are not the total: never use a lap or split row as the total.
 - "activity" is the sport as shown, for example "Run", "Treadmill", "Walk", "Ride", "Swim". If it is not clearly a run, still report it so the check can say so.
@@ -31,10 +32,10 @@ const str = { type: 'string' };
 export const RUN_SCHEMA = {
   type: 'object',
   additionalProperties: false,
-  required: ['app', 'person', 'activity', 'date', 'distance', 'distance_unit', 'moving_time', 'elapsed_time', 'avg_pace', 'pace_unit', 'avg_hr', 'flags'],
+  required: ['app', 'person', 'activity', 'date', 'distance', 'distance_unit', 'moving_time', 'elapsed_time', 'avg_pace', 'pace_unit', 'avg_hr', 'zones', 'flags'],
   properties: {
     app: str, person: str, activity: str, date: str, distance: str, distance_unit: { type: 'string', enum: ['mi', 'km', 'm', ''] },
-    moving_time: str, elapsed_time: str, avg_hr: str, avg_pace: str, pace_unit: { type: 'string', enum: ['/mi', '/km', ''] },
+    moving_time: str, elapsed_time: str, avg_hr: str, zones: { type: 'array', items: { type: 'object', additionalProperties: false, required: ['zone', 'bpm', 'time'], properties: { zone: str, bpm: str, time: str } } }, avg_pace: str, pace_unit: { type: 'string', enum: ['/mi', '/km', ''] },
     flags: { type: 'array', items: str },
   },
 };
@@ -67,6 +68,28 @@ export function parseHeartRate(text) {
   return n >= 40 && n <= 230 ? n : null;
 }
 
+/**
+ * Whoop shows time in HR zones and no average (David chose to estimate it, 2026-11-25). Time-weighted mean of the zone
+ * midpoints: "a-b" -> (a+b)/2, "<x" -> x-15, "n+" -> n+5. Needs 4+ zones with a time, a total over a minute, and a total within
+ * 3% of the duration when that is known; otherwise null. Always an estimate: the caller marks it so the athlete can replace it.
+ */
+export function estimateHrFromZones(zones, durationS) {
+  let sum = 0, total = 0, used = 0;
+  for (const z of Array.isArray(zones) ? zones : []) {
+    const t = parseClock(String(z && z.time || ''));
+    const bpm = String(z && z.bpm || '').replace(/bpm/i, '').trim();
+    let mid = null, m;
+    if ((m = /^(\d{2,3})\s*[-–]\s*(\d{2,3})$/.exec(bpm))) mid = (+m[1] + +m[2]) / 2;
+    else if ((m = /^<\s*(\d{2,3})$/.exec(bpm))) mid = +m[1] - 15;
+    else if ((m = /^(\d{2,3})\s*\+$/.exec(bpm))) mid = +m[1] + 5;
+    if (!(t >= 0) || mid == null) continue;
+    sum += t * mid; total += t; used++;
+  }
+  if (used < 4 || total < 60) return null;
+  if (durationS > 0 && Math.abs(total - durationS) / durationS > 0.03) return null;
+  return parseHeartRate(String(Math.round(sum / total)));
+}
+
 /** Pace as shown (8:30, 8'30", 5:12) -> seconds, or null. */
 export function parsePace(text) {
   const m = /^(\d{1,2})\s*(?::|'|’)\s*([0-5]\d)/.exec(String(text || '').trim());
@@ -79,6 +102,11 @@ export function normalizeRunRead(raw) {
   const d = distanceMeters(raw.distance, raw.distance_unit);
   const paceS = parsePace(raw.avg_pace);
   const per = raw.pace_unit === '/mi' ? MILE : raw.pace_unit === '/km' ? 1000 : null;
+  let avgHr = parseHeartRate(raw.avg_hr), hrEstimated = false;
+  if (avgHr == null) {
+    const est = estimateHrFromZones(raw.zones, anyTime(raw.moving_time) || anyTime(raw.elapsed_time));
+    if (est != null) { avgHr = est; hrEstimated = true; flags.push('average HR estimated from Whoop zones'); }
+  }
   return {
     app: String(raw.app || '').trim(),
     activity: String(raw.activity || '').trim(),
@@ -89,7 +117,8 @@ export function normalizeRunRead(raw) {
     movingS: anyTime(raw.moving_time),
     elapsedS: anyTime(raw.elapsed_time),
     person: String(raw.person || '').trim(),
-    avgHr: parseHeartRate(raw.avg_hr),
+    avgHr,
+    hrEstimated,
     paceS,
     paceMeters: per,
     flags,

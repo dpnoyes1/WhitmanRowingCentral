@@ -254,7 +254,7 @@ input[type="password"], input[type="search"], .login input, .markform input, sel
 .logdone-tick { width: 64px; height: 64px; line-height: 64px; margin: 0 auto 12px; border-radius: 50%; background: var(--good); color: var(--good-ink); font-size: 36px; font-weight: 700; }
 .logdone h2 { margin: 0 0 8px; }
 .logdone-what { font-size: 1.05rem; margin: 0 0 8px; overflow-wrap: anywhere; }
-.logdone .actions { justify-content: center; margin-top: 16px; }
+.logdone .actions { grid-template-columns: minmax(0, 1fr); margin-top: 16px; }   /* the one button is full width (David, 2026-11-25) */
 .notice { border-left: 3px solid var(--warn); padding: 8px 12px; background: var(--surface); margin-bottom: 16px; border-radius: 6px; }
 
 /* bars and charts */

@@ -17,7 +17,7 @@ import { handleLog } from '../functions/log.mjs';
 import { handleAttendanceMark } from '../functions/attendance-mark.mjs';
 import { handleLogMine } from '../functions/logmine.mjs';
 import { handleRunPhoto, fillFromRead } from '../functions/runphoto.mjs';
-import { parseHeartRate, RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
+import { estimateHrFromZones, parseHeartRate, RUN_PHOTO_CHECK, compareRun, parseSpelledTime, distanceMeters, normalizeRunRead, parsePace, readRunScreen } from '../lib/runscreen.mjs';
 import { NO_DISTANCE, autoClock, paceText, parseDuration } from '../public/logmine.mjs';
 import { parseNL, buildPieces, previewOf, fromPieces } from '../public/plan.mjs';
 import * as BK from '../public/backstack.mjs';
@@ -1467,7 +1467,7 @@ test('run photo for Log activity: fills distance and time, athletes only, 404 wh
   assert.deepStrictEqual([out.status, out.time], ['read', '2:06:00']);
   out = await (await handleRunPhoto(post(athlete, { photo: jpeg }), env, { enabled: true, client: client({ ...reply, distance: '', moving_time: '', elapsed_time: '' }) })).json();
   assert.strictEqual(out.status, 'unread');
-  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', hr: '', flags: [], person: '', activity: '' });
+  assert.deepStrictEqual(fillFromRead({ meters: 5000, unit: 'km', movingS: 1500, flags: [] }), { dist: '5', unit: 'km', time: '25:00', hr: '', hrEstimated: false, flags: [], person: '', activity: '' });
   assert.strictEqual(fillFromRead({ meters: null, movingS: 2434, avgHr: 103, flags: [] }).hr, '103');
 });
 
@@ -1480,6 +1480,32 @@ test('run photo average heart rate: Garmin and Strava examples (fake values), ma
   for (const bad of ['1:04', '12', '999', '96-128', 'bpm', '0']) assert.strictEqual(parseHeartRate(bad), null, bad);
   assert.strictEqual(parseHeartRate('40'), 40);
   assert.strictEqual(parseHeartRate('230'), 230);
+});
+
+test('run reader prompt: a Whoop zone screen has no average HR and the reader must not invent one', async () => {
+  const { RUN_PROMPT } = await import('../lib/runscreen.mjs');
+  assert.ok(/Whoop activity screen/.test(RUN_PROMPT) && /NO average heart rate/.test(RUN_PROMPT) && /Never work out an average yourself/.test(RUN_PROMPT));
+  assert.strictEqual(normalizeRunRead({ app: 'Whoop', activity: 'Ice hockey', date: '', distance: '', distance_unit: '', moving_time: '1:23:59', elapsed_time: '', avg_hr: '', avg_pace: '', pace_unit: '', flags: ['zone screen, no average HR'] }).avgHr, null, 'no zone rows: nothing to estimate');
+  assert.strictEqual(parseHeartRate('148-160'), null, 'a zone range is not an average');
+  assert.strictEqual(parseHeartRate('187+'), null);
+});
+
+test('Whoop zone screen: average HR estimated from zone time (David chose this, 2026-11-25), marked as an estimate', () => {
+  const z = (rows) => rows.map(([zone, bpm, time]) => ({ zone, bpm, time }));
+  const game = z([['5', '188+', '0:00:04'], ['4', '174-187', '0:02:42'], ['3', '161-173', '0:12:32'], ['2', '148-160', '0:10:28'], ['1', '120-147', '0:37:32'], ['0', '<120', '0:20:41']]);
+  const long = z([['5', '187+', '0:01:26'], ['4', '174-186', '0:12:12'], ['3', '160-173', '0:38:08'], ['2', '146-159', '0:28:58'], ['1', '118-145', '0:40:56'], ['0', '<118', '0:07:19']]);
+  assert.strictEqual(estimateHrFromZones(game, 5039), 136);
+  assert.strictEqual(estimateHrFromZones(long, 7739), 150);
+  const read = normalizeRunRead({ app: 'Whoop', activity: 'Ice hockey', date: '', distance: '', distance_unit: '', moving_time: '1:23:59', elapsed_time: '', avg_hr: '', avg_pace: '', pace_unit: '', zones: game, flags: ['zone screen, no average HR'] });
+  assert.deepStrictEqual([read.avgHr, read.hrEstimated, read.movingS], [136, true, 5039]);
+  assert.ok(read.flags.includes('average HR estimated from Whoop zones'));
+  assert.deepStrictEqual(fillFromRead(read).hr, '136');
+  assert.strictEqual(fillFromRead(read).hrEstimated, true);
+  assert.strictEqual(estimateHrFromZones(game, 7000), null, 'zone times that do not add up to the duration: no guess');
+  assert.strictEqual(estimateHrFromZones(game.slice(0, 3), 0), null, 'too few zones read');
+  assert.strictEqual(estimateHrFromZones([], 5039), null);
+  const printed = normalizeRunRead({ ...{ app: 'Garmin Connect', activity: 'Run', date: '', distance: '3', distance_unit: 'mi', moving_time: '25:00', elapsed_time: '', avg_pace: '', pace_unit: '' }, avg_hr: '150', zones: [], flags: [] });
+  assert.deepStrictEqual([printed.avgHr, printed.hrEstimated], [150, false], 'a printed average always wins');
 });
 
 test('slack run screenshot: athlete sends it, card saves through site-log', async () => {
